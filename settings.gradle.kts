@@ -32,3 +32,11 @@ if (file("../capullo-source-radiobrowser").exists()) {
         }
     }
 }
+if (file("../capullo-audio").exists()) {
+    includeBuild("../capullo-audio") {
+        dependencySubstitution {
+            substitute(module("com.github.capullo-tech:capullo-audio"))
+                .using(project(":capullo-audio"))
+        }
+    }
+}

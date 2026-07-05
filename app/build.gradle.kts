@@ -129,6 +129,16 @@ dependencies {
     // left in place for this isolated commit and pruned in a later cleanup.
     implementation(libs.capullo.source.radiobrowser)
 
+    // capullo-audio (Layer 2) - the delivery engine's public transport classes: SnapserverProcess,
+    // SnapclientProcess, SnapcastControlClient + JSON-RPC types, SnapcontrolPlugin (StateFlow<NowPlaying>
+    // + PlaybackController), Nsd/Discovery, and the ExoPlayer→FIFO sink. The library recompose replaced QC's local
+    // snapcast/* + player/FifoAudioSink copies with this library. QC keeps its own PlaybackService
+    // orchestration and drives the plugin via an in-service NowPlaying adapter (Strategy 1 - the
+    // CapulloAudioEngine facade is intentionally not used). Brings lib-snapcast, lib-media3-ffmpeg,
+    // ktor and kotlinx-serialization transitively (QC's now-redundant direct declarations are pruned
+    // in a later cleanup).
+    implementation(libs.capullo.audio)
+
     // Ktor - WebSocket client for Snapcast JSON-RPC control
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.websockets)

@@ -32,9 +32,9 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
+import tech.capullo.audio.snapcast.DiscoveredSnapserver
+import tech.capullo.audio.snapcast.SnapserverDiscoveryManager
 import tech.capullo.quantumcast.player.PlaybackService
-import tech.capullo.quantumcast.snapcast.DiscoveredSnapserver
-import tech.capullo.quantumcast.snapcast.SnapserverDiscoveryManager
 import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
 import tech.capullo.quantumcast.viewmodel.RadioViewModel

@@ -153,12 +153,12 @@ class RadioViewModel @Inject constructor(
     val snapclientChannel: StateFlow<String> = _snapclientChannel
 
     private val _snapclientState = MutableStateFlow(
-        tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState.STARTING,
+        tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState.STARTING,
     )
-    val snapclientState: StateFlow<tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState> = _snapclientState
+    val snapclientState: StateFlow<tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState> = _snapclientState
 
-    private val _snapcastGroups = MutableStateFlow<List<tech.capullo.quantumcast.snapcast.Group>>(emptyList())
-    val snapcastGroups: StateFlow<List<tech.capullo.quantumcast.snapcast.Group>> = _snapcastGroups
+    private val _snapcastGroups = MutableStateFlow<List<tech.capullo.audio.snapcast.Group>>(emptyList())
+    val snapcastGroups: StateFlow<List<tech.capullo.audio.snapcast.Group>> = _snapcastGroups
 
     private val _streamCanGoNext = MutableStateFlow(false)
     val streamCanGoNext: StateFlow<Boolean> = _streamCanGoNext

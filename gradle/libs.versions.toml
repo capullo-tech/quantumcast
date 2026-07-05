@@ -44,6 +44,12 @@ libMedia3Ffmpeg = "31dcef4545"
 # Built from the sibling checkout via composite build when present (see settings.gradle toggle),
 # else resolved from jitpack at this version.
 capulloSourceRadiobrowser = "main-SNAPSHOT"
+# capullo-audio (Layer 2, the delivery engine) - the library recompose consumes the extracted engine's
+# public transport classes (SnapserverProcess, SnapclientProcess, SnapcastControlClient,
+# SnapcontrolPlugin, Nsd/Discovery, FIFO) instead of QC's local snapcast/* + player/FifoAudioSink
+# copies. QC keeps its own PlaybackService orchestration (Strategy 1); the engine facade
+# CapulloAudioEngine is intentionally NOT used. Composite build locally, jitpack on CI.
+capulloAudio = "main-SNAPSHOT"
 # --- Test ---
 junit = "4.13.2"
 
@@ -101,6 +107,7 @@ lib-snapcast-android = { module = "com.github.capullo-tech.lib-snapcast-android:
 lib-media3-ffmpeg-android = { module = "com.github.capullo-tech:lib-media3-ffmpeg-android", version.ref = "libMedia3Ffmpeg" }
 # capullo-tech first-party libraries (composite build locally, jitpack coordinate on CI)
 capullo-source-radiobrowser = { module = "com.github.capullo-tech:capullo-source-radiobrowser", version.ref = "capulloSourceRadiobrowser" }
+capullo-audio = { module = "com.github.capullo-tech:capullo-audio", version.ref = "capulloAudio" }
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
 

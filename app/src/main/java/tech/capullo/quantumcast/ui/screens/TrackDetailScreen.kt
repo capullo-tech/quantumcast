@@ -69,8 +69,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import tech.capullo.audio.snapcast.Group
 import tech.capullo.quantumcast.R
-import tech.capullo.quantumcast.snapcast.Group
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.quantumcast.viewmodel.RotationState
@@ -192,7 +192,7 @@ fun TrackDetailScreen(
                     // while broadcasting solo.
                     val iconContext = LocalContext.current
                     val ownClientId = remember {
-                        tech.capullo.quantumcast.snapcast.SnapclientProcess.localHostId(iconContext)
+                        tech.capullo.audio.snapcast.SnapclientProcess.localHostId(iconContext)
                     }
                     val totalConnected = snapcastGroups.sumOf { g -> g.clients.count { c -> c.connected } }
                     val otherCount = snapcastGroups.sumOf { g ->

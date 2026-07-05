@@ -45,13 +45,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tech.capullo.audio.contracts.NowPlaying
+import tech.capullo.audio.contracts.PlaybackController
+import tech.capullo.audio.player.FifoAudioBufferSink
+import tech.capullo.audio.player.FifoRenderersFactory
+import tech.capullo.audio.snapcast.SnapclientProcess
+import tech.capullo.audio.snapcast.SnapcontrolPlugin
+import tech.capullo.audio.snapcast.SnapserverProcess
+import tech.capullo.audio.snapcast.firstArtist
 import tech.capullo.quantumcast.MainActivity
 import tech.capullo.quantumcast.data.settings.BroadcastMode
-import tech.capullo.quantumcast.snapcast.SnapclientProcess
-import tech.capullo.quantumcast.snapcast.SnapcontrolCallbacks
-import tech.capullo.quantumcast.snapcast.SnapcontrolPlugin
-import tech.capullo.quantumcast.snapcast.SnapserverProcess
-import tech.capullo.quantumcast.snapcast.firstArtist
 import tech.capullo.source.radiobrowser.resolver.PlaylistResolver
 import java.io.FileOutputStream
 import kotlin.random.Random
@@ -75,9 +78,9 @@ class PlaybackService : Service() {
         val snapclientHost: String = "",
         val snapclientPort: Int = 1604,
         val snapclientChannel: String = "stereo",
-        val snapclientState: tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState =
-            tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState.STARTING,
-        val snapcastGroups: List<tech.capullo.quantumcast.snapcast.Group> = emptyList(),
+        val snapclientState: tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState =
+            tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState.STARTING,
+        val snapcastGroups: List<tech.capullo.audio.snapcast.Group> = emptyList(),
         val snapcastStreamArtUrl: String = "",
         val artworkUrl: String = "", // Shazam artwork; falls back to favicon
         val streamCanPlay: Boolean = false,
@@ -156,7 +159,7 @@ class PlaybackService : Service() {
         // Restart NSD advertisement with the new name if the server is already running
         snapserverNsd?.let {
             it.stop()
-            snapserverNsd = tech.capullo.quantumcast.snapcast.SnapserverNsdRegistrar(this).also { r -> r.start(customServerName) }
+            snapserverNsd = tech.capullo.audio.snapcast.SnapserverNsdRegistrar(this).also { r -> r.start(customServerName) }
         }
         // Rename the local Snapcast client if it is already connected
         val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return
@@ -207,8 +210,8 @@ class PlaybackService : Service() {
     private var snapserverProcess: SnapserverProcess? = null
     private var snapclientProcess: SnapclientProcess? = null
     private var snapcontrolPlugin: SnapcontrolPlugin? = null
-    private var snapserverNsd: tech.capullo.quantumcast.snapcast.SnapserverNsdRegistrar? = null
-    private var snapcastControl: tech.capullo.quantumcast.snapcast.SnapcastControlClient? = null
+    private var snapserverNsd: tech.capullo.audio.snapcast.SnapserverNsdRegistrar? = null
+    private var snapcastControl: tech.capullo.audio.snapcast.SnapcastControlClient? = null
     private var snapserverJob: Job? = null
     private var snapclientJob: Job? = null
     private var snapcastControlJob: Job? = null
@@ -223,7 +226,7 @@ class PlaybackService : Service() {
     fun updateBroadcastCanSkip(canSkip: Boolean) {
         if (broadcastCanSkip == canSkip) return
         broadcastCanSkip = canSkip
-        snapcontrolPlugin?.notifyPropertiesChanged()
+        publishNowPlaying()
     }
     var onPlayPauseRequested: (() -> Unit)? = null
     var onStationError: (() -> Unit)? = null
@@ -334,6 +337,11 @@ class PlaybackService : Service() {
         private const val CHANNEL_ID = "quantumcast_playback"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "QCPlaybackService"
+
+        // Snapcast stream identity (the snapserver `name=`), shown in web players / to snapclients.
+        // capullo-audio's SnapserverProcess defaults to "Capullo"; QuantumCast keeps its own name so
+        // multiple capullo apps stay distinguishable on a LAN (was hardcoded in QC's SnapserverProcess).
+        private const val STREAM_NAME = "QuantumCast"
     }
 
     override fun onCreate() {
@@ -471,7 +479,7 @@ class PlaybackService : Service() {
         Log.d(TAG, "Snapclient → $host:$port")
     }
 
-    private fun applyStreamProperties(props: tech.capullo.quantumcast.snapcast.StreamPlayerProperties) {
+    private fun applyStreamProperties(props: tech.capullo.audio.snapcast.StreamPlayerProperties) {
         val meta = props.metadata
         val title = meta?.title ?: ""
         val artist = meta?.firstArtist() ?: ""
@@ -524,7 +532,7 @@ class PlaybackService : Service() {
         updateMediaSession()
     }
 
-    private fun maybeSetInitialChannelTag(groups: List<tech.capullo.quantumcast.snapcast.Group>) {
+    private fun maybeSetInitialChannelTag(groups: List<tech.capullo.audio.snapcast.Group>) {
         if (localChannelTagSet) return
         val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return
         val client = groups.flatMap { it.clients }
@@ -547,7 +555,7 @@ class PlaybackService : Service() {
         }
     }
 
-    private fun syncLocalChannelFromName(groups: List<tech.capullo.quantumcast.snapcast.Group>) {
+    private fun syncLocalChannelFromName(groups: List<tech.capullo.audio.snapcast.Group>) {
         val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return
         val client = groups.flatMap { it.clients }
             .find { it.id == localId || it.id.contains(localId) } ?: return
@@ -642,7 +650,7 @@ class PlaybackService : Service() {
 
     fun updateIcyTitle(title: String) {
         _state.update { it.copy(icyTitle = title) }
-        snapcontrolPlugin?.notifyPropertiesChanged()
+        publishNowPlaying()
         updateMediaSession()
     }
 
@@ -662,13 +670,13 @@ class PlaybackService : Service() {
                 shazamAppleMusicUrl = appleMusicUrl,
             )
         }
-        snapcontrolPlugin?.notifyPropertiesChanged()
+        publishNowPlaying()
         updateMediaSession()
     }
 
     fun updateArtwork(artUrl: String) {
         _state.update { it.copy(artworkUrl = artUrl) }
-        snapcontrolPlugin?.notifyPropertiesChanged()
+        publishNowPlaying()
         updateMediaSession()
     }
 
@@ -872,14 +880,14 @@ class PlaybackService : Service() {
             Log.d(TAG, "Engine playing: starting Snapcast (FIFO writes enabled)")
             startSnapcast(snapserver, snapserverAddress = "localhost")
         }
-        snapcontrolPlugin?.notifyPropertiesChanged()
+        publishNowPlaying()
         updateNotification()
         updateMediaSession()
     }
 
     private fun onEnginePaused() {
         _state.update { it.copy(isPlaying = false) }
-        snapcontrolPlugin?.notifyPropertiesChanged()
+        publishNowPlaying()
         updateNotification()
         updateMediaSession()
     }
@@ -979,7 +987,107 @@ class PlaybackService : Service() {
 
     // --- Snapcast ---
 
-    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(this).also { snapserverProcess = it }
+    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(this, STREAM_NAME).also { snapserverProcess = it }
+
+    // --- Snapcast control-plugin adapter (capullo-audio SnapcontrolPlugin) ---
+    // The engine's SnapcontrolPlugin is driven by the platform contract: a StateFlow<NowPlaying>
+    // (read) + a PlaybackController (transport), replacing QuantumCast's former fat
+    // SnapcontrolCallbacks. buildSnapNowPlaying() maps this service's PlaybackState onto a
+    // NowPlaying; app-specific web-player fields (country/codec/bitrate/streaming links/tags/uuid)
+    // ride in NowPlaying.extras, emitted verbatim into the JSON metadata by the default mapper
+    // (album -> "station"). Only meaningful in QUANTUMCAST broadcast mode - no plugin runs while
+    // listening in as a snapclient.
+    // MutableStateFlow is-a StateFlow, so it satisfies SnapcontrolPlugin's read-only param directly
+    // (no separate public asStateFlow() view needed - this flow is service-internal).
+    private val snapNowPlaying = MutableStateFlow(NowPlaying.EMPTY)
+
+    private val snapController = object : PlaybackController {
+        override fun play() = this@PlaybackService.play()
+        override fun pause() = this@PlaybackService.pause()
+        override fun next() {
+            onSkipNextRequested?.invoke()
+        }
+        override fun previous() {
+            onSkipPrevRequested?.invoke()
+        }
+        override fun seekTo(positionMs: Long) {} // live radio - not seekable
+    }
+
+    // Artwork is prepared app-side as base64 (the engine mapper expects NowPlaying.artworkBase64,
+    // not a URL): Shazam art wins, else the station favicon - parity with the old
+    // SnapcontrolCallbacks.currentArtworkUrl. artUrl also rides in extras for clients that follow it;
+    // the base64 (artData) covers clients that embed bytes (e.g. RadioCapullo).
+    @Volatile private var snapArtUrl: String? = null
+
+    @Volatile private var snapArtBase64: String? = null
+
+    @Volatile private var snapArtExtension: String? = null
+    private var snapArtJob: Job? = null
+
+    // Push the current metadata to web players / snapclients. Replaces the old
+    // snapcontrolPlugin?.notifyPropertiesChanged() call sites (no-op until a session connects).
+    private fun publishNowPlaying() {
+        refreshSnapArt()
+        snapNowPlaying.value = buildSnapNowPlaying()
+        snapcontrolPlugin?.notifyPropertiesChanged()
+    }
+
+    private fun buildSnapNowPlaying(): NowPlaying {
+        val st = _state.value
+        val title = st.shazamTrackName.ifEmpty { st.icyTitle.ifEmpty { st.stationName } }
+        // Skipping is only meaningful with an active station while rotation is on (broadcastCanSkip),
+        // matching the old callbacks' canGoNext/canGoPrevious gate.
+        val canSkip = broadcastCanSkip && (st.isPlaying || st.stationUrl.isNotEmpty())
+        return NowPlaying(
+            title = title,
+            artist = st.shazamArtistName,
+            album = st.stationName,
+            streamUrl = st.stationUrl.ifEmpty { null },
+            artworkBase64 = snapArtBase64,
+            isPlaying = st.isPlaying,
+            canGoNext = canSkip,
+            canGoPrevious = canSkip,
+            extras = buildMap {
+                if (st.stationCountry.isNotEmpty()) put("country", st.stationCountry)
+                if (st.stationCountryCode.isNotEmpty()) put("countrycode", st.stationCountryCode)
+                if (st.stationCodec.isNotEmpty()) put("codec", st.stationCodec)
+                if (st.stationBitrate > 0) put("bitrate", st.stationBitrate.toString())
+                if (st.shazamYoutubeUrl.isNotEmpty()) put("youtubeUrl", st.shazamYoutubeUrl)
+                if (st.shazamSpotifyUrl.isNotEmpty()) put("spotifyUrl", st.shazamSpotifyUrl)
+                if (st.shazamAppleMusicUrl.isNotEmpty()) put("appleMusicUrl", st.shazamAppleMusicUrl)
+                if (st.stationTags.isNotEmpty()) put("tags", st.stationTags)
+                if (st.stationUuid.isNotEmpty()) put("uuid", st.stationUuid)
+                snapArtUrl?.takeIf { it.isNotEmpty() }?.let { put("artUrl", it) }
+                snapArtExtension?.let { put("artExtension", it) }
+            },
+        )
+    }
+
+    // Download the effective art URL to base64 for the artData embed; re-publish when it lands.
+    private fun refreshSnapArt() {
+        val url = _state.value.artworkUrl.ifEmpty { _state.value.stationFavicon }
+        if (url == snapArtUrl && (url.isEmpty() || snapArtBase64 != null)) return
+        if (url.isEmpty()) {
+            snapArtUrl = null
+            snapArtBase64 = null
+            snapArtExtension = null
+            snapArtJob?.cancel()
+            return
+        }
+        snapArtUrl = url
+        snapArtBase64 = null
+        snapArtJob?.cancel()
+        snapArtJob = scope.launch {
+            val bytes = runCatching {
+                withContext(Dispatchers.IO) { java.net.URL(url).openStream().use { it.readBytes() } }
+            }.getOrNull() ?: return@launch
+            if (snapArtUrl != url) return@launch // art changed while downloading
+            snapArtBase64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            snapArtExtension = url.substringAfterLast('.').substringBefore('?').lowercase().ifEmpty { "jpg" }
+            snapNowPlaying.value = buildSnapNowPlaying()
+            snapcontrolPlugin?.notifyPropertiesChanged()
+        }
+    }
 
     private fun startSnapcast(snapserver: SnapserverProcess, snapserverAddress: String) {
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
@@ -987,44 +1095,17 @@ class PlaybackService : Service() {
         snapclientJob = scope.launch { sc.start(snapserverAddress) }
 
         snapcontrolPlugin = SnapcontrolPlugin(
-            callbacks = object : SnapcontrolCallbacks {
-                override val isPlaying get() = _state.value.isPlaying
-                override val isPaused get() = !_state.value.isPlaying && _state.value.stationUrl.isNotEmpty()
-                override val canSkip get() = broadcastCanSkip
-                override val currentTitle get() = _state.value.shazamTrackName
-                    .ifEmpty { _state.value.icyTitle.ifEmpty { _state.value.stationName } }
-                override val currentArtist get() = _state.value.shazamArtistName
-                override val currentAlbum get() = _state.value.stationName
-                override val currentUrl get() = _state.value.stationUrl
-                override val currentCountry get() = _state.value.stationCountry
-                override val currentCountryCode get() = _state.value.stationCountryCode
-                override val currentCodec get() = _state.value.stationCodec
-                override val currentBitrate get() = _state.value.stationBitrate
-                override val currentYoutubeUrl get() = _state.value.shazamYoutubeUrl
-                override val currentSpotifyUrl get() = _state.value.shazamSpotifyUrl
-                override val currentAppleMusicUrl get() = _state.value.shazamAppleMusicUrl
-                override val currentTags get() = _state.value.stationTags
-                override val currentUuid get() = _state.value.stationUuid
-                override val currentArtworkUrl get() = _state.value.artworkUrl.ifEmpty { _state.value.stationFavicon }
-                override val currentArtworkFile: String? get() = null
-                override fun onPlay() {
-                    play()
-                }
-                override fun onPause() {
-                    pause()
-                }
-                override fun onSkipNext() {
-                    onSkipNextRequested?.invoke()
-                }
-                override fun onSkipPrev() {
-                    onSkipPrevRequested?.invoke()
-                }
-            },
+            state = snapNowPlaying,
+            controller = snapController,
             parentJob = serviceJob,
-        ).also { it.start() }
+        ).apply {
+            isStreamLocked = _state.value.isStreamLocked
+            start()
+        }
+        publishNowPlaying()
 
         // Register Snapserver via NSD so other devices can discover us
-        snapserverNsd = tech.capullo.quantumcast.snapcast.SnapserverNsdRegistrar(this).also { it.start(customServerName) }
+        snapserverNsd = tech.capullo.audio.snapcast.SnapserverNsdRegistrar(this).also { it.start(customServerName) }
 
         // Connect to our own Snapserver control socket to track connected clients
         startSnapcastControl("localhost")
@@ -1035,13 +1116,13 @@ class PlaybackService : Service() {
 
     private fun startSnapcastControl(host: String) {
         snapcastControlJob?.cancel()
-        val client = tech.capullo.quantumcast.snapcast.SnapcastControlClient(host)
+        val client = tech.capullo.audio.snapcast.SnapcastControlClient(host)
             .also { snapcastControl = it }
         snapcastControlJob = scope.launch {
             client.initialize()
             client.notifications.collect { notif ->
                 when (notif) {
-                    is tech.capullo.quantumcast.snapcast.ServerGetStatusResponse -> {
+                    is tech.capullo.audio.snapcast.ServerGetStatusResponse -> {
                         val groups = notif.result.server.groups
                         val hostname = notif.result.server.server.host.name
                         val displayName = if (_state.value.broadcastMode == BroadcastMode.SNAPCLIENT) {
@@ -1070,7 +1151,7 @@ class PlaybackService : Service() {
                             .find { it.id == activeStreamId }?.properties
                             ?.let { sp ->
                                 applyStreamProperties(
-                                    tech.capullo.quantumcast.snapcast.StreamPlayerProperties(
+                                    tech.capullo.audio.snapcast.StreamPlayerProperties(
                                         playbackStatus = sp.playbackStatus ?: "",
                                         canPlay = sp.canPlay,
                                         canPause = sp.canPause,
@@ -1082,7 +1163,7 @@ class PlaybackService : Service() {
                                 )
                             }
                     }
-                    is tech.capullo.quantumcast.snapcast.ServerOnUpdate -> {
+                    is tech.capullo.audio.snapcast.ServerOnUpdate -> {
                         val groups = notif.params.server.groups
                         val displayName = if (_state.value.broadcastMode == BroadcastMode.SNAPCLIENT) {
                             val serverHost = notif.params.server.server.host.name
@@ -1104,11 +1185,11 @@ class PlaybackService : Service() {
                         maybeSetInitialChannelTag(groups)
                         syncLocalChannelFromName(groups)
                     }
-                    is tech.capullo.quantumcast.snapcast.StreamOnProperties -> {
+                    is tech.capullo.audio.snapcast.StreamOnProperties -> {
                         val props = notif.params.properties
                         applyStreamProperties(props)
                     }
-                    is tech.capullo.quantumcast.snapcast.ClientOnVolumeChanged -> {
+                    is tech.capullo.audio.snapcast.ClientOnVolumeChanged -> {
                         Log.d(TAG, "ClientOnVolumeChanged: client=${notif.params.clientId} volume=${notif.params.volume}")
                         _state.update { state ->
                             state.copy(
@@ -1126,7 +1207,7 @@ class PlaybackService : Service() {
                             )
                         }
                     }
-                    is tech.capullo.quantumcast.snapcast.ClientOnLatencyChanged -> {
+                    is tech.capullo.audio.snapcast.ClientOnLatencyChanged -> {
                         _state.update { state ->
                             state.copy(
                                 snapcastGroups = state.snapcastGroups.map { group ->
@@ -1143,12 +1224,12 @@ class PlaybackService : Service() {
                             )
                         }
                     }
-                    is tech.capullo.quantumcast.snapcast.ClientOnConnect,
-                    is tech.capullo.quantumcast.snapcast.ClientOnDisconnect,
+                    is tech.capullo.audio.snapcast.ClientOnConnect,
+                    is tech.capullo.audio.snapcast.ClientOnDisconnect,
                     // Renames carry channel tags ([L]/[R]/[S]) set by web clients; refresh so
                     // syncLocalChannelFromName picks them up - without this, channel changes
                     // made from the web UI are never applied by the app.
-                    is tech.capullo.quantumcast.snapcast.ClientOnNameChanged,
+                    is tech.capullo.audio.snapcast.ClientOnNameChanged,
                     -> {
                         scope.launch { snapcastControl?.sendGetStatus() }
                     }
@@ -1158,7 +1239,7 @@ class PlaybackService : Service() {
         }
     }
 
-    private fun mergeGroupsIfNeeded(groups: List<tech.capullo.quantumcast.snapcast.Group>) {
+    private fun mergeGroupsIfNeeded(groups: List<tech.capullo.audio.snapcast.Group>) {
         // NOTE: do NOT delete disconnected clients here. Web players (and phones)
         // briefly disconnect when backgrounded, then reconnect with the same
         // persistent ID. Deleting on disconnect wiped their stored name (→ card
@@ -1192,7 +1273,7 @@ class PlaybackService : Service() {
                             if (client.id == clientId) {
                                 client.copy(
                                     config = client.config.copy(
-                                        volume = tech.capullo.quantumcast.snapcast.Volume(muted, percent),
+                                        volume = tech.capullo.audio.snapcast.Volume(muted, percent),
                                     ),
                                 )
                             } else {

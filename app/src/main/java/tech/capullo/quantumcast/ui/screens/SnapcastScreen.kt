@@ -16,8 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import tech.capullo.quantumcast.snapcast.DiscoveredSnapserver
-import tech.capullo.quantumcast.snapcast.SnapclientProcess
+import tech.capullo.audio.snapcast.DiscoveredSnapserver
+import tech.capullo.audio.snapcast.SnapclientProcess
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
