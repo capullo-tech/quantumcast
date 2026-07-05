@@ -25,7 +25,7 @@ Multiroom playback runs on [Snapcast](https://github.com/badaix/snapcast) under 
 
 ```
 Internet radio stream
-    → VLC (audio decode)
+    → ExoPlayer / Media3 (audio decode, FFmpeg fallback)
     → Snapserver (multiroom broadcast)
     → Snapclient (synchronized playback on each device)
 ```
@@ -51,7 +51,7 @@ Requires Android Studio and the Android NDK (for the native Snapcast libraries).
 
 ```bash
 git clone https://github.com/capullo-tech/quantumcast
-cd quantumcast/QuantumCast
+cd quantumcast
 ./gradlew assembleProdDebug
 ```
 
@@ -64,7 +64,7 @@ Quantumcast is built on the shoulders of:
 - **[RadioCapullo](https://github.com/capullo-tech/RadioCapullo)** - the Snapcast Android integration, multiroom architecture, and stream control protocol that made this possible
 - **[lib-snapcast-android](https://github.com/capullo-tech/lib-snapcast-android)** - native Snapcast server/client libraries packaged for Android
 - **[Snapcast](https://github.com/badaix/snapcast)** by badaix - the synchronous multiroom audio system at the heart of this project
-- **[VLC for Android](https://code.videolan.org/videolan/vlc-android)** - audio decoding and network stream handling via libVLC
+- **[Media3 / ExoPlayer](https://github.com/androidx/media)** - audio decoding and network stream handling, with an [FFmpeg decoder extension](https://github.com/capullo-tech/lib-media3-ffmpeg-android) for codecs the device's MediaCodec lacks
 - **[radio-browser.info](https://www.radio-browser.info)** - the open community radio station database
 
 ## License
