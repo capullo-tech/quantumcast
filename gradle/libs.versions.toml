@@ -30,13 +30,17 @@ zxing = "3.5.3"
 # source library instead of QC's local data/{api,model,db,repository}, shazam/*, PlaylistResolver copies.
 # Built from the sibling checkout via composite build when present (see settings.gradle toggle),
 # else resolved from jitpack at this version.
-capulloSourceRadiobrowser = "main-SNAPSHOT"
+# Pinned to an immutable jitpack commit (NOT main-SNAPSHOT): jitpack caches -SNAPSHOT artifacts
+# unreliably (serves a stale build even after the metadata timestamp updates), which repeatedly broke
+# CI. A commit coordinate is built once and served immutably. The composite-build substitution in
+# settings.gradle ignores the version, so local co-development still builds the sibling from source.
+capulloSourceRadiobrowser = "f3d8e0b"
 # capullo-audio (Layer 2, the delivery engine) - the library recompose consumes the extracted engine's
 # public transport classes (SnapserverProcess, SnapclientProcess, SnapcastControlClient,
 # SnapcontrolPlugin, Nsd/Discovery, FIFO) instead of QC's local snapcast/* + player/FifoAudioSink
 # copies. QC keeps its own PlaybackService orchestration (Strategy 1); the engine facade
 # CapulloAudioEngine is intentionally NOT used. Composite build locally, jitpack on CI.
-capulloAudio = "main-SNAPSHOT"
+capulloAudio = "6995347"  # pinned to an immutable jitpack commit (see the note above)
 # --- Test ---
 junit = "4.13.2"
 
