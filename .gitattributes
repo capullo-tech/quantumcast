@@ -1,0 +1,7 @@
+# Force LF for Kotlin sources/scripts so line endings are deterministic across
+# platforms. spotlessApply runs on the Windows build machine (which would
+# otherwise write CRLF, passing spotlessCheck locally but failing it on the
+# Linux CI runner). With eol=lf, Spotless's GIT_ATTRIBUTES line-ending mode
+# expects LF everywhere.
+*.kt   text eol=lf
+*.kts  text eol=lf
