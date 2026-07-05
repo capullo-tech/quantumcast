@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 val buildTime: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
@@ -135,6 +136,11 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+
+    // Hilt (DI) - @HiltAndroidApp / @HiltViewModel; a second KSP processor alongside Room
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.android.compiler)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
 
     // Images
     implementation(libs.coil.compose)

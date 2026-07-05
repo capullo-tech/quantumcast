@@ -32,6 +32,7 @@ import tech.capullo.quantumcast.snapcast.SnapserverDiscoveryManager
 import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
+import dagger.hilt.android.AndroidEntryPoint
 
 private sealed class Tab(val label: String, val icon: ImageVector) {
     object Search    : Tab("Search",    Icons.Default.Search)
@@ -41,6 +42,7 @@ private sealed class Tab(val label: String, val icon: ImageVector) {
     object Settings  : Tab("Settings",  Icons.Default.Settings)
 }
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val vm: RadioViewModel by viewModels()

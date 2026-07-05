@@ -1,6 +1,5 @@
 package tech.capullo.quantumcast.viewmodel
 
-import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,9 +9,11 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import tech.capullo.quantumcast.data.db.AppDatabase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import tech.capullo.quantumcast.data.db.FavoriteEntity
 import tech.capullo.quantumcast.data.db.FavoriteGroupEntity
 import tech.capullo.quantumcast.data.model.Country
@@ -59,10 +60,12 @@ data class RotationState(
     val progress: Float get() = if (totalSeconds > 0) 1f - secondsRemaining.toFloat() / totalSeconds else 0f
 }
 
-class RadioViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val repo = RadioRepository(AppDatabase.getInstance(app))
-    val settingsRepo = SettingsRepository(app)
+@HiltViewModel
+class RadioViewModel @Inject constructor(
+    private val repo: RadioRepository,
+    val settingsRepo: SettingsRepository,
+    @ApplicationContext private val context: Context,
+) : ViewModel() {
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .onEach { repo.setServerUrl(it.apiServer) }
@@ -314,13 +317,13 @@ class RadioViewModel(app: Application) : AndroidViewModel(app) {
     fun onAppForeground() { playbackService?.onAppForeground() }
 
     fun connectPlayer() {
-        val ctx = getApplication<Application>()
+        val ctx = context
         ctx.startService(Intent(ctx, PlaybackService::class.java))
         ctx.bindService(Intent(ctx, PlaybackService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
     fun disconnectPlayer() {
-        try { getApplication<Application>().unbindService(serviceConnection) } catch (_: Exception) {}
+        try { context.unbindService(serviceConnection) } catch (_: Exception) {}
         playbackService = null
         serviceStateJob?.cancel()
     }
@@ -436,7 +439,7 @@ class RadioViewModel(app: Application) : AndroidViewModel(app) {
                     _showDetailScreen.value = true
                 } else {
                     _isShuffleLoading.value = false
-                    android.widget.Toast.makeText(getApplication(), "Shuffle: $lastError", android.widget.Toast.LENGTH_LONG).show()
+                    android.widget.Toast.makeText(context, "Shuffle: $lastError", android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -737,7 +740,7 @@ class RadioViewModel(app: Application) : AndroidViewModel(app) {
         shazamJob = viewModelScope.launch(Dispatchers.IO) {
             delay(4_000)
             while (isActive) {
-                val result = runCatching { ShazamRecognizer.recognize(streamUrl, getApplication()) }.getOrNull()
+                val result = runCatching { ShazamRecognizer.recognize(streamUrl, context) }.getOrNull()
                 _isShazamRunning.value = false
                 if (AudioCapturer.lastOutRate > 0) {
                     _streamStats.value = StreamStats(codec = AudioCapturer.lastCodec, bitrate = AudioCapturer.lastBitrate / 1000, sampleRate = AudioCapturer.lastOutRate, channels = AudioCapturer.lastOutCh)
