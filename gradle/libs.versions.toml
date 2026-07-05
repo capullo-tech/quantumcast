@@ -1,0 +1,89 @@
+# QuantumCast - org toolchain baseline (matches RadioCapullo + the capullo-tech library
+# repos). Introduced in the toolchain bump. Ktor/Retrofit/OkHttp/etc. are pinned to QC's
+# existing versions deliberately (a toolchain bump, not a wholesale dependency upgrade); Nav is still
+# navigation-compose (the Nav3 migration is a separate step).
+[versions]
+# --- Toolchain (bumped to the org standard, validated together with Kotlin 2.3.10) ---
+agp = "9.1.0"
+kotlin = "2.3.10"
+ksp = "2.3.9"                    # decoupled KSP line; pairs with Room 2.8.4
+room = "2.8.4"
+composeBom = "2026.02.01"
+kotlinxSerializationJson = "1.10.0"   # MUST track the 2.3.10 serialization plugin (was 1.7.3)
+# --- Compose-adjacent AndroidX (bumped to the org standard; a 2026 BOM wants the newer runtime) ---
+coreKtx = "1.17.0"
+lifecycle = "2.10.0"
+activityCompose = "1.12.4"
+# --- Independent deps (verbatim from QC's current build - NOT touched by the toolchain bump) ---
+media = "1.7.0"
+media3 = "1.9.0"
+ktor = "2.3.12"                  # NOT RC's 3.4.1 (major API break); org-wide 2.3.12
+navigationCompose = "2.7.7"     # Nav3 migration is a later step
+retrofit = "2.11.0"
+okhttp = "4.12.0"
+coil = "2.6.0"
+appcompat = "1.7.0"
+material = "1.12.0"
+datastore = "1.1.1"
+reorderable = "2.4.3"
+zxing = "3.5.3"
+newpipe = "v0.24.2"
+libSnapcast = "78d1c48"
+# --- Test ---
+junit = "4.13.2"
+
+[libraries]
+# Compose (versions from the BOM)
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-compose-foundation = { module = "androidx.compose.foundation:foundation" }
+# AndroidX core / lifecycle / activity / nav
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+androidx-media = { module = "androidx.media:media", version.ref = "media" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+android-material = { module = "com.google.android.material:material", version.ref = "material" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+# Media3 / ExoPlayer
+media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
+media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
+# Room (KSP codegen)
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+# Ktor (Snapcast JSON-RPC websocket control)
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+# Serialization runtime (tracks the 2.3.10 plugin)
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+# Network
+retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-logging-interceptor = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
+# Images / misc
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+newpipe-extractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "newpipe" }
+# Snapcast native binaries (Layer 0, jitpack)
+lib-snapcast-android = { module = "com.github.capullo-tech.lib-snapcast-android:lib-snapcast-android", version.ref = "libSnapcast" }
+# Test
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+# No kotlin.android: AGP 9.0+ ships built-in Kotlin (see RadioCapullo).
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

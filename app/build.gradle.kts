@@ -2,11 +2,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.plugin.serialization")
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.android.application)
+    // No kotlin.android: AGP 9.0+ ships built-in Kotlin (see RadioCapullo).
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 val buildTime: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
@@ -38,12 +38,9 @@ android {
         }
     }
 
-    applicationVariants.all {
-        outputs.all {
-            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-                "app-${flavorName}-${buildType.name}.apk"
-        }
-    }
+    // (Removed the legacy applicationVariants.all{} APK-rename block: it used AGP's internal
+    // BaseVariantOutputImpl API - gone in AGP 9 - and only reproduced the default output name
+    // `app-<flavor>-<buildtype>.apk`, which AGP already emits for a flavored build.)
 
     buildTypes {
         release {
@@ -57,12 +54,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    // New DSL for Kotlin 2.3 / AGP 9.x (mirrors RadioCapullo). compilerOptions, NOT jvmToolchain(17):
+    // the Windows host JBR is 21 with no standalone JDK 17 to provision.
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            // Kotlin 2.3 annotation-target opt-in (bears on serialization + Room annotations).
+            freeCompilerArgs.add("-Xannotation-default-target=param-property")
+        }
     }
 
     buildFeatures {
         compose = true
+        // AGP 9 disables resValues by default; the prod/snap flavors set resValue("string","app_name",…).
+        resValues = true
     }
 
     packaging {
@@ -76,77 +81,79 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.11.00")
+    val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
 
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.foundation:foundation")
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.foundation)
 
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
 
     // Media session (lock screen controls, notification) - replaces Media3 MediaSessionService
-    implementation("androidx.media:media:1.7.0")
+    implementation(libs.androidx.media)
 
     // Media3/ExoPlayer - decodes radio streams; a TeeAudioProcessor in a custom
     // DefaultAudioSink chain writes 44100:16:2 PCM into the Snapcast FIFO
     // (replaces libvlc-all + its sout transcode hack; see VLC_ALTERNATIVES.md)
-    implementation("androidx.media3:media3-exoplayer:1.9.0")
-    implementation("androidx.media3:media3-exoplayer-hls:1.9.0")
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
     // FFmpeg audio decoders - fallback for codecs device MediaCodec lacks.
     // Self-built from androidx/media@1.9.0 decoder_ffmpeg + FFmpeg 6.0 with
     // ONLY mp3/aac/vorbis/opus/flac enabled (~2.3MB all ABIs). Rebuild
     // procedure: see BUILD_FFMPEG.md. Transitive deps (media3-decoder) are
     // satisfied by media3-exoplayer above - file deps carry none themselves.
+    // NOTE: stays a vendored aar for now; swaps to the lib-media3-ffmpeg-android
+    // jitpack coordinate at the library recompose onto capullo-audio.
     implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
 
     // Snapcast native binaries - commit 78d1c48 includes channel switching + metadata passthrough
-    implementation("com.github.capullo-tech.lib-snapcast-android:lib-snapcast-android:78d1c48")
+    implementation(libs.lib.snapcast.android)
 
     // Ktor - WebSocket client for Snapcast JSON-RPC control
-    implementation("io.ktor:ktor-client-okhttp:2.3.12")
-    implementation("io.ktor:ktor-client-websockets:2.3.12")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.websockets)
+    implementation(libs.ktor.serialization.kotlinx.json)
 
     // Serialization - Snapcast JSON-RPC types
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation(libs.kotlinx.serialization.json)
 
     // Network
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging.interceptor)
 
     // Room (favorites)
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 
     // Images
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation(libs.coil.compose)
 
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
+    implementation(libs.androidx.appcompat)
+    implementation(libs.android.material)
 
     // Settings persistence
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation(libs.androidx.datastore.preferences)
 
     // Drag-to-reorder for LazyColumn
-    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    implementation(libs.reorderable)
 
     // QR code generation (share listening address in Qcast tab)
-    implementation("com.google.zxing:core:3.5.3")
+    implementation(libs.zxing.core)
 
     // NewPipe Extractor - YouTube search without API key
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
+    implementation(libs.newpipe.extractor)
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

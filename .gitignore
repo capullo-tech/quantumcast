@@ -8,3 +8,5 @@ captures/
 .externalNativeBuild/
 .cxx/
 .kotlin/
+run-qc-build.cmd
+build-share.log
