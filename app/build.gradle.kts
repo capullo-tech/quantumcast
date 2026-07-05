@@ -96,7 +96,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
+    // Navigation3 (replaces the previously-unused navigation-compose 2.7.7)
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
 
     // Media session (lock screen controls, notification) - replaces Media3 MediaSessionService
     implementation(libs.androidx.media)

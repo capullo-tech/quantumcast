@@ -33,14 +33,30 @@ import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import kotlinx.serialization.Serializable
 
-private sealed class Tab(val label: String, val icon: ImageVector) {
-    object Search    : Tab("Search",    Icons.Default.Search)
-    object Favorites : Tab("Favorites", Icons.Default.Favorite)
-    object Snapcast  : Tab("Qcast", Icons.Default.SurroundSound)
-    object Countries : Tab("Countries", Icons.Default.Public)
-    object Settings  : Tab("Settings",  Icons.Default.Settings)
-}
+// Navigation3 tab destinations. @Serializable NavKeys (kotlinx-serialization is already applied)
+// so rememberNavBackStack can save/restore them across process death.
+@Serializable private data object SearchRoute : NavKey
+@Serializable private data object FavoritesRoute : NavKey
+@Serializable private data object SnapcastRoute : NavKey
+@Serializable private data object CountriesRoute : NavKey
+@Serializable private data object SettingsRoute : NavKey
+
+private data class TabItem(val route: NavKey, val label: String, val icon: ImageVector)
+
+private val tabItems = listOf(
+    TabItem(SearchRoute, "Search", Icons.Default.Search),
+    TabItem(FavoritesRoute, "Favorites", Icons.Default.Favorite),
+    TabItem(SnapcastRoute, "Qcast", Icons.Default.SurroundSound),
+    TabItem(CountriesRoute, "Countries", Icons.Default.Public),
+    TabItem(SettingsRoute, "Settings", Icons.Default.Settings),
+)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -114,8 +130,7 @@ private fun RadioApp(
     discoveredServers: List<DiscoveredSnapserver>,
     discoveryManager: SnapserverDiscoveryManager,
 ) {
-    val tabs = listOf(Tab.Search, Tab.Favorites, Tab.Snapcast, Tab.Countries, Tab.Settings)
-    var selectedTab by remember { mutableStateOf<Tab>(Tab.Search) }
+    val backStack = rememberNavBackStack(SearchRoute)
 
     val searchResults           by vm.searchResults.collectAsState()
     val playerState             by vm.playerState.collectAsState()
@@ -159,7 +174,7 @@ private fun RadioApp(
             rotationQueue = rotationQueue,
             favoriteUuids = favoriteUuids,
             onBack = { vm.hideDetail() },
-            onOpenSettings = { vm.hideDetail(); selectedTab = Tab.Settings },
+            onOpenSettings = { vm.hideDetail(); backStack.clear(); backStack.add(SettingsRoute) },
             onTogglePlayPause = vm::togglePlayPause,
             onIdentifyNow = vm::identifyNow,
             onCancelIdentify = vm::cancelIdentify,
@@ -214,10 +229,15 @@ private fun RadioApp(
                     onOpenDetail = { vm.showDetail() },
                 )
                 NavigationBar {
-                    tabs.forEach { tab ->
+                    tabItems.forEach { tab ->
                         NavigationBarItem(
-                            selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
+                            selected = backStack.lastOrNull() == tab.route,
+                            onClick = {
+                                if (backStack.lastOrNull() != tab.route) {
+                                    backStack.clear()
+                                    backStack.add(tab.route)
+                                }
+                            },
                             icon = { Icon(tab.icon, tab.label) },
                             label = { Text(tab.label) },
                         )
@@ -226,100 +246,120 @@ private fun RadioApp(
             }
         }
     ) { padding ->
-        when (selectedTab) {
-            Tab.Search -> SearchScreen(
-                uiState = searchResults,
-                playerState = playerState,
-                favoriteUuids = favoriteUuids,
-                onSearch = vm::searchStations,
-                onResetSearch = vm::resetSearch,
-                onShuffleRotation = { vm.startShuffleRotation() },
-                isShuffleLoading = isShuffleLoading,
-                shuffleConnected = shuffleConnected,
-                onStartCustomRotation = ::startCustomRotation,
-                onPlay = { station -> vm.cancelRotation(); vm.play(station) },
-                onToggleFavorite = vm::toggleFavorite,
-                vm = vm,
-                modifier = Modifier.padding(padding),
-            )
-            Tab.Favorites -> FavoritesScreen(
-                favorites = favorites,
-                groups = groups,
-                expandedGroupIds = expandedGroupIds,
-                playerState = playerState,
-                onPlay = { fav -> vm.cancelRotation(); vm.playFromFavorite(fav) },
-                onRemove = vm::toggleFavorite,
-                onStartRotation = vm::startFavRotation,
-                onStartCustomRotation = ::startCustomRotation,
-                onToggleGroupExpanded = vm::toggleGroupExpanded,
-                onCreateGroup = vm::createGroup,
-                onRenameGroup = vm::renameGroup,
-                onDeleteGroup = vm::deleteGroup,
-                onAssignToGroup = vm::assignToGroup,
-                onUnassignFromGroup = vm::unassignFromGroup,
-                onReorderFavorite = vm::reorderFavoriteInGroup,
-                onReorderGroup = vm::reorderGroup,
-                vm = vm,
-                modifier = Modifier.padding(padding),
-            )
-            Tab.Snapcast -> SnapcastScreen(
-                discoveredServers = discoveredServers,
-                connectedHost = snapclientHost,
-                snapclientState = snapclientState,
-                lastManualHost = settings.lastManualHost,
-                onStartDiscovery = { discoveryManager.startDiscovery() },
-                onConnectToServer = { server ->
-                    vm.connectToSnapserver(server.hostAddress, server.port)
-                },
-                onConnectManually = { host, port ->
-                    vm.connectToSnapserver(host, port)
-                },
-                onClearLastManualHost = { vm.updateSetting { setLastManualHost("") } },
-                onDisconnect = vm::disconnectSnapclient,
-                modifier = Modifier.padding(padding),
-            )
-            Tab.Countries -> CountryScreen(
-                countryList = countryList,
-                countryStations = countryStations,
-                selectedCountry = selectedCountry,
-                playerState = playerState,
-                favoriteUuids = favoriteUuids,
-                onLoadCountries = vm::loadCountries,
-                onSelectCountry = vm::selectCountry,
-                onBack = vm::clearCountrySelection,
-                onPlay = { station -> vm.cancelRotation(); vm.play(station) },
-                onToggleFavorite = vm::toggleFavorite,
-                onStartCustomRotation = ::startCustomRotation,
-                vm = vm,
-                modifier = Modifier.padding(padding),
-            )
-            Tab.Settings -> {
-                val settingsBack: () -> Unit = {
-                    if (playerState.station != null) vm.showDetail() else selectedTab = Tab.Search
+        NavDisplay(
+            backStack = backStack,
+            // Tabs are flat single-element roots (no inter-tab history), so onBack is
+            // inert here; the guard just prevents ever emptying the stack.
+            onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+            entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+            entryProvider = entryProvider {
+                entry<SearchRoute> {
+                    SearchScreen(
+                        uiState = searchResults,
+                        playerState = playerState,
+                        favoriteUuids = favoriteUuids,
+                        onSearch = vm::searchStations,
+                        onResetSearch = vm::resetSearch,
+                        onShuffleRotation = { vm.startShuffleRotation() },
+                        isShuffleLoading = isShuffleLoading,
+                        shuffleConnected = shuffleConnected,
+                        onStartCustomRotation = ::startCustomRotation,
+                        onPlay = { station -> vm.cancelRotation(); vm.play(station) },
+                        onToggleFavorite = vm::toggleFavorite,
+                        vm = vm,
+                        modifier = Modifier.padding(padding),
+                    )
                 }
-                BackHandler(onBack = settingsBack)
-                SettingsScreen(
-                    settings = settings,
-                    onSetApiServer = { vm.updateSetting { setApiServer(it) } },
-                    onSetSearchLimit = { vm.updateSetting { setSearchLimit(it) } },
-                    onSetRandomBatchSize = { vm.updateSetting { setRandomBatchSize(it) } },
-                    onSetRotationMinutes = { vm.updateSetting { setRotationMinutes(it) }; vm.setLiveMinutes(it) },
-                    onSetVlcNetworkCachingMs = { vm.updateSetting { setVlcNetworkCachingMs(it) } },
-                    onSetShazamIntervalSeconds = { vm.updateSetting { setShazamIntervalSeconds(it) } },
-                    onSetSleepTimerMinutes = { vm.updateSetting { setSleepTimerMinutes(it) } },
-                    onSetThemeMode = { vm.updateSetting { setThemeMode(it) } },
-                    onSetShareService = vm::setShareService,
-                    onSetCustomServerName = vm::setCustomServerName,
-                    onSetAutoEntangleOnLaunch = { vm.updateSetting { setAutoEntangleOnLaunch(it) } },
-                    onSetWebDebugPanel = { vm.updateSetting { setWebDebugPanel(it) } },
-                    onSetWebAutoplay = { vm.updateSetting { setWebAutoplay(it) } },
-                    onSetMaxHistorySongs = { vm.updateSetting { setMaxHistorySongs(it) } },
-                    onExportFavorites = vm::exportFavorites,
-                    onImportFavorites = vm::importFavorites,
-                    onBack = settingsBack,
-                    modifier = Modifier.padding(padding),
-                )
-            }
-        }
+                entry<FavoritesRoute> {
+                    FavoritesScreen(
+                        favorites = favorites,
+                        groups = groups,
+                        expandedGroupIds = expandedGroupIds,
+                        playerState = playerState,
+                        onPlay = { fav -> vm.cancelRotation(); vm.playFromFavorite(fav) },
+                        onRemove = vm::toggleFavorite,
+                        onStartRotation = vm::startFavRotation,
+                        onStartCustomRotation = ::startCustomRotation,
+                        onToggleGroupExpanded = vm::toggleGroupExpanded,
+                        onCreateGroup = vm::createGroup,
+                        onRenameGroup = vm::renameGroup,
+                        onDeleteGroup = vm::deleteGroup,
+                        onAssignToGroup = vm::assignToGroup,
+                        onUnassignFromGroup = vm::unassignFromGroup,
+                        onReorderFavorite = vm::reorderFavoriteInGroup,
+                        onReorderGroup = vm::reorderGroup,
+                        vm = vm,
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+                entry<SnapcastRoute> {
+                    SnapcastScreen(
+                        discoveredServers = discoveredServers,
+                        connectedHost = snapclientHost,
+                        snapclientState = snapclientState,
+                        lastManualHost = settings.lastManualHost,
+                        onStartDiscovery = { discoveryManager.startDiscovery() },
+                        onConnectToServer = { server ->
+                            vm.connectToSnapserver(server.hostAddress, server.port)
+                        },
+                        onConnectManually = { host, port ->
+                            vm.connectToSnapserver(host, port)
+                        },
+                        onClearLastManualHost = { vm.updateSetting { setLastManualHost("") } },
+                        onDisconnect = vm::disconnectSnapclient,
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+                entry<CountriesRoute> {
+                    CountryScreen(
+                        countryList = countryList,
+                        countryStations = countryStations,
+                        selectedCountry = selectedCountry,
+                        playerState = playerState,
+                        favoriteUuids = favoriteUuids,
+                        onLoadCountries = vm::loadCountries,
+                        onSelectCountry = vm::selectCountry,
+                        onBack = vm::clearCountrySelection,
+                        onPlay = { station -> vm.cancelRotation(); vm.play(station) },
+                        onToggleFavorite = vm::toggleFavorite,
+                        onStartCustomRotation = ::startCustomRotation,
+                        vm = vm,
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+                entry<SettingsRoute> {
+                    val settingsBack: () -> Unit = {
+                        if (playerState.station != null) {
+                            vm.showDetail()
+                        } else {
+                            backStack.clear()
+                            backStack.add(SearchRoute)
+                        }
+                    }
+                    BackHandler(onBack = settingsBack)
+                    SettingsScreen(
+                        settings = settings,
+                        onSetApiServer = { vm.updateSetting { setApiServer(it) } },
+                        onSetSearchLimit = { vm.updateSetting { setSearchLimit(it) } },
+                        onSetRandomBatchSize = { vm.updateSetting { setRandomBatchSize(it) } },
+                        onSetRotationMinutes = { vm.updateSetting { setRotationMinutes(it) }; vm.setLiveMinutes(it) },
+                        onSetVlcNetworkCachingMs = { vm.updateSetting { setVlcNetworkCachingMs(it) } },
+                        onSetShazamIntervalSeconds = { vm.updateSetting { setShazamIntervalSeconds(it) } },
+                        onSetSleepTimerMinutes = { vm.updateSetting { setSleepTimerMinutes(it) } },
+                        onSetThemeMode = { vm.updateSetting { setThemeMode(it) } },
+                        onSetShareService = vm::setShareService,
+                        onSetCustomServerName = vm::setCustomServerName,
+                        onSetAutoEntangleOnLaunch = { vm.updateSetting { setAutoEntangleOnLaunch(it) } },
+                        onSetWebDebugPanel = { vm.updateSetting { setWebDebugPanel(it) } },
+                        onSetWebAutoplay = { vm.updateSetting { setWebAutoplay(it) } },
+                        onSetMaxHistorySongs = { vm.updateSetting { setMaxHistorySongs(it) } },
+                        onExportFavorites = vm::exportFavorites,
+                        onImportFavorites = vm::importFavorites,
+                        onBack = settingsBack,
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+            },
+        )
     }
 }
