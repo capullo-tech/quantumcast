@@ -12,11 +12,11 @@ plugins {
 val buildTime: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
 
 android {
-    namespace = "com.quantumcast"
+    namespace = "tech.capullo.quantumcast"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.quantumcast"
+        applicationId = "tech.capullo.quantumcast"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
