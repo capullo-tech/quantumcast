@@ -29,9 +29,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import tech.capullo.quantumcast.data.model.TrackLookup
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RotationState
+import tech.capullo.source.radiobrowser.data.model.TrackLookup
 
 private fun countryCodeToFlag(code: String): String {
     if (code.length != 2) return ""

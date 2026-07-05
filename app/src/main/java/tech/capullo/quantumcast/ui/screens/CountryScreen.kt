@@ -22,11 +22,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import tech.capullo.quantumcast.data.model.Country
-import tech.capullo.quantumcast.data.model.Station
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.quantumcast.viewmodel.UiState
+import tech.capullo.source.radiobrowser.data.model.Country
+import tech.capullo.source.radiobrowser.data.model.Station
 
 private fun countryCodeToFlag(code: String): String {
     if (code.length != 2) return ""

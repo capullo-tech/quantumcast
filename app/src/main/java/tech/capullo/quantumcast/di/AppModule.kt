@@ -6,9 +6,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import tech.capullo.quantumcast.data.db.AppDatabase
-import tech.capullo.quantumcast.data.repository.RadioRepository
 import tech.capullo.quantumcast.data.settings.SettingsRepository
+import tech.capullo.source.radiobrowser.data.db.AppDatabase
+import tech.capullo.source.radiobrowser.data.repository.RadioRepository
 import javax.inject.Singleton
 
 /**

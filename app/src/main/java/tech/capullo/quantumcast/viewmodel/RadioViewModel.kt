@@ -15,17 +15,17 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import tech.capullo.quantumcast.data.db.FavoriteEntity
-import tech.capullo.quantumcast.data.db.FavoriteGroupEntity
-import tech.capullo.quantumcast.data.model.Country
-import tech.capullo.quantumcast.data.model.Station
-import tech.capullo.quantumcast.data.model.TrackLookup
-import tech.capullo.quantumcast.data.repository.RadioRepository
 import tech.capullo.quantumcast.data.settings.AppSettings
 import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.quantumcast.player.PlaybackService
-import tech.capullo.quantumcast.shazam.AudioCapturer
-import tech.capullo.quantumcast.shazam.ShazamRecognizer
+import tech.capullo.source.radiobrowser.data.db.FavoriteEntity
+import tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity
+import tech.capullo.source.radiobrowser.data.model.Country
+import tech.capullo.source.radiobrowser.data.model.Station
+import tech.capullo.source.radiobrowser.data.model.TrackLookup
+import tech.capullo.source.radiobrowser.data.repository.RadioRepository
+import tech.capullo.source.radiobrowser.shazam.AudioCapturer
+import tech.capullo.source.radiobrowser.shazam.ShazamRecognizer
 import java.io.InputStream
 import java.io.OutputStream
 import javax.inject.Inject
@@ -36,7 +36,7 @@ data class PlayerState(
     val isBuffering: Boolean = false,
     val bufferingPercent: Float = 0f,
     val icyTitle: String = "",
-    val currentTrack: tech.capullo.quantumcast.data.model.TrackLookup? = null,
+    val currentTrack: tech.capullo.source.radiobrowser.data.model.TrackLookup? = null,
 )
 
 sealed class UiState<out T> {
@@ -247,7 +247,7 @@ class RadioViewModel @Inject constructor(
                                 else -> stationName
                             }
                             if (displayName.isNotBlank() || svcState.snapcastCountry.isNotBlank()) {
-                                val base = ps.station ?: tech.capullo.quantumcast.data.model.Station()
+                                val base = ps.station ?: tech.capullo.source.radiobrowser.data.model.Station()
                                 base.copy(
                                     name = displayName.ifBlank { base.name },
                                     country = svcState.snapcastCountry.ifBlank { base.country },
@@ -271,7 +271,7 @@ class RadioViewModel @Inject constructor(
                         // branch as it does locally. When no identification, null → falls back to
                         // station.name + icyTitle, identical to local no-Shazam rule.
                         val snapTrack = if (isSnapclient && svcState.snapcastArtistName.isNotBlank()) {
-                            tech.capullo.quantumcast.data.model.TrackLookup(
+                            tech.capullo.source.radiobrowser.data.model.TrackLookup(
                                 icyTitle = svcState.icyTitle,
                                 trackName = svcState.snapcastTrackName,
                                 artistName = svcState.snapcastArtistName,
@@ -806,7 +806,7 @@ class RadioViewModel @Inject constructor(
         // Synthetic station so NowPlayingBar + Screen show the connected server
         _playerState.update {
             it.copy(
-                station = tech.capullo.quantumcast.data.model.Station(uuid = "snapclient-$host", name = host),
+                station = tech.capullo.source.radiobrowser.data.model.Station(uuid = "snapclient-$host", name = host),
                 isPlaying = false,
                 icyTitle = "",
                 currentTrack = null,

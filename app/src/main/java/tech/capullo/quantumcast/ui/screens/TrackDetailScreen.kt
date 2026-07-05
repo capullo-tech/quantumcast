@@ -70,12 +70,12 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import tech.capullo.quantumcast.R
-import tech.capullo.quantumcast.data.model.Station
-import tech.capullo.quantumcast.data.model.TrackLookup
 import tech.capullo.quantumcast.snapcast.Group
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.quantumcast.viewmodel.RotationState
+import tech.capullo.source.radiobrowser.data.model.Station
+import tech.capullo.source.radiobrowser.data.model.TrackLookup
 
 private fun countryCodeToFlagTD(code: String): String {
     if (code.length != 2) return ""

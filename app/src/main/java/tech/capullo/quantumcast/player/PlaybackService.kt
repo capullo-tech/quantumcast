@@ -52,6 +52,7 @@ import tech.capullo.quantumcast.snapcast.SnapcontrolCallbacks
 import tech.capullo.quantumcast.snapcast.SnapcontrolPlugin
 import tech.capullo.quantumcast.snapcast.SnapserverProcess
 import tech.capullo.quantumcast.snapcast.firstArtist
+import tech.capullo.source.radiobrowser.resolver.PlaylistResolver
 import java.io.FileOutputStream
 import kotlin.random.Random
 

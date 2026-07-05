@@ -25,11 +25,11 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import tech.capullo.quantumcast.data.db.FavoriteEntity
-import tech.capullo.quantumcast.data.db.FavoriteGroupEntity
-import tech.capullo.quantumcast.data.model.Station
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
+import tech.capullo.source.radiobrowser.data.db.FavoriteEntity
+import tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity
+import tech.capullo.source.radiobrowser.data.model.Station
 
 private fun FavoriteEntity.toStation() = Station(
     uuid = uuid,

@@ -32,13 +32,13 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
-import tech.capullo.quantumcast.data.model.Station
 import tech.capullo.quantumcast.player.PlaybackService
 import tech.capullo.quantumcast.snapcast.DiscoveredSnapserver
 import tech.capullo.quantumcast.snapcast.SnapserverDiscoveryManager
 import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
+import tech.capullo.source.radiobrowser.data.model.Station
 
 // Navigation3 tab destinations. @Serializable NavKeys (kotlinx-serialization is already applied)
 // so rememberNavBackStack can save/restore them across process death.

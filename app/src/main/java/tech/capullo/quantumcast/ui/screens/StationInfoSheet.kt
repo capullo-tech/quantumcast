@@ -22,7 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import tech.capullo.quantumcast.data.model.Station
+import tech.capullo.source.radiobrowser.data.model.Station
 
 private fun countryCodeToFlag(code: String): String {
     if (code.length != 2) return ""

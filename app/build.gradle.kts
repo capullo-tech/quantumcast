@@ -121,6 +121,14 @@ dependencies {
     // Snapcast native binaries - commit 78d1c48 includes channel switching + metadata passthrough
     implementation(libs.lib.snapcast.android)
 
+    // capullo-source-radiobrowser (Layer 3) - the radio ingress: Radio Browser API, favorites Room DB,
+    // Station/Country/TrackLookup models, PlaylistResolver, Shazam identification. The library recompose replaced QC's
+    // local data/{api,model,db,repository} + shazam/* + PlaylistResolver copies with this library (single
+    // source of truth). Its Retrofit/Gson/OkHttp/Room/NewPipe deps are internal to the lib (implementation
+    // scope) and present at runtime transitively; QC's own now-redundant direct declarations of those are
+    // left in place for this isolated commit and pruned in a later cleanup.
+    implementation(libs.capullo.source.radiobrowser)
+
     // Ktor - WebSocket client for Snapcast JSON-RPC control
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.websockets)
