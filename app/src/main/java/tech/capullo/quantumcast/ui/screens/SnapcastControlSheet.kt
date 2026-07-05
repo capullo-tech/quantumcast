@@ -330,8 +330,13 @@ fun SnapcastControlSheet(
                         onVolumeChange = { percent ->
                             onClientVolumeChange(client.id, client.config.volume.muted, percent)
                         },
-                        onMutedToggle = { muted ->
-                            onClientVolumeChange(client.id, muted, client.config.volume.percent)
+                        // Mute must preserve the volume the knob is CURRENTLY showing, not the
+                        // server-state percent: while a drag value (dragClientVols) or an optimistic
+                        // update is in flight, client.config.volume.percent can lag/diverge, so
+                        // reading it here made mute snap the volume to the stale value. The card
+                        // passes up its displayed percent instead (single source of truth).
+                        onMutedToggle = { muted, percent ->
+                            onClientVolumeChange(client.id, muted, percent)
                         },
                         onLatencyChange = { latencyMs ->
                             onClientLatencyChange(client.id, latencyMs)
@@ -367,7 +372,7 @@ private fun ClientCard(
     latency: Int,
     isSnapclient: Boolean = false,
     onVolumeChange: (Int) -> Unit,
-    onMutedToggle: (Boolean) -> Unit,
+    onMutedToggle: (Boolean, Int) -> Unit,
     onLatencyChange: (Int) -> Unit,
     onChannelCycle: (() -> Unit)? = null,
 ) {
@@ -420,7 +425,9 @@ private fun ClientCard(
                             muted = mutedState,
                             onMutedToggle = {
                                 mutedState = !mutedState
-                                onMutedToggle(mutedState)
+                                // Send the percent the knob is showing (volumeState), so toggling
+                                // mute never changes the volume value.
+                                onMutedToggle(mutedState, round(volumeState * 100f).toInt())
                             },
                             baseSize = knobBaseSize,
                             isSnapclient = isSnapclient,
