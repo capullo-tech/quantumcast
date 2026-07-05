@@ -1,0 +1,5 @@
+-keep class com.rg2.radio.data.model.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**

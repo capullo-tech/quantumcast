@@ -1,0 +1,64 @@
+Quantumcast
+Copyright 2026 capullo-tech
+
+This product includes software developed by and for the following projects:
+
+RadioCapullo (https://github.com/capullo-tech/RadioCapullo)
+  Copyright capullo-tech
+  The Snapcast Android integration, multiroom control architecture,
+  stream plugin protocol, and StreamOnProperties implementation in this
+  project are substantially derived from RadioCapullo.
+
+lib-snapcast-android (https://github.com/capullo-tech/lib-snapcast-android)
+  Copyright capullo-tech
+  Native Snapcast server and client libraries packaged for Android,
+  used under the terms of their respective licenses.
+
+Snapcast (https://github.com/badaix/snapcast)
+  Copyright 2014-2024 Johannes Pohl
+  Licensed under the GNU General Public License v3.0.
+  This product bundles and executes the Snapcast server and client as
+  separate processes and uses the Snapcast synchronous multiroom audio
+  protocol.
+
+snapweb (https://github.com/badaix/snapweb)
+  Copyright Johannes Pohl
+  Licensed under the GNU General Public License v3.0.
+  The embedded web player's stream/sync engine (webui/index.html) is a
+  port of snapweb's snapstream.ts.
+
+AndroidX Media3 / ExoPlayer (https://github.com/androidx/media)
+  Copyright The Android Open Source Project
+  Licensed under the Apache License 2.0.
+  Used for network radio stream decoding; a custom audio sink bridges
+  decoded PCM into the Snapcast audio pipeline.
+
+FFmpeg (https://ffmpeg.org)
+  Copyright the FFmpeg developers
+  Licensed under the GNU Lesser General Public License v2.1 or later.
+  Bundled as a software audio-decoding fallback via the androidx/media
+  decoder_ffmpeg module (Apache License 2.0), built from FFmpeg 6.0
+  sources (https://github.com/FFmpeg/FFmpeg, branch release/6.0) in the
+  default LGPL configuration with audio decoders only. The compilation
+  scripts and full rebuild procedure are documented in BUILD_FFMPEG.md
+  in this repository.
+
+NewPipe Extractor (https://github.com/TeamNewPipe/NewPipeExtractor)
+  Copyright TeamNewPipe
+  Licensed under the GNU General Public License v3.0.
+  Used for YouTube search without an API key.
+
+ZXing (https://github.com/zxing/zxing)
+  Copyright ZXing authors
+  Licensed under the Apache License 2.0.
+  Used for QR code generation.
+
+radio-browser.info (https://www.radio-browser.info)
+  Community-maintained internet radio station database.
+  Station data is retrieved via the radio-browser.info public API.
+
+This product also uses the following libraries, each licensed under the
+Apache License 2.0: AndroidX/Jetpack (Compose, Core, Lifecycle, Activity,
+Navigation, Room, DataStore, Media, AppCompat), Google Material
+Components, Kotlin and kotlinx libraries (coroutines, serialization),
+Ktor, OkHttp, Retrofit, Gson, Coil, and Reorderable (sh.calvin).

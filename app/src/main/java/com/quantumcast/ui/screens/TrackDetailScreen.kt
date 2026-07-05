@@ -1,0 +1,1327 @@
+package com.quantumcast.ui.screens
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Hearing
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Snooze
+import androidx.compose.material.icons.filled.Stop
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.*
+import androidx.compose.animation.core.*
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import com.quantumcast.R
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.material.icons.filled.SurroundSound
+import com.quantumcast.data.model.Station
+import com.quantumcast.data.model.TrackLookup
+import com.quantumcast.snapcast.Group
+import com.quantumcast.viewmodel.PlayerState
+import com.quantumcast.viewmodel.RadioViewModel
+import com.quantumcast.viewmodel.RotationState
+
+private fun countryCodeToFlagTD(code: String): String {
+    if (code.length != 2) return ""
+    val base = 0x1F1E6 - 0x41
+    return String(Character.toChars(code[0].uppercaseChar().code + base)) +
+           String(Character.toChars(code[1].uppercaseChar().code + base))
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun TrackDetailScreen(
+    playerState: PlayerState,
+    trackHistory: List<TrackLookup>,
+    isShazamRunning: Boolean = false,
+    rotationState: RotationState = RotationState(),
+    rotationQueue: List<Station> = emptyList(),
+    favoriteUuids: Set<String> = emptySet(),
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    onTogglePlayPause: () -> Unit,
+    onIdentifyNow: () -> Unit = {},
+    onCancelIdentify: () -> Unit = {},
+    onSkip: () -> Unit = {},
+    onSkipPrev: () -> Unit = {},
+    onToggleTimerPause: () -> Unit = {},
+    onStopRotation: () -> Unit = {},
+    onToggleFavorite: (Station) -> Unit = {},
+    onRemoveFromQueue: (Int) -> Unit = {},
+    onJumpToQueueStation: (Int) -> Unit = {},
+    onClearHistory: () -> Unit = {},
+    onDeleteHistoryAt: (Int) -> Unit = {},
+    sleepTimerActive: Boolean = false,
+    sleepTimerSecondsRemaining: Int = 0,
+    onToggleSleepTimer: () -> Unit = {},
+    streamStats: RadioViewModel.StreamStats? = null,
+    snapcastGroups: List<Group> = emptyList(),
+    snapclientChannel: String = "stereo",
+    onAdjustClientVolume: (clientId: String, muted: Boolean, percent: Int) -> Unit = { _, _, _ -> },
+    onAdjustClientLatency: (clientId: String, latencyMs: Int) -> Unit = { _, _ -> },
+    onSetSnapclientChannel: (String) -> Unit = {},
+    onChangeClientChannel: (clientId: String, channel: String) -> Unit = { _, _ -> },
+    isSnapclientMode: Boolean = false,
+    snapclientHost: String = "",
+    streamCanGoNext: Boolean = false,
+    streamCanGoPrevious: Boolean = false,
+    isStreamLocked: Boolean = false,
+    onToggleStreamLock: () -> Unit = {},
+    shareService: com.quantumcast.data.settings.ShareService = com.quantumcast.data.settings.ShareService.YOUTUBE,
+    onSetShareService: (com.quantumcast.data.settings.ShareService) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var showHistorySheet by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
+    var showSnapcastSheet by remember { mutableStateOf(false) }
+    var swipeDx by remember { mutableFloatStateOf(0f) }
+
+    BackHandler { onBack() }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { delta -> swipeDx += delta },
+                onDragStarted = { swipeDx = 0f },
+                onDragStopped = { if (swipeDx > 120f) onBack() else swipeDx = 0f }
+            )
+    ) {
+        val station = playerState.station
+        val identifiedTrack = playerState.currentTrack
+
+        // Art: shows Shazam artwork when identified, falls back to station favicon.
+        // In snapclient mode, station.favicon is updated from StreamOnProperties art URL.
+        var stableArtUrl by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(station?.uuid) {
+            stableArtUrl = station?.favicon?.takeIf { it.isNotEmpty() }
+        }
+        LaunchedEffect(identifiedTrack?.artworkUrl) {
+            stableArtUrl = identifiedTrack?.artworkUrl?.takeIf { it.isNotBlank() }
+                ?: station?.favicon?.takeIf { it.isNotEmpty() }
+        }
+        LaunchedEffect(station?.favicon) {
+            if (identifiedTrack == null) {
+                stableArtUrl = station?.favicon?.takeIf { it.isNotEmpty() }
+            }
+        }
+
+        TopAppBar(
+            title = {},
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            actions = {
+                if (!isSnapclientMode) {
+                    HearingButton(
+                        isRunning = isShazamRunning,
+                        onClick = if (isShazamRunning) onCancelIdentify else onIdentifyNow,
+                        onLongPress = { showHistorySheet = true }
+                    )
+                }
+                IconButton(onClick = { showSnapcastSheet = true }) {
+                    // Clients icon - the count of OTHER connected clients (self
+                    // excluded, same rule as the web player) sits in the icon
+                    // center in place of the dot; alone = plain surround-sound.
+                    // Tint still keys on any connection so the icon stays lit
+                    // while broadcasting solo.
+                    val iconContext = LocalContext.current
+                    val ownClientId = remember {
+                        com.quantumcast.snapcast.SnapclientProcess.localHostId(iconContext)
+                    }
+                    val totalConnected = snapcastGroups.sumOf { g -> g.clients.count { c -> c.connected } }
+                    val otherCount = snapcastGroups.sumOf { g ->
+                        g.clients.count { c -> c.connected && c.id != ownClientId }
+                    }
+                    val clientsTint = if (totalConnected > 0)
+                                          if (isSnapclientMode) MaterialTheme.colorScheme.error
+                                          else MaterialTheme.colorScheme.primary
+                                      else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    if (otherCount > 0) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painterResource(R.drawable.ic_surround_sound_nodot),
+                                contentDescription = "Connected devices",
+                                tint = clientsTint,
+                            )
+                            Text(
+                                text = if (otherCount > 99) "99" else "$otherCount",
+                                color = clientsTint,
+                                fontSize = 8.sp,
+                                lineHeight = 8.sp,
+                                letterSpacing = 0.sp,
+                                fontWeight = FontWeight.Black,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    } else {
+                        Icon(
+                            Icons.Default.SurroundSound,
+                            contentDescription = "Connected devices",
+                            tint = clientsTint,
+                        )
+                    }
+                }
+                if (rotationState.isActive) {
+                    IconButton(onClick = { showQueueSheet = true }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.FormatListBulleted,
+                            contentDescription = "Queue",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                IconButton(onClick = onToggleSleepTimer) {
+                    if (sleepTimerActive && sleepTimerSecondsRemaining > 0) {
+                        val m = sleepTimerSecondsRemaining / 60
+                        val s = sleepTimerSecondsRemaining % 60
+                        Text(
+                            text = if (m > 0) "$m:${s.toString().padStart(2, '0')}" else "${s}s",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Snooze,
+                            contentDescription = "Sleep timer",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background
+            )
+        )
+
+        // Portrait layout - art fills screen width edge-to-edge, controls anchored below
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(8.dp))
+
+            val canSwipeArt = rotationState.isActive || (isSnapclientMode && (streamCanGoNext || streamCanGoPrevious))
+            var artSwipeDx by remember { mutableFloatStateOf(0f) }
+            val artScope = rememberCoroutineScope()
+
+            // Art area: fills full width, flexible height, preserves aspect ratio
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .pointerInput(canSwipeArt, onSkip, onSkipPrev) {
+                        if (!canSwipeArt) return@pointerInput
+                        detectHorizontalDragGestures(
+                            onDragStart = { artSwipeDx = 0f },
+                            onDragEnd = {
+                                val dx = artSwipeDx
+                                when {
+                                    dx < -80f -> { onSkip(); artSwipeDx = 0f }
+                                    dx >  80f -> { onSkipPrev(); artSwipeDx = 0f }
+                                    else -> artScope.launch {
+                                        Animatable(dx).animateTo(0f,
+                                            spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                                        ) { artSwipeDx = value }
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                val dx = artSwipeDx
+                                artScope.launch {
+                                    Animatable(dx).animateTo(0f,
+                                        spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                                    ) { artSwipeDx = value }
+                                }
+                            },
+                            onHorizontalDrag = { _, delta -> artSwipeDx += delta }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = artSwipeDx
+                            alpha = (1f - kotlin.math.abs(artSwipeDx) / 600f).coerceAtLeast(0.5f)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (stableArtUrl != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context).data(stableArtUrl).crossfade(300).build(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                            onError = { stableArtUrl = null }
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(80.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            val isFavorite = station?.uuid?.let { it in favoriteUuids } == true
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                NowPlayingHero(
+                    station, identifiedTrack, playerState.icyTitle, context,
+                    shareService = shareService,
+                    onSetShareService = onSetShareService,
+                    canSwipe = canSwipeArt,
+                    onSwipeNext = onSkip,
+                    onSwipePrev = onSkipPrev,
+                    isSnapclientMode = isSnapclientMode,
+                )
+                if (station != null) NowPlayingInfo(
+                    station, streamStats, context,
+                    isFavorite = isFavorite,
+                    isSnapclientMode = isSnapclientMode,
+                    onToggleFavorite = { onToggleFavorite(station) },
+                )
+                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked)
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (showHistorySheet) {
+        TrackHistorySheet(
+            trackHistory = trackHistory,
+            onDismiss = { showHistorySheet = false },
+            onClearAll = onClearHistory,
+            onDeleteAt = onDeleteHistoryAt,
+            context = context
+        )
+    }
+
+    if (showQueueSheet && rotationState.isActive) {
+        RotationQueueSheet(
+            rotationState = rotationState,
+            queue = rotationQueue,
+            favoriteUuids = favoriteUuids,
+            onDismiss = { showQueueSheet = false },
+            onToggleFavorite = onToggleFavorite,
+            onRemoveAt = { index -> onRemoveFromQueue(index); if (rotationQueue.size <= 1) showQueueSheet = false },
+            onJumpTo = { index -> onJumpToQueueStation(index); showQueueSheet = false }
+        )
+    }
+
+    if (showSnapcastSheet) {
+        SnapcastControlSheet(
+            groups = snapcastGroups,
+            snapclientChannel = snapclientChannel,
+            onClientVolumeChange = onAdjustClientVolume,
+            onClientLatencyChange = onAdjustClientLatency,
+            onSetChannel = onSetSnapclientChannel,
+            onChangeClientChannel = onChangeClientChannel,
+            isBroadcaster = !isSnapclientMode,
+            isStreamLocked = isStreamLocked,
+            onToggleStreamLock = onToggleStreamLock,
+            onDismiss = { showSnapcastSheet = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HearingButton(
+    isRunning: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.Unspecified
+) {
+    val transition = rememberInfiniteTransition(label = "hear_breathe")
+    val breatheScale by transition.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathe"
+    )
+    val resolvedTint = when {
+        tint != Color.Unspecified -> tint
+        isRunning -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Hearing,
+            contentDescription = if (isRunning) "Cancel recognition" else "Identify song",
+            tint = resolvedTint,
+            modifier = Modifier
+                .size(24.dp)
+                .scale(if (isRunning) breatheScale else 1f)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RotationQueueSheet(
+    rotationState: RotationState,
+    queue: List<Station>,
+    favoriteUuids: Set<String> = emptySet(),
+    onDismiss: () -> Unit,
+    onToggleFavorite: (Station) -> Unit = {},
+    onRemoveAt: (Int) -> Unit = {},
+    onJumpTo: (Int) -> Unit = {}
+) {
+    var infoStation by remember { mutableStateOf<Station?>(null) }
+    val listState = rememberLazyListState()
+    val currentIndex = (rotationState.stationIndex - 1).coerceAtLeast(0)
+    LaunchedEffect(Unit) {
+        if (queue.isNotEmpty()) listState.scrollToItem(currentIndex)
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Queue",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (rotationState.totalStations > 0) {
+                        Text(
+                            "Station ${rotationState.stationIndex} of ${rotationState.totalStations}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                itemsIndexed(queue, key = { _, s -> s.uuid }) { index, station ->
+                    val isCurrent = index + 1 == rotationState.stationIndex
+                    val currentIndex by rememberUpdatedState(index)
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        positionalThreshold = { it * 0.72f }
+                    )
+                    LaunchedEffect(dismissState.currentValue) {
+                        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) onRemoveAt(currentIndex)
+                    }
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = false,
+                        backgroundContent = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.errorContainer),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 16.dp),
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (isCurrent) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surface,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable { onJumpTo(index) }
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${index + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.width(24.dp)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (station.favicon.isNotEmpty()) {
+                                    AsyncImage(
+                                        model = station.favicon,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.Radio,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    station.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = if (isCurrent) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (station.country.isNotEmpty()) {
+                                    Text(
+                                        station.country,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { infoStation = station },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = "Info",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onToggleFavorite(station) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                val isFav = station.uuid in favoriteUuids
+                                Icon(
+                                    if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = if (isFav) "Remove favorite" else "Add favorite",
+                                    tint = if (isFav) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    infoStation?.let { s ->
+        StationInfoSheet(
+            station = s,
+            isFavorite = s.uuid in favoriteUuids,
+            onDismiss = { infoStation = null },
+            onPlay = { infoStation = null },
+            onToggleFavorite = { onToggleFavorite(s); infoStation = null }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun TrackHistorySheet(
+    trackHistory: List<TrackLookup>,
+    onDismiss: () -> Unit,
+    onClearAll: () -> Unit,
+    onDeleteAt: (Int) -> Unit,
+    context: Context
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Detection History",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                if (trackHistory.isNotEmpty()) {
+                    TextButton(onClick = onClearAll) { Text("Clear All") }
+                }
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(trackHistory, key = { _, t -> t.timestamp }) { index, track ->
+                    val currentIndex by rememberUpdatedState(index)
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        positionalThreshold = { it * 0.72f }
+                    )
+                    LaunchedEffect(dismissState.currentValue) {
+                        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) onDeleteAt(currentIndex)
+                    }
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        enableDismissFromStartToEnd = false,
+                        backgroundContent = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.errorContainer),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 16.dp),
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    ) {
+                        val timeStr = remember(track.timestamp) {
+                            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date(track.timestamp))
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = timeStr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.width(36.dp)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (track.artworkUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = track.artworkUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else if (track.isLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = track.trackName.ifBlank { track.icyTitle },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                )
+                                if (track.artistName.isNotBlank()) {
+                                    Text(
+                                        text = track.artistName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        maxLines = 1,
+                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                    )
+                                }
+                                if (track.stationName.isNotBlank()) {
+                                    val flag = countryCodeToFlagTD(track.stationCountryCode)
+                                    Text(
+                                        text = if (flag.isNotEmpty()) "$flag ${track.stationName}" else track.stationName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        maxLines = 1,
+                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                    )
+                                }
+                            }
+                            if (!track.isLoading) {
+                                val availableServices = remember(track.youtubeUrl, track.spotifyUrl, track.appleMusicUrl) {
+                                    buildList {
+                                        if (track.youtubeUrl.isNotBlank()) add(com.quantumcast.data.settings.ShareService.YOUTUBE)
+                                        if (track.spotifyUrl.isNotBlank()) add(com.quantumcast.data.settings.ShareService.SPOTIFY)
+                                        if (track.appleMusicUrl.isNotBlank()) add(com.quantumcast.data.settings.ShareService.APPLE_MUSIC)
+                                    }
+                                }
+                                if (availableServices.isNotEmpty()) {
+                                    var selectedService by remember(track.youtubeUrl, track.spotifyUrl, track.appleMusicUrl) {
+                                        mutableStateOf(availableServices.first())
+                                    }
+                                    val selectedUrl = when (selectedService) {
+                                        com.quantumcast.data.settings.ShareService.YOUTUBE -> track.youtubeUrl
+                                        com.quantumcast.data.settings.ShareService.SPOTIFY -> track.spotifyUrl
+                                        com.quantumcast.data.settings.ShareService.APPLE_MUSIC -> track.appleMusicUrl
+                                    }
+                                    val serviceIconRes = when (selectedService) {
+                                        com.quantumcast.data.settings.ShareService.YOUTUBE -> R.drawable.ic_youtube
+                                        com.quantumcast.data.settings.ShareService.SPOTIFY -> R.drawable.ic_spotify
+                                        com.quantumcast.data.settings.ShareService.APPLE_MUSIC -> R.drawable.ic_apple_music
+                                    }
+                                    IconButton(
+                                        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedUrl))) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.PlayCircle,
+                                            contentDescription = "Open",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    context.startActivity(Intent.createChooser(
+                                                        Intent(Intent.ACTION_SEND).apply {
+                                                            type = "text/plain"
+                                                            putExtra(Intent.EXTRA_TEXT, selectedUrl)
+                                                        }, null
+                                                    ))
+                                                },
+                                                onLongClick = {
+                                                    selectedService = availableServices[(availableServices.indexOf(selectedService) + 1) % availableServices.size]
+                                                }
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(serviceIconRes),
+                                            contentDescription = "Share (hold to cycle)",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NowPlayingHero(
+    station: Station?,
+    identifiedTrack: TrackLookup?,
+    icyTitle: String,
+    context: Context,
+    shareService: com.quantumcast.data.settings.ShareService = com.quantumcast.data.settings.ShareService.YOUTUBE,
+    onSetShareService: (com.quantumcast.data.settings.ShareService) -> Unit = {},
+    canSwipe: Boolean = false,
+    onSwipeNext: () -> Unit = {},
+    onSwipePrev: () -> Unit = {},
+    isSnapclientMode: Boolean = false,
+) {
+    if (identifiedTrack != null) {
+        val urls = mapOf(
+            com.quantumcast.data.settings.ShareService.YOUTUBE to identifiedTrack.youtubeUrl,
+            com.quantumcast.data.settings.ShareService.SPOTIFY to identifiedTrack.spotifyUrl,
+            com.quantumcast.data.settings.ShareService.APPLE_MUSIC to identifiedTrack.appleMusicUrl,
+        )
+        val availableServices = com.quantumcast.data.settings.ShareService.entries
+            .filter { urls[it]?.isNotBlank() == true }
+        val activeService = if (urls[shareService]?.isNotBlank() == true) shareService
+            else availableServices.firstOrNull() ?: shareService
+        val activeUrl = urls[activeService] ?: ""
+
+        fun shareUrl(url: String) {
+            if (url.isBlank()) return
+            context.startActivity(Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) }, null
+            ))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(Modifier.width(40.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = identifiedTrack.trackName,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                )
+                if (identifiedTrack.artistName.isNotBlank()) {
+                    Text(
+                        text = identifiedTrack.artistName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                    )
+                }
+            }
+
+            // Right: smart share - tap shares active service, long-press cycles to next
+            if (availableServices.isNotEmpty()) {
+                val serviceIconRes = when (activeService) {
+                    com.quantumcast.data.settings.ShareService.YOUTUBE -> R.drawable.ic_youtube
+                    com.quantumcast.data.settings.ShareService.SPOTIFY -> R.drawable.ic_spotify
+                    com.quantumcast.data.settings.ShareService.APPLE_MUSIC -> R.drawable.ic_apple_music
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .combinedClickable(
+                            onClick = { shareUrl(activeUrl) },
+                            onLongClick = {
+                                val next = availableServices[(availableServices.indexOf(activeService) + 1) % availableServices.size]
+                                onSetShareService(next)
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(serviceIconRes),
+                        contentDescription = "Share (hold to cycle)",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            } else {
+                Spacer(Modifier.width(40.dp))
+            }
+        }
+    } else if (station != null) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (isSnapclientMode) {
+                val parts = station.name.split(" - ", limit = 2)
+                val serverName = parts.getOrElse(0) { station.name }
+                val stationName = parts.getOrNull(1)
+                val redColor = MaterialTheme.colorScheme.error
+                val text = buildAnnotatedString {
+                    pushStyle(SpanStyle(color = redColor, fontWeight = FontWeight.Bold))
+                    append(serverName)
+                    pop()
+                    if (stationName != null) {
+                        append(" - $stationName")
+                    }
+                }
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                )
+            } else {
+                Text(
+                    text = station.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                )
+            }
+            if (icyTitle.isNotBlank() && !icyTitle.equals(station.name, ignoreCase = true)) {
+                Text(
+                    text = icyTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NowPlayingInfo(
+    station: Station,
+    streamStats: RadioViewModel.StreamStats?,
+    context: Context,
+    isFavorite: Boolean = false,
+    isSnapclientMode: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
+) {
+    val flag = countryCodeToFlagTD(station.countryCode)
+    val quality = buildString {
+        if (station.codec.isNotEmpty()) append(station.codec)
+        if (station.bitrate > 0) { if (isNotEmpty()) append(" · "); append("${station.bitrate} kbps") }
+    }
+    val allTags = remember(station.tags) {
+        station.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+    var showStats by remember { mutableStateOf(false) }
+
+    if (showStats) {
+        StatsDialog(station = station, streamStats = streamStats, onDismiss = { showStats = false })
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (station.country.isNotEmpty()) {
+            Text(
+                text = "$flag ${station.country}".trim(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (quality.isNotEmpty()) {
+                Text(
+                    text = quality,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            IconButton(
+                onClick = { showStats = true },
+                modifier = Modifier.size(20.dp)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "Stats",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+        if (station.name.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val nameText = if (isSnapclientMode) {
+                    val parts = station.name.split(" - ", limit = 2)
+                    val serverName = parts[0]
+                    val stationPart = parts.getOrNull(1)
+                    buildAnnotatedString {
+                        pushStyle(SpanStyle(
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                        ))
+                        append(serverName)
+                        pop()
+                        if (stationPart != null) append(" - $stationPart")
+                    }
+                } else {
+                    buildAnnotatedString { append(station.name) }
+                }
+                Text(
+                    text = nameText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE)
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+        if (station.streamUrl.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(Modifier.width(28.dp))
+                Text(
+                    text = station.streamUrl,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE)
+                )
+                IconButton(
+                    onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("stream_url", station.streamUrl))
+                        Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy URL",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+        if (allTags.isNotEmpty()) {
+            Text(
+                text = allTags.joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NowPlayingControls(
+    isPlaying: Boolean,
+    isBuffering: Boolean = false,
+    bufferingPercent: Float = 0f,
+    rotationState: RotationState,
+    onTogglePlayPause: () -> Unit,
+    onSkip: () -> Unit,
+    onSkipPrev: () -> Unit = {},
+    onToggleTimerPause: () -> Unit = {},
+    isSnapclientMode: Boolean = false,
+    streamCanGoNext: Boolean = false,
+    streamCanGoPrevious: Boolean = false,
+    isStreamLocked: Boolean = false,
+) {
+    val lockedInClient = isSnapclientMode && isStreamLocked
+    // Blinking alpha for paused timer - always create the transition, gate usage
+    val inf = rememberInfiniteTransition(label = "blink")
+    val blinkAnimAlpha by inf.animateFloat(
+        initialValue = 1f, targetValue = 0.2f, label = "blink",
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    val blinkAlpha = if (rotationState.timerPaused) blinkAnimAlpha else 1f
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val snapTonalColors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            disabledContainerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.38f),
+            disabledContentColor = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.38f),
+        )
+        val snapFilledColors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError,
+            disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.38f),
+            disabledContentColor = MaterialTheme.colorScheme.onError.copy(alpha = 0.38f),
+        )
+
+        // Prev - visible during rotation, in snapclient mode when server supports it, or when locked
+        if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
+            FilledTonalIconButton(
+                onClick = onSkipPrev,
+                enabled = !lockedInClient,
+                modifier = Modifier.size(48.dp).alpha(if (lockedInClient) 0.38f else 1f),
+                colors = if (isSnapclientMode) snapTonalColors else IconButtonDefaults.filledTonalIconButtonColors()
+            ) {
+                Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(24.dp))
+            }
+        }
+
+        // Play / Pause - always centered at 64dp; shows lock when broadcaster has locked
+        Box(contentAlignment = Alignment.Center) {
+            FilledIconButton(
+                onClick = onTogglePlayPause,
+                enabled = !lockedInClient,
+                modifier = Modifier.size(64.dp).alpha(if (lockedInClient) 0.38f else 1f),
+                colors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors()
+            ) {
+                if (lockedInClient) {
+                    Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(32.dp))
+                } else if (isBuffering) {
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            progress = { (bufferingPercent / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier.size(36.dp),
+                            strokeWidth = 3.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                        )
+                        Text(
+                            text = "${bufferingPercent.toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
+
+        // Next - ring + button when rotation active (only for local mode); plain button in snapclient mode
+        when {
+            rotationState.isActive && !isSnapclientMode -> {
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        progress = { rotationState.progress },
+                        modifier = Modifier.size(64.dp).alpha(blinkAlpha),
+                        strokeWidth = 3.dp,
+                        color = if (rotationState.timerPaused) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .pointerInput(onSkip, onToggleTimerPause) {
+                                detectTapGestures(
+                                    onTap = { onSkip() },
+                                    onLongPress = { onToggleTimerPause() }
+                                )
+                            },
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.SkipNext, "Skip (long-press to pause timer)", modifier = Modifier.size(24.dp))
+                        }
+                    }
+                }
+            }
+            isSnapclientMode && (streamCanGoNext || lockedInClient) -> {
+                FilledTonalIconButton(
+                    onClick = onSkip,
+                    enabled = !lockedInClient,
+                    modifier = Modifier.size(48.dp).alpha(if (lockedInClient) 0.38f else 1f),
+                    colors = snapTonalColors
+                ) {
+                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsDialog(
+    station: Station,
+    streamStats: RadioViewModel.StreamStats?,
+    onDismiss: () -> Unit
+) {
+    val rows = buildList {
+        val codec = streamStats?.codec?.takeIf { it.isNotEmpty() } ?: station.codec.takeIf { it.isNotEmpty() }
+        val bitrate = streamStats?.bitrate?.takeIf { it > 0 } ?: station.bitrate.takeIf { it > 0 }
+        if (codec != null)   add("Codec"       to codec)
+        if (bitrate != null) add("Bitrate"     to "$bitrate kbps")
+        if (streamStats != null) {
+            add("Sample rate" to "${streamStats.sampleRate} Hz")
+            add("Channels"    to when (streamStats.channels) { 1 -> "Mono"; 2 -> "Stereo"; else -> "${streamStats.channels}ch" })
+        } else {
+            add("Sample rate" to "-")
+            add("Channels"    to "-")
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Stats for nerds", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                rows.forEach { (label, value) ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(88.dp)
+                        )
+                        Text(
+                            text = value,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
