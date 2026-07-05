@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project sources
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Check spotless
+        run: ./gradlew spotlessCheck --no-configuration-cache
+      # ubuntu-latest ships the Android SDK. No submodules: the FFmpeg decoder aar
+      # is committed (app/libs/) and lib-snapcast-android resolves from jitpack.
+      - name: Build APK
+        run: ./gradlew :app:assembleProdDebug
+      - name: Upload build outputs (APK)
+        uses: actions/upload-artifact@v4
+        with:
+          name: quantumcast-${{ github.sha }}
+          path: '**/build/outputs/apk/prod/debug/*.apk'
