@@ -108,14 +108,15 @@ dependencies {
     // (replaces libvlc-all + its sout transcode hack; see VLC_ALTERNATIVES.md)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
-    // FFmpeg audio decoders - fallback for codecs device MediaCodec lacks.
-    // Self-built from androidx/media@1.9.0 decoder_ffmpeg + FFmpeg 6.0 with
-    // ONLY mp3/aac/vorbis/opus/flac enabled (~2.3MB all ABIs). Rebuild
-    // procedure: see BUILD_FFMPEG.md. Transitive deps (media3-decoder) are
-    // satisfied by media3-exoplayer above - file deps carry none themselves.
-    // NOTE: stays a vendored aar for now; swaps to the lib-media3-ffmpeg-android
-    // jitpack coordinate at the library recompose onto capullo-audio.
-    implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
+    // FFmpeg audio decoders - fallback for codecs device MediaCodec lacks
+    // (mp3/aac/vorbis/opus/flac, 4 ABIs). Promoted from the former vendored
+    // app/libs/lib-decoder-ffmpeg-release.aar to the Layer-0 org repo
+    // com.github.capullo-tech:lib-media3-ffmpeg-android (same bytes, jitpack, pinned by
+    // commit). Bare-artifact POM w/ packaging=aar → libffmpegJNI.so unpacks into the APK;
+    // DefaultRenderersFactory loads FfmpegAudioRenderer reflectively (no compile ref).
+    // The FFmpeg source/build procedure + LGPL NOTICE stay in the repo (BUILD_FFMPEG.md /
+    // NOTICE) - QC's APK still redistributes libffmpegJNI.so.
+    implementation(libs.lib.media3.ffmpeg.android)
 
     // Snapcast native binaries - commit 78d1c48 includes channel switching + metadata passthrough
     implementation(libs.lib.snapcast.android)

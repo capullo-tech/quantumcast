@@ -33,6 +33,12 @@ reorderable = "2.4.3"
 zxing = "3.5.3"
 newpipe = "v0.24.2"
 libSnapcast = "78d1c48"
+# lib-media3-ffmpeg-android (Layer 0) via jitpack - prebuilt media3 decoder_ffmpeg AAR (FFmpeg 6.0,
+# mp3/aac/vorbis/opus/flac, 4 ABIs), pinned by commit. Promotes QC's former vendored
+# app/libs/lib-decoder-ffmpeg-release.aar . Bare-artifact POM w/ packaging=aar → the
+# jni .so unpacks into the APK. NOTE: QC's APK still ships libffmpegJNI.so, so the FFmpeg LGPL
+# redistribution obligation (NOTICE / BUILD_FFMPEG.md) stays QC's - do NOT delete those.
+libMedia3Ffmpeg = "31dcef4545"
 # --- Test ---
 junit = "4.13.2"
 
@@ -87,6 +93,7 @@ zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 newpipe-extractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "newpipe" }
 # Snapcast native binaries (Layer 0, jitpack)
 lib-snapcast-android = { module = "com.github.capullo-tech.lib-snapcast-android:lib-snapcast-android", version.ref = "libSnapcast" }
+lib-media3-ffmpeg-android = { module = "com.github.capullo-tech:lib-media3-ffmpeg-android", version.ref = "libMedia3Ffmpeg" }
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
 
