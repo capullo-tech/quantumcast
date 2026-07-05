@@ -2,10 +2,13 @@ name: Release
 
 on:
   push:
-    branches:
-      - '**'
+    # Only version tags publish a GitHub Release. Regular pushes still run Build.yml on their own,
+    # so the APK is available as a workflow artifact - this just stops every push to every branch
+    # from republishing a public `preview` prerelease (clutter on a public repo). Tag with `vX.Y.Z`
+    # to cut a release. (The `else` preview path in the job below is now unreachable and kept only
+    # for reference / an easy revert.)
     tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'v*' # e.g. v1.0, v20.15.10
 
 permissions:
   contents: write
