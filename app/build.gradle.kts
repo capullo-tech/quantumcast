@@ -106,20 +106,14 @@ dependencies {
     // Media3/ExoPlayer - decodes radio streams; a TeeAudioProcessor in a custom
     // DefaultAudioSink chain writes 44100:16:2 PCM into the Snapcast FIFO
     // (replaces libvlc-all + its sout transcode hack; see VLC_ALTERNATIVES.md)
+    // Media3/ExoPlayer - QC's PlaybackService still owns the ExoPlayer→FIFO glue (Strategy 1), so
+    // media3 stays a DIRECT compile dep. The native .so decoders it needs are pulled transitively:
+    // lib-snapcast-android (12 snapcast .so) and lib-media3-ffmpeg-android (libffmpegJNI.so, loaded
+    // reflectively by FifoRenderersFactory) both come via capullo-audio's runtime deps - QC no longer
+    // declares them directly (a later cleanup). The FFmpeg LGPL NOTICE / BUILD_FFMPEG.md stay in the
+    // repo since QC's APK still redistributes libffmpegJNI.so.
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
-    // FFmpeg audio decoders - fallback for codecs device MediaCodec lacks
-    // (mp3/aac/vorbis/opus/flac, 4 ABIs). Promoted from the former vendored
-    // app/libs/lib-decoder-ffmpeg-release.aar to the Layer-0 org repo
-    // com.github.capullo-tech:lib-media3-ffmpeg-android (same bytes, jitpack, pinned by
-    // commit). Bare-artifact POM w/ packaging=aar → libffmpegJNI.so unpacks into the APK;
-    // DefaultRenderersFactory loads FfmpegAudioRenderer reflectively (no compile ref).
-    // The FFmpeg source/build procedure + LGPL NOTICE stay in the repo (BUILD_FFMPEG.md /
-    // NOTICE) - QC's APK still redistributes libffmpegJNI.so.
-    implementation(libs.lib.media3.ffmpeg.android)
-
-    // Snapcast native binaries - commit 78d1c48 includes channel switching + metadata passthrough
-    implementation(libs.lib.snapcast.android)
 
     // capullo-source-radiobrowser (Layer 3) - the radio ingress: Radio Browser API, favorites Room DB,
     // Station/Country/TrackLookup models, PlaylistResolver, Shazam identification. The library recompose replaced QC's
@@ -134,34 +128,17 @@ dependencies {
     // + PlaybackController), Nsd/Discovery, and the ExoPlayer→FIFO sink. The library recompose replaced QC's local
     // snapcast/* + player/FifoAudioSink copies with this library. QC keeps its own PlaybackService
     // orchestration and drives the plugin via an in-service NowPlaying adapter (Strategy 1 - the
-    // CapulloAudioEngine facade is intentionally not used). Brings lib-snapcast, lib-media3-ffmpeg,
-    // ktor and kotlinx-serialization transitively (QC's now-redundant direct declarations are pruned
-    // in a later cleanup).
+    // CapulloAudioEngine facade is intentionally not used). Also the sole (transitive) provider of the
+    // snapcast + ffmpeg native .so and of ktor (its SnapcastControlClient websocket) - QC references
+    // none of those at compile time anymore, so their former direct declarations were dropped here.
     implementation(libs.capullo.audio)
 
-    // Ktor - WebSocket client for Snapcast JSON-RPC control
-    implementation(libs.ktor.client.okhttp)
-    implementation(libs.ktor.client.websockets)
-    implementation(libs.ktor.serialization.kotlinx.json)
-
-    // Serialization - Snapcast JSON-RPC types
+    // Serialization runtime - Navigation3 `@Serializable data object … : NavKey` route keys.
     implementation(libs.kotlinx.serialization.json)
 
-    // Network
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging.interceptor)
-
-    // Room (favorites)
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-
-    // Hilt (DI) - @HiltAndroidApp / @HiltViewModel; a second KSP processor alongside Room
+    // Hilt (DI) - @HiltAndroidApp / @HiltViewModel; drives KSP.
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
-    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
 
     // Images
     implementation(libs.coil.compose)
@@ -177,9 +154,6 @@ dependencies {
 
     // QR code generation (share listening address in Qcast tab)
     implementation(libs.zxing.core)
-
-    // NewPipe Extractor - YouTube search without API key
-    implementation(libs.newpipe.extractor)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

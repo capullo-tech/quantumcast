@@ -1304,7 +1304,7 @@ class PlaybackService : Service() {
         snapserverNsd = null
         snapcastControlJob?.cancel()
         snapcastControlJob = null
-        snapcastControl?.client?.close()
+        snapcastControl?.close()
         snapcastControl = null
         snapserverJob?.cancel()
         snapserverJob = null
