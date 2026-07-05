@@ -1,9 +1,11 @@
 package tech.capullo.quantumcast.ui.screens
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,9 +15,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.*
-import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,8 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -37,7 +37,7 @@ private fun countryCodeToFlag(code: String): String {
     if (code.length != 2) return ""
     val base = 0x1F1E6 - 0x41
     return String(Character.toChars(code[0].uppercaseChar().code + base)) +
-           String(Character.toChars(code[1].uppercaseChar().code + base))
+        String(Character.toChars(code[1].uppercaseChar().code + base))
 }
 
 @Composable
@@ -53,13 +53,13 @@ fun NowPlayingBar(
     onSkipPrev: () -> Unit = {},
     onSkip: () -> Unit = {},
     onOpenDetail: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
         visible = state.station != null,
         enter = slideInVertically { it },
         exit = slideOutVertically { it },
-        modifier = modifier
+        modifier = modifier,
     ) {
         val station = state.station ?: return@AnimatedVisibility
 
@@ -91,14 +91,14 @@ fun NowPlayingBar(
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onOpenDetail)
                     .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 AsyncImage(
                     model = barArt,
@@ -106,7 +106,7 @@ fun NowPlayingBar(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(MaterialTheme.colorScheme.surface),
                 )
 
                 Spacer(Modifier.width(12.dp))
@@ -120,13 +120,16 @@ fun NowPlayingBar(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                     )
                     val shazamLine = latestTrack
                         ?.takeIf { !it.notFound && it.trackName.isNotBlank() }
                         ?.let { t ->
-                            if (t.artistName.isNotBlank()) "${t.artistName} - ${t.trackName}"
-                            else t.trackName
+                            if (t.artistName.isNotBlank()) {
+                                "${t.artistName} - ${t.trackName}"
+                            } else {
+                                t.trackName
+                            }
                         }
                     val subtitle = shazamLine ?: state.icyTitle.ifEmpty { station.country }
                     if (subtitle.isNotEmpty()) {
@@ -135,14 +138,14 @@ fun NowPlayingBar(
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             color = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                         )
                     }
                     if (state.isBuffering) {
                         Text(
                             text = "Connecting...",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -150,29 +153,38 @@ fun NowPlayingBar(
                 val lockedInClient = isSnapclientMode && isStreamLocked
                 if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
                     IconButton(onClick = onSkipPrev, enabled = !lockedInClient) {
-                        Icon(Icons.Default.SkipPrevious, "Previous",
+                        Icon(
+                            Icons.Default.SkipPrevious,
+                            "Previous",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f))
+                            modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
+                        )
                     }
                 }
                 IconButton(onClick = onTogglePlayPause, enabled = !lockedInClient) {
                     if (lockedInClient) {
-                        Icon(Icons.Default.Lock, "Locked",
+                        Icon(
+                            Icons.Default.Lock,
+                            "Locked",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(0.38f))
+                            modifier = Modifier.alpha(0.38f),
+                        )
                     } else {
                         Icon(
                             imageVector = if (state.isPlaying || state.isBuffering) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (state.isPlaying || state.isBuffering) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
                 if (rotationState.isActive || (isSnapclientMode && streamCanGoNext) || lockedInClient) {
                     IconButton(onClick = onSkip, enabled = !lockedInClient) {
-                        Icon(Icons.Default.SkipNext, "Next",
+                        Icon(
+                            Icons.Default.SkipNext,
+                            "Next",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f))
+                            modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
+                        )
                     }
                 }
             }

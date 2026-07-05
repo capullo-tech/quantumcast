@@ -13,8 +13,8 @@ class ShazamSignatureGenerator {
     companion object {
         private const val SAMPLE_RATE = 16000
         private const val FFT_SIZE = 2048
-        private const val BINS = FFT_SIZE / 2 + 1  // 1025
-        private const val RING_SIZE = 256           // fft/spread ring buffer size
+        private const val BINS = FFT_SIZE / 2 + 1 // 1025
+        private const val RING_SIZE = 256 // fft/spread ring buffer size
 
         // np.hanning(2050)[1:-1]: 0.5*(1 - cos(2π*(i+1)/2049)) for i in 0..2047
         private val HANNING = DoubleArray(FFT_SIZE) { i ->
@@ -30,7 +30,7 @@ class ShazamSignatureGenerator {
         private val TIME_OFFSETS = intArrayOf(
             -53, -45,
             165, 172, 179, 186, 193, 200,
-            214, 221, 228, 235, 242, 249
+            214, 221, 228, 235, 242, 249,
         )
     }
 
@@ -97,7 +97,7 @@ class ShazamSignatureGenerator {
         val lastFft = fftOutputs[(fftPos - 1 + RING_SIZE) % RING_SIZE]
 
         // Frequency spreading: each bin = max(bin, bin+1, bin+2); last 3 bins unchanged
-        val freqSpread = spreadFft[spreadPos]  // reuse slot before incrementing pos
+        val freqSpread = spreadFft[spreadPos] // reuse slot before incrementing pos
         for (i in 0 until BINS - 3) freqSpread[i] = maxOf(lastFft[i], lastFft[i + 1], lastFft[i + 2])
         for (i in BINS - 3 until BINS) freqSpread[i] = lastFft[i]
 
@@ -139,9 +139,9 @@ class ShazamSignatureGenerator {
             if (v <= maxNeighbor) continue
 
             // Quadratic interpolation for sub-bin frequency accuracy
-            val mag      = ln(maxOf(1.0 / 64, v)) * 1477.3 + 6144.0
+            val mag = ln(maxOf(1.0 / 64, v)) * 1477.3 + 6144.0
             val magBefore = ln(maxOf(1.0 / 64, fftMinus46[bin - 1])) * 1477.3 + 6144.0
-            val magAfter  = ln(maxOf(1.0 / 64, fftMinus46[bin + 1])) * 1477.3 + 6144.0
+            val magAfter = ln(maxOf(1.0 / 64, fftMinus46[bin + 1])) * 1477.3 + 6144.0
             val var1 = mag * 2 - magBefore - magAfter
             if (var1 <= 0) continue
             val var2 = (magAfter - magBefore) * 32.0 / var1
@@ -150,7 +150,7 @@ class ShazamSignatureGenerator {
             val freqHz = correctedBin * (SAMPLE_RATE.toDouble() / 2.0 / 1024.0 / 64.0)
 
             val bandId = when {
-                freqHz in 250.0..520.0  -> 0
+                freqHz in 250.0..520.0 -> 0
                 freqHz in 520.0..1450.0 -> 1
                 freqHz in 1450.0..3500.0 -> 2
                 freqHz in 3500.0..5500.0 -> 3
@@ -170,7 +170,7 @@ class ShazamSignatureGenerator {
         return DecodedMessage(
             sampleRateHz = SAMPLE_RATE,
             numberSamples = numSamples,
-            frequencyBandToPeaks = peaks.toMap()
+            frequencyBandToPeaks = peaks.toMap(),
         )
     }
 
@@ -181,28 +181,41 @@ class ShazamSignatureGenerator {
         var j = 0
         for (i in 1 until n) {
             var bit = n shr 1
-            while (j and bit != 0) { j = j xor bit; bit = bit shr 1 }
+            while (j and bit != 0) {
+                j = j xor bit
+                bit = bit shr 1
+            }
             j = j xor bit
             if (i < j) {
-                var t = re[i]; re[i] = re[j]; re[j] = t
-                t = im[i]; im[i] = im[j]; im[j] = t
+                var t = re[i]
+                re[i] = re[j]
+                re[j] = t
+                t = im[i]
+                im[i] = im[j]
+                im[j] = t
             }
         }
         var len = 2
         while (len <= n) {
             val ang = -2.0 * PI / len
-            val wRe = cos(ang); val wIm = sin(ang)
+            val wRe = cos(ang)
+            val wIm = sin(ang)
             var i = 0
             while (i < n) {
-                var cRe = 1.0; var cIm = 0.0
+                var cRe = 1.0
+                var cIm = 0.0
                 for (jj in 0 until len / 2) {
-                    val uRe = re[i + jj];            val uIm = im[i + jj]
-                    val vRe = re[i+jj+len/2]*cRe - im[i+jj+len/2]*cIm
-                    val vIm = re[i+jj+len/2]*cIm + im[i+jj+len/2]*cRe
-                    re[i+jj] = uRe+vRe;              im[i+jj] = uIm+vIm
-                    re[i+jj+len/2] = uRe-vRe;        im[i+jj+len/2] = uIm-vIm
-                    val nRe = cRe*wRe - cIm*wIm
-                    cIm = cRe*wIm + cIm*wRe; cRe = nRe
+                    val uRe = re[i + jj]
+                    val uIm = im[i + jj]
+                    val vRe = re[i + jj + len / 2] * cRe - im[i + jj + len / 2] * cIm
+                    val vIm = re[i + jj + len / 2] * cIm + im[i + jj + len / 2] * cRe
+                    re[i + jj] = uRe + vRe
+                    im[i + jj] = uIm + vIm
+                    re[i + jj + len / 2] = uRe - vRe
+                    im[i + jj + len / 2] = uIm - vIm
+                    val nRe = cRe * wRe - cIm * wIm
+                    cIm = cRe * wIm + cIm * wRe
+                    cRe = nRe
                 }
                 i += len
             }

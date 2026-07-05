@@ -43,13 +43,14 @@ private const val NOTIFY_READY = """{"jsonrpc":"2.0","method":"Plugin.Stream.Rea
 interface SnapcontrolCallbacks {
     val isPlaying: Boolean
     val isPaused: Boolean
+
     // True only when skipping is meaningful (station rotation/queue active).
     // Drives canGoNext/canGoPrevious so clients hide prev/next for a single station.
     val canSkip: Boolean get() = true
     val currentTitle: String
-    val currentArtist: String   // track artist - empty when no Shazam identification
-    val currentAlbum: String    // radio station name
-    val currentUrl: String      // station stream URL
+    val currentArtist: String // track artist - empty when no Shazam identification
+    val currentAlbum: String // radio station name
+    val currentUrl: String // station stream URL
     val currentCountry: String
     val currentCountryCode: String
     val currentCodec: String
@@ -67,10 +68,7 @@ interface SnapcontrolCallbacks {
     fun onSkipPrev() {}
 }
 
-class SnapcontrolPlugin(
-    private val callbacks: SnapcontrolCallbacks,
-    parentJob: Job,
-) {
+class SnapcontrolPlugin(private val callbacks: SnapcontrolCallbacks, parentJob: Job) {
     private val pluginJob = SupervisorJob(parentJob)
     private val scope = CoroutineScope(Dispatchers.IO + pluginJob)
 
@@ -79,7 +77,10 @@ class SnapcontrolPlugin(
     @Volatile private var currentSession: SnapcontrolSession? = null
 
     @Volatile var isStreamLocked: Boolean = false
-        set(value) { field = value; notifyPropertiesChanged() }
+        set(value) {
+            field = value
+            notifyPropertiesChanged()
+        }
 
     fun start() {
         if (listener != null) return
@@ -94,8 +95,11 @@ class SnapcontrolPlugin(
     }
 
     fun stop() {
-        val srv = listener; listener = null
-        try { srv?.close() } catch (_: IOException) {}
+        val srv = listener
+        listener = null
+        try {
+            srv?.close()
+        } catch (_: IOException) {}
         currentSession?.close()
         currentSession = null
         pluginJob.cancel()
@@ -108,14 +112,18 @@ class SnapcontrolPlugin(
     private suspend fun acceptLoop() {
         val srv = listener ?: return
         while (scope.isActive) {
-            val sock = try { srv.accept() } catch (e: IOException) {
+            val sock = try {
+                srv.accept()
+            } catch (e: IOException) {
                 Log.d(TAG, "Accept loop ending: ${e.message}")
                 return
             }
             Log.d(TAG, "New session")
             val session = SnapcontrolSession(sock, callbacks, scope, { isStreamLocked })
             currentSession = session
-            try { session.run() } finally {
+            try {
+                session.run()
+            } finally {
                 currentSession = null
                 Log.d(TAG, "Session ended")
             }
@@ -134,7 +142,9 @@ private class SnapcontrolSession(
     private val scope = CoroutineScope(parentScope.coroutineContext + sessionJob)
 
     @Volatile private var cachedArtworkUrl: String? = null
+
     @Volatile private var cachedArtData: JSONObject? = null
+
     @Volatile private var lastArtworkFile: String? = null
 
     // Serializes refreshArtwork+send. Without it two notifyProperties can
@@ -153,13 +163,17 @@ private class SnapcontrolSession(
         } finally {
             outbox.close()
             writerJob.cancel()
-            try { socket.close() } catch (_: IOException) {}
+            try {
+                socket.close()
+            } catch (_: IOException) {}
             sessionJob.cancel()
         }
     }
 
     fun close() {
-        try { socket.close() } catch (_: IOException) {}
+        try {
+            socket.close()
+        } catch (_: IOException) {}
         outbox.close()
         sessionJob.cancel()
     }
@@ -240,38 +254,44 @@ private class SnapcontrolSession(
             .put("canPlay", !getLocked())
             .put("canPause", !getLocked())
             .put("canSeek", false)
-            .put("canGoNext", !getLocked() && callbacks.canSkip && (callbacks.isPlaying || callbacks.isPaused))
-            .put("canGoPrevious", !getLocked() && callbacks.canSkip && (callbacks.isPlaying || callbacks.isPaused))
+            .put(
+                "canGoNext",
+                !getLocked() && callbacks.canSkip && (callbacks.isPlaying || callbacks.isPaused),
+            )
+            .put(
+                "canGoPrevious",
+                !getLocked() && callbacks.canSkip && (callbacks.isPlaying || callbacks.isPaused),
+            )
             .put("canControl", true)
 
-        val title        = callbacks.currentTitle
-        val artist       = callbacks.currentArtist
-        val album        = callbacks.currentAlbum
-        val url          = callbacks.currentUrl
-        val country      = callbacks.currentCountry
-        val countryCode  = callbacks.currentCountryCode
-        val codec        = callbacks.currentCodec
-        val bitrate      = callbacks.currentBitrate
-        val youtubeUrl   = callbacks.currentYoutubeUrl
-        val spotifyUrl   = callbacks.currentSpotifyUrl
+        val title = callbacks.currentTitle
+        val artist = callbacks.currentArtist
+        val album = callbacks.currentAlbum
+        val url = callbacks.currentUrl
+        val country = callbacks.currentCountry
+        val countryCode = callbacks.currentCountryCode
+        val codec = callbacks.currentCodec
+        val bitrate = callbacks.currentBitrate
+        val youtubeUrl = callbacks.currentYoutubeUrl
+        val spotifyUrl = callbacks.currentSpotifyUrl
         val appleMusicUrl = callbacks.currentAppleMusicUrl
-        val tags         = callbacks.currentTags
-        val uuid         = callbacks.currentUuid
+        val tags = callbacks.currentTags
+        val uuid = callbacks.currentUuid
         if (title.isNotEmpty() || artist.isNotEmpty() || album.isNotEmpty()) {
             val meta = JSONObject()
-            if (title.isNotEmpty())        meta.put("title", title)
-            if (artist.isNotEmpty())       meta.put("artist", JSONArray().put(artist))
-            if (album.isNotEmpty())        meta.put("station", album)
-            if (url.isNotEmpty())          meta.put("url", url)
-            if (country.isNotEmpty())      meta.put("country", country)
-            if (countryCode.isNotEmpty())  meta.put("countrycode", countryCode)
-            if (codec.isNotEmpty())        meta.put("codec", codec)
-            if (bitrate > 0)               meta.put("bitrate", bitrate)
-            if (youtubeUrl.isNotEmpty())   meta.put("youtubeUrl", youtubeUrl)
-            if (spotifyUrl.isNotEmpty())   meta.put("spotifyUrl", spotifyUrl)
+            if (title.isNotEmpty()) meta.put("title", title)
+            if (artist.isNotEmpty()) meta.put("artist", JSONArray().put(artist))
+            if (album.isNotEmpty()) meta.put("station", album)
+            if (url.isNotEmpty()) meta.put("url", url)
+            if (country.isNotEmpty()) meta.put("country", country)
+            if (countryCode.isNotEmpty()) meta.put("countrycode", countryCode)
+            if (codec.isNotEmpty()) meta.put("codec", codec)
+            if (bitrate > 0) meta.put("bitrate", bitrate)
+            if (youtubeUrl.isNotEmpty()) meta.put("youtubeUrl", youtubeUrl)
+            if (spotifyUrl.isNotEmpty()) meta.put("spotifyUrl", spotifyUrl)
             if (appleMusicUrl.isNotEmpty()) meta.put("appleMusicUrl", appleMusicUrl)
-            if (tags.isNotEmpty())         meta.put("tags", tags)
-            if (uuid.isNotEmpty())         meta.put("uuid", uuid)
+            if (tags.isNotEmpty()) meta.put("tags", tags)
+            if (uuid.isNotEmpty()) meta.put("uuid", uuid)
             cachedArtworkUrl?.let { meta.put("artUrl", it) }
             cachedArtData?.let { meta.put("artData", it) }
             obj.put("metadata", meta)
@@ -282,8 +302,11 @@ private class SnapcontrolSession(
     private suspend fun readerLoop() {
         val reader = BufferedReader(InputStreamReader(socket.inputStream, Charsets.UTF_8))
         while (scope.isActive) {
-            val line = try { reader.readLine() ?: return } catch (e: IOException) {
-                Log.d(TAG, "Reader end: ${e.message}"); return
+            val line = try {
+                reader.readLine() ?: return
+            } catch (e: IOException) {
+                Log.d(TAG, "Reader end: ${e.message}")
+                return
             }
             if (line.isBlank()) continue
             handleLine(line)
@@ -304,8 +327,11 @@ private class SnapcontrolSession(
     }
 
     private suspend fun handleLine(line: String) {
-        val req = try { JSONObject(line) } catch (e: JSONException) {
-            Log.w(TAG, "JSON parse error: ${e.message}"); return
+        val req = try {
+            JSONObject(line)
+        } catch (e: JSONException) {
+            Log.w(TAG, "JSON parse error: ${e.message}")
+            return
         }
         val id: Any? = if (req.has("id") && !req.isNull("id")) req.get("id") else null
         val method = req.optString("method", "")
@@ -316,25 +342,55 @@ private class SnapcontrolSession(
                 "Plugin.Stream.Player.GetProperties" -> buildProperties()
                 "Plugin.Stream.Player.Control" -> {
                     val command = req.optJSONObject("params")?.optString("command") ?: ""
-                    Log.d(TAG, "Control command received: $command isPlaying=${callbacks.isPlaying} isPaused=${callbacks.isPaused} locked=${getLocked()}")
+                    Log.d(
+                        TAG,
+                        "Control command received: $command isPlaying=${callbacks.isPlaying} isPaused=${callbacks.isPaused} locked=${getLocked()}",
+                    )
                     if (getLocked()) {
                         Log.d(TAG, "Stream is locked - ignoring control command: $command")
                     } else {
                         when (command) {
-                            "play"      -> { Log.d(TAG, "Dispatching onPlay"); callbacks.onPlay() }
-                            "pause"     -> { Log.d(TAG, "Dispatching onPause"); callbacks.onPause() }
-                            "playPause" -> if (callbacks.isPlaying) { Log.d(TAG, "Dispatching onPause (playPause)"); callbacks.onPause() }
-                                           else { Log.d(TAG, "Dispatching onPlay (playPause)"); callbacks.onPlay() }
-                            "stop"      -> { Log.d(TAG, "Dispatching onPause (stop)"); callbacks.onPause() }
-                            "next"      -> { Log.d(TAG, "Dispatching onSkipNext"); callbacks.onSkipNext() }
-                            "previous"  -> { Log.d(TAG, "Dispatching onSkipPrev"); callbacks.onSkipPrev() }
-                            else        -> Log.d(TAG, "Unhandled control command: $command")
+                            "play" -> {
+                                Log.d(TAG, "Dispatching onPlay")
+                                callbacks.onPlay()
+                            }
+                            "pause" -> {
+                                Log.d(TAG, "Dispatching onPause")
+                                callbacks.onPause()
+                            }
+                            "playPause" -> if (callbacks.isPlaying) {
+                                Log.d(TAG, "Dispatching onPause (playPause)")
+                                callbacks.onPause()
+                            } else {
+                                Log.d(TAG, "Dispatching onPlay (playPause)")
+                                callbacks.onPlay()
+                            }
+                            "stop" -> {
+                                Log.d(TAG, "Dispatching onPause (stop)")
+                                callbacks.onPause()
+                            }
+                            "next" -> {
+                                Log.d(TAG, "Dispatching onSkipNext")
+                                callbacks.onSkipNext()
+                            }
+                            "previous" -> {
+                                Log.d(TAG, "Dispatching onSkipPrev")
+                                callbacks.onSkipPrev()
+                            }
+                            else -> Log.d(TAG, "Unhandled control command: $command")
                         }
                     }
                     "ok"
                 }
                 "Plugin.Stream.Player.SetProperty" -> "ok"
-                else -> { if (id != null) sendError(id, -32601, "Method not found: $method"); return }
+                else -> {
+                    if (id !=
+                        null
+                    ) {
+                        sendError(id, -32601, "Method not found: $method")
+                    }
+                    return
+                }
             }
             if (id != null) sendResult(id, result)
         } catch (e: Throwable) {
@@ -344,13 +400,15 @@ private class SnapcontrolSession(
     }
 
     private fun sendResult(id: Any, result: Any) {
-        outbox.trySend(JSONObject().put("jsonrpc", "2.0").put("id", id).put("result", result).toString())
+        outbox.trySend(
+            JSONObject().put("jsonrpc", "2.0").put("id", id).put("result", result).toString(),
+        )
     }
 
     private fun sendError(id: Any, code: Int, message: String) {
         outbox.trySend(
             JSONObject().put("jsonrpc", "2.0").put("id", id)
-                .put("error", JSONObject().put("code", code).put("message", message)).toString()
+                .put("error", JSONObject().put("code", code).put("message", message)).toString(),
         )
     }
 }

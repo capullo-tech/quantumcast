@@ -1,14 +1,14 @@
 package tech.capullo.quantumcast.data.repository
 
 import com.google.gson.Gson
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import tech.capullo.quantumcast.data.api.RadioBrowserApi
 import tech.capullo.quantumcast.data.db.AppDatabase
 import tech.capullo.quantumcast.data.db.FavoriteEntity
 import tech.capullo.quantumcast.data.db.FavoriteGroupEntity
 import tech.capullo.quantumcast.data.model.Country
 import tech.capullo.quantumcast.data.model.Station
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
@@ -16,10 +16,13 @@ import java.util.UUID
 data class FavoritesBackup(
     val version: Int = 1,
     val groups: List<FavoriteGroupEntity> = emptyList(),
-    val favorites: List<FavoriteEntity> = emptyList()
+    val favorites: List<FavoriteEntity> = emptyList(),
 )
 
-class RadioRepository(private val db: AppDatabase, serverUrl: String = "https://de1.api.radio-browser.info/") {
+class RadioRepository(
+    private val db: AppDatabase,
+    serverUrl: String = "https://de1.api.radio-browser.info/",
+) {
 
     private var currentServerUrl = serverUrl
     private var api = RadioBrowserApi.create(serverUrl)
@@ -47,8 +50,7 @@ class RadioRepository(private val db: AppDatabase, serverUrl: String = "https://
 
     suspend fun getCountries(): List<Country> = api.getCountries()
 
-    suspend fun getStationsByCountry(country: String, limit: Int = 40): List<Station> =
-        api.getStationsByCountry(country, limit)
+    suspend fun getStationsByCountry(country: String, limit: Int = 40): List<Station> = api.getStationsByCountry(country, limit)
 
     fun getFavorites(): Flow<List<FavoriteEntity>> = db.favoriteDao().getAll()
 
@@ -68,8 +70,8 @@ class RadioRepository(private val db: AppDatabase, serverUrl: String = "https://
                     country = station.country,
                     tags = station.tags,
                     codec = station.codec,
-                    bitrate = station.bitrate
-                )
+                    bitrate = station.bitrate,
+                ),
             )
         }
     }
@@ -81,8 +83,13 @@ class RadioRepository(private val db: AppDatabase, serverUrl: String = "https://
     suspend fun createGroup(name: String, uuids: Set<String>): String {
         val id = UUID.randomUUID().toString()
         val groupDao = db.favoriteGroupDao()
-        groupDao.insert(FavoriteGroupEntity(id = id, name = name, createdAt = System.currentTimeMillis()))
-        uuids.forEachIndexed { i, uuid -> db.favoriteDao().updateGroupId(uuid, id); db.favoriteDao().updateSortOrder(uuid, i) }
+        groupDao.insert(
+            FavoriteGroupEntity(id = id, name = name, createdAt = System.currentTimeMillis()),
+        )
+        uuids.forEachIndexed { i, uuid ->
+            db.favoriteDao().updateGroupId(uuid, id)
+            db.favoriteDao().updateSortOrder(uuid, i)
+        }
         return id
     }
 
@@ -104,16 +111,14 @@ class RadioRepository(private val db: AppDatabase, serverUrl: String = "https://
         uuids.forEach { db.favoriteDao().updateGroupId(it, "") }
     }
 
-    suspend fun updateFavoriteSortOrder(uuid: String, sortOrder: Int) =
-        db.favoriteDao().updateSortOrder(uuid, sortOrder)
+    suspend fun updateFavoriteSortOrder(uuid: String, sortOrder: Int) = db.favoriteDao().updateSortOrder(uuid, sortOrder)
 
-    suspend fun updateGroupSortOrder(id: String, sortOrder: Int) =
-        db.favoriteGroupDao().updateSortOrder(id, sortOrder)
+    suspend fun updateGroupSortOrder(id: String, sortOrder: Int) = db.favoriteGroupDao().updateSortOrder(id, sortOrder)
 
     suspend fun exportFavorites(outputStream: OutputStream) {
         val backup = FavoritesBackup(
             groups = db.favoriteGroupDao().getAllOnce(),
-            favorites = db.favoriteDao().getAllOnce()
+            favorites = db.favoriteDao().getAllOnce(),
         )
         outputStream.bufferedWriter().use { Gson().toJson(backup, it) }
     }

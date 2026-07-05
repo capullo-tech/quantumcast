@@ -7,8 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import tech.capullo.quantumcast.data.settings.ThemeMode
 
@@ -31,7 +31,7 @@ private val LightColorScheme = lightColorScheme(
     onSurface = Color(0xFF201A18),
     surfaceVariant = Color(0xFFF4DDD5),
     onSurfaceVariant = Color(0xFF53433E),
-    outline = Color(0xFF85736F)
+    outline = Color(0xFF85736F),
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -49,14 +49,14 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = Color(0xFFE0E0E0),
     surfaceVariant = Color(0xFF2C2C2C),
     onSurfaceVariant = Color(0xFF9E9E9E),
-    outline = Color(0xFF444444)
+    outline = Color(0xFF444444),
 )
 
 @Composable
 fun RadioTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
     val darkTheme = when (themeMode) {
@@ -81,6 +81,6 @@ fun RadioTheme(
     }
     MaterialTheme(
         colorScheme = colorScheme,
-        content = content
+        content = content,
     )
 }

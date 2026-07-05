@@ -1,5 +1,7 @@
 package tech.capullo.quantumcast.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,8 +16,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Sort
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +32,7 @@ private fun countryCodeToFlag(code: String): String {
     if (code.length != 2) return ""
     val base = 0x1F1E6 - 0x41
     return String(Character.toChars(code[0].uppercaseChar().code + base)) +
-           String(Character.toChars(code[1].uppercaseChar().code + base))
+        String(Character.toChars(code[1].uppercaseChar().code + base))
 }
 
 @Composable
@@ -49,7 +49,7 @@ fun CountryScreen(
     onToggleFavorite: (Station) -> Unit,
     onStartCustomRotation: (List<Station>) -> Unit = {},
     vm: RadioViewModel? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     LaunchedEffect(Unit) { onLoadCountries() }
     BackHandler(enabled = selectedCountry != null) { onBack() }
@@ -65,14 +65,14 @@ fun CountryScreen(
             onToggleFavorite = onToggleFavorite,
             onStartCustomRotation = onStartCustomRotation,
             vm = vm,
-            modifier = modifier
+            modifier = modifier,
         )
     } else {
         CountryListView(
             uiState = countryList,
             onSelect = onSelectCountry,
             vm = vm,
-            modifier = modifier
+            modifier = modifier,
         )
     }
 }
@@ -82,7 +82,7 @@ private fun CountryListView(
     uiState: UiState<List<Country>>,
     onSelect: (Country) -> Unit,
     vm: RadioViewModel? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var filterQuery by remember { mutableStateOf("") }
     // Sort state lives in VM so it survives navigation; fall back to local if no VM
@@ -90,8 +90,10 @@ private fun CountryListView(
     var sortAscending by remember { mutableStateOf(vm?.countryListSortAscending ?: false) }
 
     fun setSort(byName: Boolean, asc: Boolean) {
-        sortByName = byName; sortAscending = asc
-        vm?.countryListSortByName = byName; vm?.countryListSortAscending = asc
+        sortByName = byName
+        sortAscending = asc
+        vm?.countryListSortByName = byName
+        vm?.countryListSortAscending = asc
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -103,7 +105,7 @@ private fun CountryListView(
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         )
         var showSortMenu by remember { mutableStateOf(false) }
         Box(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)) {
@@ -113,7 +115,7 @@ private fun CountryListView(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 modifier = Modifier.height(36.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
                 Icon(Icons.Default.Sort, null, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
@@ -124,24 +126,34 @@ private fun CountryListView(
                 DropdownMenuItem(
                     text = { Text("By Count") },
                     onClick = {
-                        if (sortByName) setSort(false, false)
-                        else setSort(false, !sortAscending)
+                        if (sortByName) {
+                            setSort(false, false)
+                        } else {
+                            setSort(false, !sortAscending)
+                        }
                         showSortMenu = false
                     },
                     trailingIcon = if (!sortByName) {
                         { Icon(if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(14.dp)) }
-                    } else null
+                    } else {
+                        null
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text("By Name") },
                     onClick = {
-                        if (!sortByName) setSort(true, true)
-                        else setSort(true, !sortAscending)
+                        if (!sortByName) {
+                            setSort(true, true)
+                        } else {
+                            setSort(true, !sortAscending)
+                        }
                         showSortMenu = false
                     },
                     trailingIcon = if (sortByName) {
                         { Icon(if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(14.dp)) }
-                    } else null
+                    } else {
+                        null
+                    },
                 )
             }
         }
@@ -182,12 +194,12 @@ private fun CountryRow(country: Country, onClick: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = countryCodeToFlag(country.code).ifEmpty { "🌐" },
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -199,7 +211,7 @@ private fun CountryRow(country: Country, onClick: () -> Unit) {
         Text(
             "${country.stationCount}",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
     }
     HorizontalDivider(modifier = Modifier.padding(start = 48.dp), thickness = 0.5.dp)
@@ -217,19 +229,28 @@ private fun CountryStationsView(
     onToggleFavorite: (Station) -> Unit,
     onStartCustomRotation: (List<Station>) -> Unit,
     vm: RadioViewModel? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var sortField by remember { mutableStateOf(vm?.countryStationsSortField) }
     var sortAsc by remember { mutableStateOf(vm?.countryStationsSortAsc ?: false) }
     var inSelectMode by remember { mutableStateOf(false) }
     var selectedUuids by remember { mutableStateOf(setOf<String>()) }
 
-    fun enterSelectMode(uuid: String) { inSelectMode = true; selectedUuids = setOf(uuid) }
-    fun exitSelectMode() { inSelectMode = false; selectedUuids = emptySet() }
+    fun enterSelectMode(uuid: String) {
+        inSelectMode = true
+        selectedUuids = setOf(uuid)
+    }
+    fun exitSelectMode() {
+        inSelectMode = false
+        selectedUuids = emptySet()
+    }
 
     fun cycleSort(field: Int) {
         when {
-            sortField != field -> { sortField = field; sortAsc = false }
+            sortField != field -> {
+                sortField = field
+                sortAsc = false
+            }
             !sortAsc -> sortAsc = true
             else -> sortField = null
         }
@@ -244,7 +265,7 @@ private fun CountryStationsView(
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                 }
-            }
+            },
         )
         when (uiState) {
             is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -275,7 +296,7 @@ private fun CountryStationsView(
                             .padding(horizontal = 16.dp)
                             .padding(bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Box {
                             val sortLabel = when (sortField) {
@@ -288,7 +309,7 @@ private fun CountryStationsView(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 modifier = Modifier.height(36.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                             ) {
                                 Icon(Icons.Default.Sort, null, modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(4.dp))
@@ -299,26 +320,36 @@ private fun CountryStationsView(
                                 listOf(1 to "kbps", 2 to "Name").forEach { (field, label) ->
                                     DropdownMenuItem(
                                         text = { Text(label) },
-                                        onClick = { cycleSort(field); showSortMenu = false },
+                                        onClick = {
+                                            cycleSort(field)
+                                            showSortMenu = false
+                                        },
                                         trailingIcon = if (sortField == field) {
                                             { Icon(if (sortAsc) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(14.dp)) }
-                                        } else null
+                                        } else {
+                                            null
+                                        },
                                     )
                                 }
                                 if (sortField != null) {
                                     HorizontalDivider()
                                     DropdownMenuItem(
                                         text = { Text("Clear") },
-                                        onClick = { sortField = null; showSortMenu = false }
+                                        onClick = {
+                                            sortField = null
+                                            showSortMenu = false
+                                        },
                                     )
                                 }
                             }
                         }
                         if (inSelectMode) {
                             TextButton(onClick = {
-                                selectedUuids = if (selectedUuids.size == sorted.size)
+                                selectedUuids = if (selectedUuids.size == sorted.size) {
                                     emptySet()
-                                else sorted.map { it.uuid }.toSet()
+                                } else {
+                                    sorted.map { it.uuid }.toSet()
+                                }
                             }) { Text(if (selectedUuids.size == sorted.size) "None" else "All") }
                             IconButton(onClick = ::exitSelectMode, modifier = Modifier.size(36.dp)) {
                                 Icon(Icons.Default.Close, "Exit", modifier = Modifier.size(18.dp))
@@ -326,7 +357,10 @@ private fun CountryStationsView(
                         }
                         Spacer(Modifier.weight(1f))
                         val autoStations = sorted.filter { it.uuid in selectedUuids }.ifEmpty { sorted }
-                        FilledTonalButton(onClick = { exitSelectMode(); onStartCustomRotation(autoStations) }) {
+                        FilledTonalButton(onClick = {
+                            exitSelectMode()
+                            onStartCustomRotation(autoStations)
+                        }) {
                             Icon(Icons.Default.Radio, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(if (selectedUuids.isEmpty()) "Auto (${sorted.size})" else "Auto (${selectedUuids.size})")
@@ -344,12 +378,13 @@ private fun CountryStationsView(
                                 inSelectMode = inSelectMode,
                                 isSelected = station.uuid in selectedUuids,
                                 onSelect = {
-                                    selectedUuids = if (station.uuid in selectedUuids)
+                                    selectedUuids = if (station.uuid in selectedUuids) {
                                         selectedUuids - station.uuid
-                                    else
+                                    } else {
                                         selectedUuids + station.uuid
+                                    }
                                 },
-                                onEnterSelectMode = { enterSelectMode(station.uuid) }
+                                onEnterSelectMode = { enterSelectMode(station.uuid) },
                             )
                         }
                     }

@@ -4,15 +4,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
@@ -22,17 +26,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Settings
@@ -41,35 +45,31 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Stop
-import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.SurroundSound
 import androidx.compose.material3.*
-import androidx.compose.animation.core.*
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.painterResource
-import tech.capullo.quantumcast.R
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import androidx.compose.material.icons.filled.SurroundSound
+import kotlinx.coroutines.launch
+import tech.capullo.quantumcast.R
 import tech.capullo.quantumcast.data.model.Station
 import tech.capullo.quantumcast.data.model.TrackLookup
 import tech.capullo.quantumcast.snapcast.Group
@@ -81,7 +81,7 @@ private fun countryCodeToFlagTD(code: String): String {
     if (code.length != 2) return ""
     val base = 0x1F1E6 - 0x41
     return String(Character.toChars(code[0].uppercaseChar().code + base)) +
-           String(Character.toChars(code[1].uppercaseChar().code + base))
+        String(Character.toChars(code[1].uppercaseChar().code + base))
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -125,7 +125,7 @@ fun TrackDetailScreen(
     onToggleStreamLock: () -> Unit = {},
     shareService: tech.capullo.quantumcast.data.settings.ShareService = tech.capullo.quantumcast.data.settings.ShareService.YOUTUBE,
     onSetShareService: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var showHistorySheet by remember { mutableStateOf(false) }
@@ -143,8 +143,8 @@ fun TrackDetailScreen(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { delta -> swipeDx += delta },
                 onDragStarted = { swipeDx = 0f },
-                onDragStopped = { if (swipeDx > 120f) onBack() else swipeDx = 0f }
-            )
+                onDragStopped = { if (swipeDx > 120f) onBack() else swipeDx = 0f },
+            ),
     ) {
         val station = playerState.station
         val identifiedTrack = playerState.currentTrack
@@ -172,7 +172,7 @@ fun TrackDetailScreen(
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             },
@@ -181,7 +181,7 @@ fun TrackDetailScreen(
                     HearingButton(
                         isRunning = isShazamRunning,
                         onClick = if (isShazamRunning) onCancelIdentify else onIdentifyNow,
-                        onLongPress = { showHistorySheet = true }
+                        onLongPress = { showHistorySheet = true },
                     )
                 }
                 IconButton(onClick = { showSnapcastSheet = true }) {
@@ -198,10 +198,15 @@ fun TrackDetailScreen(
                     val otherCount = snapcastGroups.sumOf { g ->
                         g.clients.count { c -> c.connected && c.id != ownClientId }
                     }
-                    val clientsTint = if (totalConnected > 0)
-                                          if (isSnapclientMode) MaterialTheme.colorScheme.error
-                                          else MaterialTheme.colorScheme.primary
-                                      else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    val clientsTint = if (totalConnected > 0) {
+                        if (isSnapclientMode) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    }
                     if (otherCount > 0) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -232,7 +237,7 @@ fun TrackDetailScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.FormatListBulleted,
                             contentDescription = "Queue",
-                            tint = MaterialTheme.colorScheme.onSurface
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
@@ -244,13 +249,13 @@ fun TrackDetailScreen(
                             text = if (m > 0) "$m:${s.toString().padStart(2, '0')}" else "${s}s",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     } else {
                         Icon(
                             Icons.Default.Snooze,
                             contentDescription = "Sleep timer",
-                            tint = MaterialTheme.colorScheme.onSurface
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
@@ -258,13 +263,13 @@ fun TrackDetailScreen(
                     Icon(
                         Icons.Default.Settings,
                         contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
-            )
+                containerColor = MaterialTheme.colorScheme.background,
+            ),
         )
 
         // Portrait layout - art fills screen width edge-to-edge, controls anchored below
@@ -292,11 +297,18 @@ fun TrackDetailScreen(
                             onDragEnd = {
                                 val dx = artSwipeDx
                                 when {
-                                    dx < -80f -> { onSkip(); artSwipeDx = 0f }
-                                    dx >  80f -> { onSkipPrev(); artSwipeDx = 0f }
+                                    dx < -80f -> {
+                                        onSkip()
+                                        artSwipeDx = 0f
+                                    }
+                                    dx > 80f -> {
+                                        onSkipPrev()
+                                        artSwipeDx = 0f
+                                    }
                                     else -> artScope.launch {
-                                        Animatable(dx).animateTo(0f,
-                                            spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                                        Animatable(dx).animateTo(
+                                            0f,
+                                            spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
                                         ) { artSwipeDx = value }
                                     }
                                 }
@@ -304,15 +316,16 @@ fun TrackDetailScreen(
                             onDragCancel = {
                                 val dx = artSwipeDx
                                 artScope.launch {
-                                    Animatable(dx).animateTo(0f,
-                                        spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                                    Animatable(dx).animateTo(
+                                        0f,
+                                        spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
                                     ) { artSwipeDx = value }
                                 }
                             },
-                            onHorizontalDrag = { _, delta -> artSwipeDx += delta }
+                            onHorizontalDrag = { _, delta -> artSwipeDx += delta },
                         )
                     },
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Box(
                     modifier = Modifier
@@ -321,7 +334,7 @@ fun TrackDetailScreen(
                             translationX = artSwipeDx
                             alpha = (1f - kotlin.math.abs(artSwipeDx) / 600f).coerceAtLeast(0.5f)
                         },
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     if (stableArtUrl != null) {
                         AsyncImage(
@@ -329,14 +342,14 @@ fun TrackDetailScreen(
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Fit,
-                            onError = { stableArtUrl = null }
+                            onError = { stableArtUrl = null },
                         )
                     } else {
                         Icon(
                             Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(80.dp)
+                            modifier = Modifier.size(80.dp),
                         )
                     }
                 }
@@ -346,7 +359,7 @@ fun TrackDetailScreen(
             val isFavorite = station?.uuid?.let { it in favoriteUuids } == true
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 NowPlayingHero(
                     station, identifiedTrack, playerState.icyTitle, context,
@@ -357,12 +370,16 @@ fun TrackDetailScreen(
                     onSwipePrev = onSkipPrev,
                     isSnapclientMode = isSnapclientMode,
                 )
-                if (station != null) NowPlayingInfo(
-                    station, streamStats, context,
-                    isFavorite = isFavorite,
-                    isSnapclientMode = isSnapclientMode,
-                    onToggleFavorite = { onToggleFavorite(station) },
-                )
+                if (station != null) {
+                    NowPlayingInfo(
+                        station,
+                        streamStats,
+                        context,
+                        isFavorite = isFavorite,
+                        isSnapclientMode = isSnapclientMode,
+                        onToggleFavorite = { onToggleFavorite(station) },
+                    )
+                }
                 NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked)
             }
             Spacer(Modifier.height(24.dp))
@@ -375,7 +392,7 @@ fun TrackDetailScreen(
             onDismiss = { showHistorySheet = false },
             onClearAll = onClearHistory,
             onDeleteAt = onDeleteHistoryAt,
-            context = context
+            context = context,
         )
     }
 
@@ -386,8 +403,14 @@ fun TrackDetailScreen(
             favoriteUuids = favoriteUuids,
             onDismiss = { showQueueSheet = false },
             onToggleFavorite = onToggleFavorite,
-            onRemoveAt = { index -> onRemoveFromQueue(index); if (rotationQueue.size <= 1) showQueueSheet = false },
-            onJumpTo = { index -> onJumpToQueueStation(index); showQueueSheet = false }
+            onRemoveAt = { index ->
+                onRemoveFromQueue(index)
+                if (rotationQueue.size <= 1) showQueueSheet = false
+            },
+            onJumpTo = { index ->
+                onJumpToQueueStation(index)
+                showQueueSheet = false
+            },
         )
     }
 
@@ -414,7 +437,7 @@ private fun HearingButton(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = Color.Unspecified
+    tint: Color = Color.Unspecified,
 ) {
     val transition = rememberInfiniteTransition(label = "hear_breathe")
     val breatheScale by transition.animateFloat(
@@ -422,9 +445,9 @@ private fun HearingButton(
         targetValue = 1.04f,
         animationSpec = infiniteRepeatable(
             animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "breathe"
+        label = "breathe",
     )
     val resolvedTint = when {
         tint != Color.Unspecified -> tint
@@ -435,7 +458,7 @@ private fun HearingButton(
         modifier = modifier
             .size(48.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.Default.Hearing,
@@ -443,7 +466,7 @@ private fun HearingButton(
             tint = resolvedTint,
             modifier = Modifier
                 .size(24.dp)
-                .scale(if (isRunning) breatheScale else 1f)
+                .scale(if (isRunning) breatheScale else 1f),
         )
     }
 }
@@ -457,7 +480,7 @@ private fun RotationQueueSheet(
     onDismiss: () -> Unit,
     onToggleFavorite: (Station) -> Unit = {},
     onRemoveAt: (Int) -> Unit = {},
-    onJumpTo: (Int) -> Unit = {}
+    onJumpTo: (Int) -> Unit = {},
 ) {
     var infoStation by remember { mutableStateOf<Station?>(null) }
     val listState = rememberLazyListState()
@@ -470,30 +493,30 @@ private fun RotationQueueSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         dragHandle = { BottomSheetDefaults.DragHandle() },
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+                .padding(bottom = 32.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "Queue",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (rotationState.totalStations > 0) {
                         Text(
                             "Station ${rotationState.stationIndex} of ${rotationState.totalStations}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -503,7 +526,7 @@ private fun RotationQueueSheet(
                     val isCurrent = index + 1 == rotationState.stationIndex
                     val currentIndex by rememberUpdatedState(index)
                     val dismissState = rememberSwipeToDismissBoxState(
-                        positionalThreshold = { it * 0.72f }
+                        positionalThreshold = { it * 0.72f },
                     )
                     LaunchedEffect(dismissState.currentValue) {
                         if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) onRemoveAt(currentIndex)
@@ -517,54 +540,57 @@ private fun RotationQueueSheet(
                                     .fillMaxSize()
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(MaterialTheme.colorScheme.errorContainer),
-                                contentAlignment = Alignment.CenterEnd
+                                contentAlignment = Alignment.CenterEnd,
                             ) {
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = null,
                                     modifier = Modifier.padding(end = 16.dp),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
                                 )
                             }
-                        }
+                        },
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
-                                    if (isCurrent) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surface,
-                                    RoundedCornerShape(8.dp)
+                                    if (isCurrent) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    },
+                                    RoundedCornerShape(8.dp),
                                 )
                                 .clickable { onJumpTo(index) }
                                 .padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 "${index + 1}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(24.dp)
+                                modifier = Modifier.width(24.dp),
                             )
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
+                                contentAlignment = Alignment.Center,
                             ) {
                                 if (station.favicon.isNotEmpty()) {
                                     AsyncImage(
                                         model = station.favicon,
                                         contentDescription = null,
-                                        modifier = Modifier.fillMaxSize()
+                                        modifier = Modifier.fillMaxSize(),
                                     )
                                 } else {
                                     Icon(
                                         Icons.Default.Radio,
                                         null,
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }
@@ -576,38 +602,38 @@ private fun RotationQueueSheet(
                                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    color = if (isCurrent) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isCurrent) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 if (station.country.isNotEmpty()) {
                                     Text(
                                         station.country,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
+                                        maxLines = 1,
                                     )
                                 }
                             }
                             IconButton(
                                 onClick = { infoStation = station },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(36.dp),
                             ) {
                                 Icon(
                                     Icons.Default.Info,
                                     contentDescription = "Info",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                             IconButton(
                                 onClick = { onToggleFavorite(station) },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(32.dp),
                             ) {
                                 val isFav = station.uuid in favoriteUuids
                                 Icon(
                                     if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                     contentDescription = if (isFav) "Remove favorite" else "Add favorite",
                                     tint = if (isFav) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp),
                                 )
                             }
                         }
@@ -623,7 +649,10 @@ private fun RotationQueueSheet(
             isFavorite = s.uuid in favoriteUuids,
             onDismiss = { infoStation = null },
             onPlay = { infoStation = null },
-            onToggleFavorite = { onToggleFavorite(s); infoStation = null }
+            onToggleFavorite = {
+                onToggleFavorite(s)
+                infoStation = null
+            },
         )
     }
 }
@@ -635,30 +664,30 @@ private fun TrackHistorySheet(
     onDismiss: () -> Unit,
     onClearAll: () -> Unit,
     onDeleteAt: (Int) -> Unit,
-    context: Context
+    context: Context,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         dragHandle = { BottomSheetDefaults.DragHandle() },
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+                .padding(bottom = 32.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Detection History",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 if (trackHistory.isNotEmpty()) {
                     TextButton(onClick = onClearAll) { Text("Clear All") }
@@ -668,7 +697,7 @@ private fun TrackHistorySheet(
                 itemsIndexed(trackHistory, key = { _, t -> t.timestamp }) { index, track ->
                     val currentIndex by rememberUpdatedState(index)
                     val dismissState = rememberSwipeToDismissBoxState(
-                        positionalThreshold = { it * 0.72f }
+                        positionalThreshold = { it * 0.72f },
                     )
                     LaunchedEffect(dismissState.currentValue) {
                         if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) onDeleteAt(currentIndex)
@@ -682,16 +711,16 @@ private fun TrackHistorySheet(
                                     .fillMaxSize()
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(MaterialTheme.colorScheme.errorContainer),
-                                contentAlignment = Alignment.CenterEnd
+                                contentAlignment = Alignment.CenterEnd,
                             ) {
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = null,
                                     modifier = Modifier.padding(end = 16.dp),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
                                 )
                             }
-                        }
+                        },
                     ) {
                         val timeStr = remember(track.timestamp) {
                             java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
@@ -702,40 +731,40 @@ private fun TrackHistorySheet(
                                 .fillMaxWidth()
                                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                                 .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 text = timeStr,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(36.dp)
+                                modifier = Modifier.width(36.dp),
                             )
                             Box(
                                 modifier = Modifier
                                     .size(44.dp)
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
+                                contentAlignment = Alignment.Center,
                             ) {
                                 if (track.artworkUrl.isNotBlank()) {
                                     AsyncImage(
                                         model = track.artworkUrl,
                                         contentDescription = null,
                                         modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
+                                        contentScale = ContentScale.Crop,
                                     )
                                 } else if (track.isLoading) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
                                         strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.secondary
+                                        color = MaterialTheme.colorScheme.secondary,
                                     )
                                 } else {
                                     Icon(
                                         Icons.Default.MusicNote,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }
@@ -747,7 +776,7 @@ private fun TrackHistorySheet(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
-                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                                 )
                                 if (track.artistName.isNotBlank()) {
                                     Text(
@@ -755,7 +784,7 @@ private fun TrackHistorySheet(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.secondary,
                                         maxLines = 1,
-                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                                     )
                                 }
                                 if (track.stationName.isNotBlank()) {
@@ -765,7 +794,7 @@ private fun TrackHistorySheet(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         maxLines = 1,
-                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                                     )
                                 }
                             }
@@ -793,13 +822,13 @@ private fun TrackHistorySheet(
                                     }
                                     IconButton(
                                         onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedUrl))) },
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(36.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.PlayCircle,
                                             contentDescription = "Open",
                                             tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(24.dp),
                                         )
                                     }
                                     Box(
@@ -807,24 +836,27 @@ private fun TrackHistorySheet(
                                             .size(36.dp)
                                             .combinedClickable(
                                                 onClick = {
-                                                    context.startActivity(Intent.createChooser(
-                                                        Intent(Intent.ACTION_SEND).apply {
-                                                            type = "text/plain"
-                                                            putExtra(Intent.EXTRA_TEXT, selectedUrl)
-                                                        }, null
-                                                    ))
+                                                    context.startActivity(
+                                                        Intent.createChooser(
+                                                            Intent(Intent.ACTION_SEND).apply {
+                                                                type = "text/plain"
+                                                                putExtra(Intent.EXTRA_TEXT, selectedUrl)
+                                                            },
+                                                            null,
+                                                        ),
+                                                    )
                                                 },
                                                 onLongClick = {
                                                     selectedService = availableServices[(availableServices.indexOf(selectedService) + 1) % availableServices.size]
-                                                }
+                                                },
                                             ),
-                                        contentAlignment = Alignment.Center
+                                        contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
                                             painter = painterResource(serviceIconRes),
                                             contentDescription = "Share (hold to cycle)",
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
+                                            modifier = Modifier.size(18.dp),
                                         )
                                     }
                                 }
@@ -859,27 +891,36 @@ private fun NowPlayingHero(
         )
         val availableServices = tech.capullo.quantumcast.data.settings.ShareService.entries
             .filter { urls[it]?.isNotBlank() == true }
-        val activeService = if (urls[shareService]?.isNotBlank() == true) shareService
-            else availableServices.firstOrNull() ?: shareService
+        val activeService = if (urls[shareService]?.isNotBlank() == true) {
+            shareService
+        } else {
+            availableServices.firstOrNull() ?: shareService
+        }
         val activeUrl = urls[activeService] ?: ""
 
         fun shareUrl(url: String) {
             if (url.isBlank()) return
-            context.startActivity(Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) }, null
-            ))
+            context.startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, url)
+                    },
+                    null,
+                ),
+            )
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Spacer(Modifier.width(40.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = identifiedTrack.trackName,
@@ -888,7 +929,7 @@ private fun NowPlayingHero(
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                 )
                 if (identifiedTrack.artistName.isNotBlank()) {
                     Text(
@@ -897,7 +938,7 @@ private fun NowPlayingHero(
                         color = MaterialTheme.colorScheme.secondary,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
-                        modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                        modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                     )
                 }
             }
@@ -917,15 +958,15 @@ private fun NowPlayingHero(
                             onLongClick = {
                                 val next = availableServices[(availableServices.indexOf(activeService) + 1) % availableServices.size]
                                 onSetShareService(next)
-                            }
+                            },
                         ),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         painter = painterResource(serviceIconRes),
                         contentDescription = "Share (hold to cycle)",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             } else {
@@ -936,7 +977,7 @@ private fun NowPlayingHero(
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (isSnapclientMode) {
                 val parts = station.name.split(" - ", limit = 2)
@@ -957,7 +998,7 @@ private fun NowPlayingHero(
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                 )
             } else {
                 Text(
@@ -967,7 +1008,7 @@ private fun NowPlayingHero(
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                 )
             }
             if (icyTitle.isNotBlank() && !icyTitle.equals(station.name, ignoreCase = true)) {
@@ -977,7 +1018,7 @@ private fun NowPlayingHero(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                 )
             }
         }
@@ -997,7 +1038,10 @@ private fun NowPlayingInfo(
     val flag = countryCodeToFlagTD(station.countryCode)
     val quality = buildString {
         if (station.codec.isNotEmpty()) append(station.codec)
-        if (station.bitrate > 0) { if (isNotEmpty()) append(" · "); append("${station.bitrate} kbps") }
+        if (station.bitrate > 0) {
+            if (isNotEmpty()) append(" · ")
+            append("${station.bitrate} kbps")
+        }
     }
     val allTags = remember(station.tags) {
         station.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -1013,7 +1057,7 @@ private fun NowPlayingInfo(
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (station.country.isNotEmpty()) {
             Text(
@@ -1022,12 +1066,12 @@ private fun NowPlayingInfo(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
             )
         }
         Row(
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             if (quality.isNotEmpty()) {
                 Text(
@@ -1035,19 +1079,19 @@ private fun NowPlayingInfo(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.width(4.dp))
             }
             IconButton(
                 onClick = { showStats = true },
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(20.dp),
             ) {
                 Icon(
                     Icons.Default.Info,
                     contentDescription = "Stats",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
@@ -1055,17 +1099,19 @@ private fun NowPlayingInfo(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 val nameText = if (isSnapclientMode) {
                     val parts = station.name.split(" - ", limit = 2)
                     val serverName = parts[0]
                     val stationPart = parts.getOrNull(1)
                     buildAnnotatedString {
-                        pushStyle(SpanStyle(
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Bold,
-                        ))
+                        pushStyle(
+                            SpanStyle(
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
                         append(serverName)
                         pop()
                         if (stationPart != null) append(" - $stationPart")
@@ -1079,18 +1125,18 @@ private fun NowPlayingInfo(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE),
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(
                     onClick = onToggleFavorite,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 ) {
                     Icon(
                         if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }
@@ -1099,7 +1145,7 @@ private fun NowPlayingInfo(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(Modifier.width(28.dp))
                 Text(
@@ -1108,7 +1154,7 @@ private fun NowPlayingInfo(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE),
                 )
                 IconButton(
                     onClick = {
@@ -1116,13 +1162,13 @@ private fun NowPlayingInfo(
                         cm.setPrimaryClip(ClipData.newPlainText("stream_url", station.streamUrl))
                         Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
                     },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 ) {
                     Icon(
                         Icons.Default.ContentCopy,
                         contentDescription = "Copy URL",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(14.dp),
                     )
                 }
             }
@@ -1134,7 +1180,7 @@ private fun NowPlayingInfo(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
             )
         }
     }
@@ -1160,18 +1206,20 @@ private fun NowPlayingControls(
     // Blinking alpha for paused timer - always create the transition, gate usage
     val inf = rememberInfiniteTransition(label = "blink")
     val blinkAnimAlpha by inf.animateFloat(
-        initialValue = 1f, targetValue = 0.2f, label = "blink",
+        initialValue = 1f,
+        targetValue = 0.2f,
+        label = "blink",
         animationSpec = infiniteRepeatable(
             animation = tween(500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        )
+            repeatMode = RepeatMode.Reverse,
+        ),
     )
     val blinkAlpha = if (rotationState.timerPaused) blinkAnimAlpha else 1f
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         val snapTonalColors = IconButtonDefaults.filledTonalIconButtonColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -1192,7 +1240,7 @@ private fun NowPlayingControls(
                 onClick = onSkipPrev,
                 enabled = !lockedInClient,
                 modifier = Modifier.size(48.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                colors = if (isSnapclientMode) snapTonalColors else IconButtonDefaults.filledTonalIconButtonColors()
+                colors = if (isSnapclientMode) snapTonalColors else IconButtonDefaults.filledTonalIconButtonColors(),
             ) {
                 Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(24.dp))
             }
@@ -1204,7 +1252,7 @@ private fun NowPlayingControls(
                 onClick = onTogglePlayPause,
                 enabled = !lockedInClient,
                 modifier = Modifier.size(64.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                colors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors()
+                colors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors(),
             ) {
                 if (lockedInClient) {
                     Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(32.dp))
@@ -1215,19 +1263,19 @@ private fun NowPlayingControls(
                             modifier = Modifier.size(36.dp),
                             strokeWidth = 3.dp,
                             color = MaterialTheme.colorScheme.onPrimary,
-                            trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                            trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
                         )
                         Text(
                             text = "${bufferingPercent.toInt()}%",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                     }
                 } else {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp),
                     )
                 }
             }
@@ -1241,9 +1289,12 @@ private fun NowPlayingControls(
                         progress = { rotationState.progress },
                         modifier = Modifier.size(64.dp).alpha(blinkAlpha),
                         strokeWidth = 3.dp,
-                        color = if (rotationState.timerPaused) MaterialTheme.colorScheme.secondary
-                                else MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        color = if (rotationState.timerPaused) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                     Surface(
                         modifier = Modifier
@@ -1251,12 +1302,12 @@ private fun NowPlayingControls(
                             .pointerInput(onSkip, onToggleTimerPause) {
                                 detectTapGestures(
                                     onTap = { onSkip() },
-                                    onLongPress = { onToggleTimerPause() }
+                                    onLongPress = { onToggleTimerPause() },
                                 )
                             },
                         shape = RoundedCornerShape(50),
                         color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(Icons.Default.SkipNext, "Skip (long-press to pause timer)", modifier = Modifier.size(24.dp))
@@ -1269,7 +1320,7 @@ private fun NowPlayingControls(
                     onClick = onSkip,
                     enabled = !lockedInClient,
                     modifier = Modifier.size(48.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                    colors = snapTonalColors
+                    colors = snapTonalColors,
                 ) {
                     Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(24.dp))
                 }
@@ -1282,19 +1333,25 @@ private fun NowPlayingControls(
 private fun StatsDialog(
     station: Station,
     streamStats: RadioViewModel.StreamStats?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     val rows = buildList {
         val codec = streamStats?.codec?.takeIf { it.isNotEmpty() } ?: station.codec.takeIf { it.isNotEmpty() }
         val bitrate = streamStats?.bitrate?.takeIf { it > 0 } ?: station.bitrate.takeIf { it > 0 }
-        if (codec != null)   add("Codec"       to codec)
-        if (bitrate != null) add("Bitrate"     to "$bitrate kbps")
+        if (codec != null) add("Codec" to codec)
+        if (bitrate != null) add("Bitrate" to "$bitrate kbps")
         if (streamStats != null) {
             add("Sample rate" to "${streamStats.sampleRate} Hz")
-            add("Channels"    to when (streamStats.channels) { 1 -> "Mono"; 2 -> "Stereo"; else -> "${streamStats.channels}ch" })
+            add(
+                "Channels" to when (streamStats.channels) {
+                    1 -> "Mono"
+                    2 -> "Stereo"
+                    else -> "${streamStats.channels}ch"
+                },
+            )
         } else {
             add("Sample rate" to "-")
-            add("Channels"    to "-")
+            add("Channels" to "-")
         }
     }
 
@@ -1309,12 +1366,12 @@ private fun StatsDialog(
                             text = label,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(88.dp)
+                            modifier = Modifier.width(88.dp),
                         )
                         Text(
                             text = value,
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
@@ -1322,6 +1379,6 @@ private fun StatsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
-        }
+        },
     )
 }

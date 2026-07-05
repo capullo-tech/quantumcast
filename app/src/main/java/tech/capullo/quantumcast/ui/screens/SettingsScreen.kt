@@ -50,7 +50,7 @@ fun SettingsScreen(
     onExportFavorites: (java.io.OutputStream) -> Unit = {},
     onImportFavorites: (java.io.InputStream) -> Unit = {},
     onBack: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var showImportConfirm by remember { mutableStateOf<Uri?>(null) }
@@ -58,7 +58,9 @@ fun SettingsScreen(
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        try { context.contentResolver.openOutputStream(uri)?.use { onExportFavorites(it) } } catch (_: Exception) {}
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { onExportFavorites(it) }
+        } catch (_: Exception) {}
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -81,7 +83,7 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showImportConfirm = null }) { Text("Cancel") }
-            }
+            },
         )
     }
     Column(
@@ -91,8 +93,8 @@ fun SettingsScreen(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { delta -> swipeDx += delta },
                 onDragStarted = { swipeDx = 0f },
-                onDragStopped = { if (swipeDx > 120f) onBack() else swipeDx = 0f }
-            )
+                onDragStopped = { if (swipeDx > 120f) onBack() else swipeDx = 0f },
+            ),
     ) {
         TopAppBar(
             title = { Text("Settings") },
@@ -102,206 +104,206 @@ fun SettingsScreen(
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
+                containerColor = MaterialTheme.colorScheme.background,
             ),
-            windowInsets = WindowInsets(0)
+            windowInsets = WindowInsets(0),
         )
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 8.dp)
-    ) {
-        item { SectionHeader("Device") }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 8.dp),
+        ) {
+            item { SectionHeader("Device") }
 
-        item {
-            TextInputRow(
-                label = "Server display name",
-                description = "Shown to other devices via NSD and in snapclient view. Leave blank to use device name.",
-                value = settings.customServerName,
-                placeholder = android.os.Build.MODEL,
-                onValueChange = onSetCustomServerName,
-                keyboardType = KeyboardType.Text,
-            )
-        }
-
-        item {
-            ToggleRow(
-                label = "Web player autostart",
-                description = "Web clients start listening automatically on page load instead of waiting for the headphones button. Browsers may still require one tap the first time. Applies on the web page's next reload.",
-                checked = settings.webAutoplay,
-                onToggle = onSetWebAutoplay,
-            )
-        }
-
-        item {
-            ToggleRow(
-                label = "Web player debug panel",
-                description = "Show the audio debug bar at the bottom of the web player. Applies on the web page's next reload.",
-                checked = settings.webDebugPanel,
-                onToggle = onSetWebDebugPanel,
-            )
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Appearance") }
-
-        item {
-            ThemeModeRow(current = settings.themeMode, onSelect = onSetThemeMode)
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Share Service") }
-        item {
-            ShareServiceRow(current = settings.shareService, onSelect = onSetShareService)
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Radio Browser API") }
-
-        item {
-            ServerPickerRow(
-                current = settings.apiServer,
-                onSelect = onSetApiServer
-            )
-        }
-
-        item {
-            StepperRow(
-                label = "Search results limit",
-                description = "Max stations returned per search",
-                value = settings.searchLimit,
-                range = 10..200,
-                step = 10,
-                onValueChange = onSetSearchLimit
-            )
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Rotation") }
-
-        item {
-            ToggleRow(
-                label = "Entangle on launch",
-                description = "Start Entangled Discovery automatically when the app opens (unless already playing)",
-                checked = settings.autoEntangleOnLaunch,
-                onToggle = onSetAutoEntangleOnLaunch,
-            )
-        }
-
-        item {
-            StepperRow(
-                label = "Minutes per station",
-                description = "How long to play each station before switching",
-                value = settings.rotationMinutes,
-                range = 1..60,
-                step = 1,
-                onValueChange = onSetRotationMinutes
-            )
-        }
-
-        item {
-            StepperRow(
-                label = "Stations per batch",
-                description = "Stations loaded per random/shuffle cycle",
-                value = settings.randomBatchSize,
-                range = 5..50,
-                step = 5,
-                onValueChange = onSetRandomBatchSize
-            )
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Sleep Timer") }
-
-        item {
-            StepperRow(
-                label = "Sleep timer duration",
-                description = "Minutes before music pauses (tap moon icon in Now Playing)",
-                value = settings.sleepTimerMinutes,
-                range = 5..120,
-                step = 5,
-                onValueChange = onSetSleepTimerMinutes
-            )
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Reckon") }
-
-        item {
-            StepperRow(
-                label = "Identification interval",
-                description = "Seconds between auto-identifications (default 120)",
-                value = settings.shazamIntervalSeconds,
-                range = 30..300,
-                step = 10,
-                onValueChange = onSetShazamIntervalSeconds
-            )
-        }
-
-        item {
-            StepperRow(
-                label = "Max history songs",
-                description = if (settings.maxHistorySongs == 0) "Unlimited" else "${settings.maxHistorySongs} songs remembered",
-                value = settings.maxHistorySongs,
-                range = 0..500,
-                step = 10,
-                onValueChange = onSetMaxHistorySongs
-            )
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Qcast") }
-
-        item {
-            IntInputRow(
-                label = "Stream buffer",
-                description = "Network caching (ms). Lower = faster start, less stutter tolerance. Range: 100–10000",
-                value = settings.vlcNetworkCachingMs,
-                onValueChange = onSetVlcNetworkCachingMs,
-            )
-        }
-
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item { SectionHeader("Favorites Backup") }
-
-        item {
-            val timestamp = remember { java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date()) }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { exportLauncher.launch("qc_favorites_$timestamp.json") }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.SaveAlt, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Export Favorites", style = MaterialTheme.typography.bodyMedium)
-                    Text("Save favorites and groups to a JSON file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            item {
+                TextInputRow(
+                    label = "Server display name",
+                    description = "Shown to other devices via NSD and in snapclient view. Leave blank to use device name.",
+                    value = settings.customServerName,
+                    placeholder = android.os.Build.MODEL,
+                    onValueChange = onSetCustomServerName,
+                    keyboardType = KeyboardType.Text,
+                )
             }
-        }
 
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { importLauncher.launch(arrayOf("application/json", "*/*")) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.UploadFile, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Import Favorites", style = MaterialTheme.typography.bodyMedium)
-                    Text("Restore favorites from a JSON file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            item {
+                ToggleRow(
+                    label = "Web player autostart",
+                    description = "Web clients start listening automatically on page load instead of waiting for the headphones button. Browsers may still require one tap the first time. Applies on the web page's next reload.",
+                    checked = settings.webAutoplay,
+                    onToggle = onSetWebAutoplay,
+                )
             }
-        }
 
-        item { Spacer(Modifier.height(16.dp)) }
-    }
+            item {
+                ToggleRow(
+                    label = "Web player debug panel",
+                    description = "Show the audio debug bar at the bottom of the web player. Applies on the web page's next reload.",
+                    checked = settings.webDebugPanel,
+                    onToggle = onSetWebDebugPanel,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Appearance") }
+
+            item {
+                ThemeModeRow(current = settings.themeMode, onSelect = onSetThemeMode)
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Share Service") }
+            item {
+                ShareServiceRow(current = settings.shareService, onSelect = onSetShareService)
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Radio Browser API") }
+
+            item {
+                ServerPickerRow(
+                    current = settings.apiServer,
+                    onSelect = onSetApiServer,
+                )
+            }
+
+            item {
+                StepperRow(
+                    label = "Search results limit",
+                    description = "Max stations returned per search",
+                    value = settings.searchLimit,
+                    range = 10..200,
+                    step = 10,
+                    onValueChange = onSetSearchLimit,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Rotation") }
+
+            item {
+                ToggleRow(
+                    label = "Entangle on launch",
+                    description = "Start Entangled Discovery automatically when the app opens (unless already playing)",
+                    checked = settings.autoEntangleOnLaunch,
+                    onToggle = onSetAutoEntangleOnLaunch,
+                )
+            }
+
+            item {
+                StepperRow(
+                    label = "Minutes per station",
+                    description = "How long to play each station before switching",
+                    value = settings.rotationMinutes,
+                    range = 1..60,
+                    step = 1,
+                    onValueChange = onSetRotationMinutes,
+                )
+            }
+
+            item {
+                StepperRow(
+                    label = "Stations per batch",
+                    description = "Stations loaded per random/shuffle cycle",
+                    value = settings.randomBatchSize,
+                    range = 5..50,
+                    step = 5,
+                    onValueChange = onSetRandomBatchSize,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Sleep Timer") }
+
+            item {
+                StepperRow(
+                    label = "Sleep timer duration",
+                    description = "Minutes before music pauses (tap moon icon in Now Playing)",
+                    value = settings.sleepTimerMinutes,
+                    range = 5..120,
+                    step = 5,
+                    onValueChange = onSetSleepTimerMinutes,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Reckon") }
+
+            item {
+                StepperRow(
+                    label = "Identification interval",
+                    description = "Seconds between auto-identifications (default 120)",
+                    value = settings.shazamIntervalSeconds,
+                    range = 30..300,
+                    step = 10,
+                    onValueChange = onSetShazamIntervalSeconds,
+                )
+            }
+
+            item {
+                StepperRow(
+                    label = "Max history songs",
+                    description = if (settings.maxHistorySongs == 0) "Unlimited" else "${settings.maxHistorySongs} songs remembered",
+                    value = settings.maxHistorySongs,
+                    range = 0..500,
+                    step = 10,
+                    onValueChange = onSetMaxHistorySongs,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Qcast") }
+
+            item {
+                IntInputRow(
+                    label = "Stream buffer",
+                    description = "Network caching (ms). Lower = faster start, less stutter tolerance. Range: 100–10000",
+                    value = settings.vlcNetworkCachingMs,
+                    onValueChange = onSetVlcNetworkCachingMs,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Favorites Backup") }
+
+            item {
+                val timestamp = remember { java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date()) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { exportLauncher.launch("qc_favorites_$timestamp.json") }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.SaveAlt, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Export Favorites", style = MaterialTheme.typography.bodyMedium)
+                        Text("Save favorites and groups to a JSON file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { importLauncher.launch(arrayOf("application/json", "*/*")) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.UploadFile, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Import Favorites", style = MaterialTheme.typography.bodyMedium)
+                        Text("Restore favorites from a JSON file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            item { Spacer(Modifier.height(16.dp)) }
+        }
     } // Column
 }
 
@@ -312,18 +314,18 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
     )
 }
 
 @Composable
 private fun ShareServiceRow(
     current: tech.capullo.quantumcast.data.settings.ShareService,
-    onSelect: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit
+    onSelect: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text("Default share service", style = MaterialTheme.typography.bodyMedium)
         Text("Tap to share · long-press the share icon in Now Playing to cycle", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -337,7 +339,7 @@ private fun ShareServiceRow(
                     selected = current == svc,
                     onClick = { onSelect(svc) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                 )
             }
         }
@@ -350,7 +352,7 @@ private fun ThemeModeRow(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text("Theme", style = MaterialTheme.typography.bodyMedium)
@@ -363,7 +365,7 @@ private fun ThemeModeRow(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
                         selected = current == mode,
                         onClick = { onSelect(mode) },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                     )
                 }
         }
@@ -381,7 +383,7 @@ private fun ServerPickerRow(current: String, onSelect: (String) -> Unit) {
             .fillMaxWidth()
             .clickable { expanded = true }
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Default.Dns, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(12.dp))
@@ -395,10 +397,13 @@ private fun ServerPickerRow(current: String, onSelect: (String) -> Unit) {
             RadioServer.entries.filter { it != RadioServer.CUSTOM }.forEach { server ->
                 DropdownMenuItem(
                     text = { Text(server.label) },
-                    onClick = { onSelect(server.url); expanded = false },
+                    onClick = {
+                        onSelect(server.url)
+                        expanded = false
+                    },
                     leadingIcon = {
                         if (server.url == current) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
-                    }
+                    },
                 )
             }
         }
@@ -412,7 +417,7 @@ private fun StepperRow(
     value: Int,
     range: IntRange,
     step: Int,
-    onValueChange: (Int) -> Unit
+    onValueChange: (Int) -> Unit,
 ) {
     var showInputDialog by remember { mutableStateOf(false) }
 
@@ -422,7 +427,10 @@ private fun StepperRow(
             current = value,
             range = range,
             onDismiss = { showInputDialog = false },
-            onConfirm = { onValueChange(it); showInputDialog = false }
+            onConfirm = {
+                onValueChange(it)
+                showInputDialog = false
+            },
         )
     }
 
@@ -430,7 +438,7 @@ private fun StepperRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -439,7 +447,7 @@ private fun StepperRow(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedIconButton(
                 onClick = { if (value - step >= range.first) onValueChange(value - step) },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(Icons.Default.Remove, "Decrease", modifier = Modifier.size(16.dp))
             }
@@ -450,11 +458,11 @@ private fun StepperRow(
                     .widthIn(min = 36.dp)
                     .clickable { showInputDialog = true },
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             OutlinedIconButton(
                 onClick = { if (value + step <= range.last) onValueChange(value + step) },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(Icons.Default.Add, "Increase", modifier = Modifier.size(16.dp))
             }
@@ -468,7 +476,7 @@ private fun StepperInputDialog(
     current: Int,
     range: IntRange,
     onDismiss: () -> Unit,
-    onConfirm: (Int) -> Unit
+    onConfirm: (Int) -> Unit,
 ) {
     var text by remember { mutableStateOf(current.toString()) }
     val focusRequester = remember { FocusRequester() }
@@ -488,7 +496,7 @@ private fun StepperInputDialog(
                 keyboardActions = KeyboardActions(onDone = {
                     text.toIntOrNull()?.coerceIn(range)?.let { onConfirm(it) } ?: onDismiss()
                 }),
-                modifier = Modifier.focusRequester(focusRequester)
+                modifier = Modifier.focusRequester(focusRequester),
             )
         },
         confirmButton = {
@@ -498,7 +506,7 @@ private fun StepperInputDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
     )
 }
 
@@ -509,7 +517,7 @@ private fun ToggleRow(label: String, description: String, checked: Boolean, onTo
             .fillMaxWidth()
             .clickable { onToggle(!checked) }
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -526,7 +534,7 @@ private fun IntInputRow(label: String, description: String, value: Int, onValueC
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 2.dp))
@@ -545,7 +553,7 @@ private fun IntInputRow(label: String, description: String, value: Int, onValueC
                             Icon(Icons.Default.Check, "Save", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
-                }
+                },
             )
         }
     }
@@ -565,7 +573,7 @@ private fun TextInputRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 2.dp))
@@ -585,7 +593,7 @@ private fun TextInputRow(
                             Icon(Icons.Default.Check, "Save", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
-                }
+                },
             )
         }
     }

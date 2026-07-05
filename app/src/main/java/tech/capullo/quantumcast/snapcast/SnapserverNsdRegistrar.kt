@@ -15,13 +15,21 @@ class SnapserverNsdRegistrar(context: Context) {
     fun start(customName: String = "") {
         advertisedName = customName.trim().ifBlank { Build.MODEL }
         register(SnapserverDiscoveryManager.SERVICE_TYPE, SnapserverDiscoveryManager.SERVICE_PORT)
-        register(SnapserverDiscoveryManager.STREAM_SERVICE_TYPE, SnapserverDiscoveryManager.STREAM_SERVICE_PORT)
-        Log.d(TAG, "Snapserver NSD registered as '${SnapserverDiscoveryManager.SERVICE_NAME_PREFIX}$advertisedName'")
+        register(
+            SnapserverDiscoveryManager.STREAM_SERVICE_TYPE,
+            SnapserverDiscoveryManager.STREAM_SERVICE_PORT,
+        )
+        Log.d(
+            TAG,
+            "Snapserver NSD registered as '${SnapserverDiscoveryManager.SERVICE_NAME_PREFIX}$advertisedName'",
+        )
     }
 
     fun stop() {
         listeners.forEach {
-            try { nsdManager.unregisterService(it) } catch (_: Exception) {}
+            try {
+                nsdManager.unregisterService(it)
+            } catch (_: Exception) {}
         }
         listeners.clear()
         Log.d(TAG, "Snapserver NSD unregistered")

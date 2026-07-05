@@ -1,12 +1,12 @@
 package tech.capullo.quantumcast.data.api
 
-import tech.capullo.quantumcast.data.model.Country
-import tech.capullo.quantumcast.data.model.Station
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
+import tech.capullo.quantumcast.data.model.Country
+import tech.capullo.quantumcast.data.model.Station
 
 interface RadioBrowserApi {
 
@@ -16,7 +16,7 @@ interface RadioBrowserApi {
         @Query("limit") limit: Int = 40,
         @Query("hidebroken") hidebroken: Boolean = true,
         @Query("order") order: String = "clickcount",
-        @Query("reverse") reverse: Boolean = true
+        @Query("reverse") reverse: Boolean = true,
     ): List<Station>
 
     @GET("json/stations/search")
@@ -24,7 +24,7 @@ interface RadioBrowserApi {
         @Query("limit") limit: Int = 10,
         @Query("offset") offset: Int = 0,
         @Query("hidebroken") hidebroken: Boolean = true,
-        @Query("order") order: String = "random"
+        @Query("order") order: String = "random",
     ): List<Station>
 
     @GET("json/stations/search")
@@ -32,14 +32,14 @@ interface RadioBrowserApi {
         @Query("limit") limit: Int = 40,
         @Query("hidebroken") hidebroken: Boolean = true,
         @Query("order") order: String = "clickcount",
-        @Query("reverse") reverse: Boolean = true
+        @Query("reverse") reverse: Boolean = true,
     ): List<Station>
 
     @GET("json/countries")
     suspend fun getCountries(
         @Query("order") order: String = "stationcount",
         @Query("reverse") reverse: Boolean = true,
-        @Query("hidebroken") hidebroken: Boolean = true
+        @Query("hidebroken") hidebroken: Boolean = true,
     ): List<Country>
 
     @GET("json/stations/bycountry/{country}")
@@ -48,7 +48,7 @@ interface RadioBrowserApi {
         @Query("limit") limit: Int = 40,
         @Query("hidebroken") hidebroken: Boolean = true,
         @Query("order") order: String = "clickcount",
-        @Query("reverse") reverse: Boolean = true
+        @Query("reverse") reverse: Boolean = true,
     ): List<Station>
 
     @GET("json/stations/search")
@@ -57,15 +57,14 @@ interface RadioBrowserApi {
         @Query("limit") limit: Int = 40,
         @Query("hidebroken") hidebroken: Boolean = true,
         @Query("order") order: String = "clickcount",
-        @Query("reverse") reverse: Boolean = true
+        @Query("reverse") reverse: Boolean = true,
     ): List<Station>
 
     companion object {
-        fun create(baseUrl: String = "https://de1.api.radio-browser.info/"): RadioBrowserApi =
-            Retrofit.Builder()
-                .baseUrl(baseUrl)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-                .create(RadioBrowserApi::class.java)
+        fun create(baseUrl: String = "https://de1.api.radio-browser.info/"): RadioBrowserApi = Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(RadioBrowserApi::class.java)
     }
 }

@@ -12,5 +12,5 @@ data class TrackLookup(
     val appleMusicUrl: String = "",
     val isLoading: Boolean = false,
     val notFound: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )

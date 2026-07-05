@@ -23,17 +23,23 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import tech.capullo.quantumcast.data.db.FavoriteEntity
 import tech.capullo.quantumcast.data.db.FavoriteGroupEntity
 import tech.capullo.quantumcast.data.model.Station
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private fun FavoriteEntity.toStation() = Station(
-    uuid = uuid, name = name, url = url, favicon = favicon,
-    country = country, tags = tags, codec = codec, bitrate = bitrate
+    uuid = uuid,
+    name = name,
+    url = url,
+    favicon = favicon,
+    country = country,
+    tags = tags,
+    codec = codec,
+    bitrate = bitrate,
 )
 
 private sealed class FavListItem {
@@ -65,7 +71,7 @@ private fun inferGroupIdAt(flatItems: List<FavListItem>, index: Int): String {
 private fun buildFlatList(
     groups: List<FavoriteGroupEntity>,
     favorites: List<FavoriteEntity>,
-    expandedGroupIds: Set<String>
+    expandedGroupIds: Set<String>,
 ): List<FavListItem> {
     val byGroup = favorites.groupBy { it.groupId }
     val result = mutableListOf<FavListItem>()
@@ -102,7 +108,7 @@ fun FavoritesScreen(
     onReorderFavorite: (String, Int) -> Unit = { _, _ -> },
     onReorderGroup: (String, Int) -> Unit = { _, _ -> },
     vm: RadioViewModel? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (favorites.isEmpty() && groups.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -125,7 +131,7 @@ fun FavoritesScreen(
     var flatItems by remember { mutableStateOf(buildFlatList(groups, favorites, expandedGroupIds)) }
 
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val offset = 1  // one header item before flat list
+        val offset = 1 // one header item before flat list
         val fi = from.index - offset
         val ti = to.index - offset
         val fromItem = flatItems.getOrNull(fi) ?: return@rememberReorderableLazyListState
@@ -133,7 +139,7 @@ fun FavoritesScreen(
         // Groups reorder only with groups; stations can move to any station position (cross-group OK).
         // Headers and labels are immovable anchors - skip moves that would displace them.
         val canMove = (fromItem is FavListItem.GroupHeader && toItem is FavListItem.GroupHeader) ||
-                      (fromItem is FavListItem.StationRow  && toItem is FavListItem.StationRow)
+            (fromItem is FavListItem.StationRow && toItem is FavListItem.StationRow)
         if (canMove) flatItems = flatItems.toMutableList().apply { add(ti, removeAt(fi)) }
     }
 
@@ -160,8 +166,11 @@ fun FavoritesScreen(
             byNewGroup.forEach { (newGroupId, rows) ->
                 rows.forEachIndexed { newOrder, row ->
                     if (row.fav.groupId != newGroupId) {
-                        if (newGroupId.isEmpty()) onUnassignFromGroup(setOf(row.fav.uuid))
-                        else onAssignToGroup(setOf(row.fav.uuid), newGroupId)
+                        if (newGroupId.isEmpty()) {
+                            onUnassignFromGroup(setOf(row.fav.uuid))
+                        } else {
+                            onAssignToGroup(setOf(row.fav.uuid), newGroupId)
+                        }
                     }
                     if (row.fav.sortOrder != newOrder) onReorderFavorite(row.fav.uuid, newOrder)
                 }
@@ -181,10 +190,13 @@ fun FavoritesScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (nameText.isNotBlank()) { onRenameGroup(group.id, nameText.trim()); renameTarget = null }
+                    if (nameText.isNotBlank()) {
+                        onRenameGroup(group.id, nameText.trim())
+                        renameTarget = null
+                    }
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancel") } },
         )
     }
 
@@ -195,11 +207,14 @@ fun FavoritesScreen(
             text = { Text("\"${group.name}\" will be deleted. Stations stay in your favorites.") },
             confirmButton = {
                 TextButton(
-                    onClick = { onDeleteGroup(group.id); deleteTarget = null },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    onClick = {
+                        onDeleteGroup(group.id)
+                        deleteTarget = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) { Text("Delete") }
             },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } },
         )
     }
 
@@ -208,13 +223,17 @@ fun FavoritesScreen(
             existingGroups = groups,
             onCreateNew = { name ->
                 onCreateGroup(name, selectedUuids)
-                showGroupDialog = false; inSelectMode = false; selectedUuids = emptySet()
+                showGroupDialog = false
+                inSelectMode = false
+                selectedUuids = emptySet()
             },
             onAssignExisting = { groupId ->
                 onAssignToGroup(selectedUuids, groupId)
-                showGroupDialog = false; inSelectMode = false; selectedUuids = emptySet()
+                showGroupDialog = false
+                inSelectMode = false
+                selectedUuids = emptySet()
             },
-            onDismiss = { showGroupDialog = false }
+            onDismiss = { showGroupDialog = false },
         )
     }
 
@@ -225,35 +244,42 @@ fun FavoritesScreen(
                 start = 16.dp,
                 end = 16.dp,
                 top = 12.dp,
-                bottom = if (inSelectMode) 80.dp else 12.dp
+                bottom = if (inSelectMode) 80.dp else 12.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "top_header", contentType = "header") {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         "${favorites.size} favorite${if (favorites.size != 1) "s" else ""}",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                     if (inSelectMode) {
                         TextButton(onClick = {
-                            selectedUuids = if (selectedUuids.size == favorites.size)
-                                emptySet() else favorites.map { it.uuid }.toSet()
+                            selectedUuids = if (selectedUuids.size == favorites.size) {
+                                emptySet()
+                            } else {
+                                favorites.map { it.uuid }.toSet()
+                            }
                         }) { Text(if (selectedUuids.size == favorites.size) "None" else "All") }
-                        IconButton(onClick = { inSelectMode = false; selectedUuids = emptySet() }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = {
+                            inSelectMode = false
+                            selectedUuids = emptySet()
+                        }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Default.Close, "Exit", modifier = Modifier.size(18.dp))
                         }
                     }
                     FilledTonalButton(onClick = {
                         val sel = favorites.filter { it.uuid in selectedUuids }.map { it.toStation() }
-                        inSelectMode = false; selectedUuids = emptySet()
+                        inSelectMode = false
+                        selectedUuids = emptySet()
                         if (sel.isEmpty()) onStartRotation() else onStartCustomRotation(sel)
                     }) {
                         Icon(Icons.Default.Radio, null, modifier = Modifier.size(16.dp))
@@ -286,7 +312,7 @@ fun FavoritesScreen(
                                     }
                                 },
                                 onRename = { renameTarget = item.group },
-                                onDelete = { deleteTarget = item.group }
+                                onDelete = { deleteTarget = item.group },
                             )
                         }
                     }
@@ -302,10 +328,16 @@ fun FavoritesScreen(
                                 onPlay = { onPlay(item.fav) },
                                 onRemove = { onRemove(item.fav.toStation()) },
                                 onSelect = {
-                                    selectedUuids = if (item.fav.uuid in selectedUuids)
-                                        selectedUuids - item.fav.uuid else selectedUuids + item.fav.uuid
+                                    selectedUuids = if (item.fav.uuid in selectedUuids) {
+                                        selectedUuids - item.fav.uuid
+                                    } else {
+                                        selectedUuids + item.fav.uuid
+                                    }
                                 },
-                                onEnterSelectMode = { inSelectMode = true; selectedUuids = setOf(item.fav.uuid) }
+                                onEnterSelectMode = {
+                                    inSelectMode = true
+                                    selectedUuids = setOf(item.fav.uuid)
+                                },
                             )
                         }
                     }
@@ -315,7 +347,7 @@ fun FavoritesScreen(
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
                         )
                     }
                 }
@@ -327,24 +359,25 @@ fun FavoritesScreen(
             visible = inSelectMode && selectedUuids.isNotEmpty(),
             enter = slideInVertically { it },
             exit = slideOutVertically { it },
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             val allSelectedInGroup = favorites.filter { it.uuid in selectedUuids }.all { it.groupId.isNotEmpty() }
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 tonalElevation = 8.dp,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("${selectedUuids.size} selected", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
                     if (allSelectedInGroup && selectedUuids.isNotEmpty()) {
                         TextButton(onClick = {
                             onUnassignFromGroup(selectedUuids)
-                            inSelectMode = false; selectedUuids = emptySet()
+                            inSelectMode = false
+                            selectedUuids = emptySet()
                         }) { Text("Ungroup") }
                     }
                     TextButton(onClick = { showGroupDialog = true }) { Text("Group") }
@@ -366,7 +399,7 @@ private fun GroupHeaderRow(
     onToggleExpand: () -> Unit,
     onLongPress: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -374,17 +407,17 @@ private fun GroupHeaderRow(
             .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(10.dp))
             .combinedClickable(onClick = onToggleExpand, onLongClick = onLongPress),
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(6.dp))
             Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -395,12 +428,12 @@ private fun GroupHeaderRow(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                 )
                 Text(
                     "$stationCount station${if (stationCount != 1) "s" else ""}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (!inSelectMode) {
@@ -414,7 +447,7 @@ private fun GroupHeaderRow(
                     Icons.Default.DragHandle,
                     contentDescription = "Reorder",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = dragHandleModifier.size(22.dp)
+                    modifier = dragHandleModifier.size(22.dp),
                 )
             }
         }
@@ -433,7 +466,7 @@ private fun FavoriteCard(
     onPlay: () -> Unit,
     onRemove: () -> Unit,
     onSelect: () -> Unit,
-    onEnterSelectMode: () -> Unit
+    onEnterSelectMode: () -> Unit,
 ) {
     var showInfo by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -443,8 +476,14 @@ private fun FavoriteCard(
             station = fav.toStation(),
             isFavorite = true,
             onDismiss = { showInfo = false },
-            onPlay = { onPlay(); showInfo = false },
-            onToggleFavorite = { onRemove(); showInfo = false }
+            onPlay = {
+                onPlay()
+                showInfo = false
+            },
+            onToggleFavorite = {
+                onRemove()
+                showInfo = false
+            },
         )
     }
 
@@ -454,11 +493,14 @@ private fun FavoriteCard(
             title = { Text("Remove favorite") },
             text = { Text("Remove \"${fav.name}\" from favorites?") },
             confirmButton = {
-                TextButton(onClick = { showDeleteConfirm = false; onRemove() }) {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onRemove()
+                }) {
                     Text("Remove", color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
         )
     }
 
@@ -468,7 +510,7 @@ private fun FavoriteCard(
             .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = if (inSelectMode) onSelect else onPlay,
-                onLongClick = if (inSelectMode) null else onEnterSelectMode
+                onLongClick = if (inSelectMode) null else onEnterSelectMode,
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
@@ -476,32 +518,32 @@ private fun FavoriteCard(
                 isSelected -> MaterialTheme.colorScheme.primaryContainer
                 isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                 else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+            },
+        ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             if (inSelectMode) {
                 Icon(
                     Icons.Default.DragHandle,
                     contentDescription = "Reorder",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = dragHandleModifier.size(22.dp)
+                    modifier = dragHandleModifier.size(22.dp),
                 )
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = null,
                     tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(4.dp))
             }
             Box(
                 Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 if (fav.favicon.isNotEmpty()) {
                     AsyncImage(model = fav.favicon, contentDescription = null, modifier = Modifier.fillMaxSize())
@@ -516,7 +558,7 @@ private fun FavoriteCard(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                 )
                 if (fav.country.isNotEmpty()) {
                     Text(fav.country, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -528,7 +570,7 @@ private fun FavoriteCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                     )
                 }
                 if (fav.bitrate > 0 || fav.codec.isNotEmpty()) {
@@ -553,7 +595,7 @@ private fun GroupAssignDialog(
     existingGroups: List<FavoriteGroupEntity>,
     onCreateNew: (String) -> Unit,
     onAssignExisting: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     var newGroupName by remember { mutableStateOf("") }
     AlertDialog(
@@ -566,7 +608,7 @@ private fun GroupAssignDialog(
                     onValueChange = { newGroupName = it },
                     label = { Text("New group name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 if (existingGroups.isNotEmpty()) {
                     Text("Or assign to:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -585,6 +627,6 @@ private fun GroupAssignDialog(
                 TextButton(onClick = { onCreateNew(newGroupName.trim()) }) { Text("Create") }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

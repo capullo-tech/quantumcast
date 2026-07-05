@@ -10,6 +10,8 @@ ksp = "2.3.9"                    # decoupled KSP line; pairs with Room 2.8.4
 room = "2.8.4"
 hilt = "2.59.2"                  # DI (org standard; RadioCapullo)
 hiltViewmodelCompose = "1.3.0"   # hiltViewModel() for Nav3 (step 5); harmless while on by viewModels()
+spotless = "8.3.0"               # code style (org standard, from RadioCapullo)
+ktlint = "1.7.1"                 # Spotless drives ktlint
 composeBom = "2026.02.01"
 kotlinxSerializationJson = "1.10.0"   # MUST track the 2.3.10 serialization plugin (was 1.7.3)
 # --- Compose-adjacent AndroidX (bumped to the org standard; a 2026 BOM wants the newer runtime) ---
@@ -95,3 +97,4 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

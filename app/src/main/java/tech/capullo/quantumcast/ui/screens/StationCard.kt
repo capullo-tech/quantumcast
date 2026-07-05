@@ -14,12 +14,12 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,7 +41,7 @@ fun StationCard(
     isSelected: Boolean = false,
     onSelect: () -> Unit = {},
     onEnterSelectMode: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var showInfo by remember { mutableStateOf(false) }
 
@@ -50,8 +50,11 @@ fun StationCard(
             station = station,
             isFavorite = isFavorite,
             onDismiss = { showInfo = false },
-            onPlay = { onPlay(); showInfo = false },
-            onToggleFavorite = onToggleFavorite
+            onPlay = {
+                onPlay()
+                showInfo = false
+            },
+            onToggleFavorite = onToggleFavorite,
         )
     }
 
@@ -60,7 +63,7 @@ fun StationCard(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = if (inSelectMode) onSelect else onPlay,
-                onLongClick = if (inSelectMode) null else onEnterSelectMode
+                onLongClick = if (inSelectMode) null else onEnterSelectMode,
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
@@ -68,19 +71,19 @@ fun StationCard(
                 isSelected -> MaterialTheme.colorScheme.primaryContainer
                 isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                 else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+            },
+        ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             if (inSelectMode) {
                 Icon(
                     imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = null,
                     tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(4.dp))
             }
@@ -90,20 +93,20 @@ fun StationCard(
                     .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 if (station.favicon.isNotEmpty()) {
                     AsyncImage(
                         model = station.favicon,
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
@@ -116,14 +119,14 @@ fun StationCard(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE)
+                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                 )
                 if (station.country.isNotEmpty()) {
                     Text(
                         text = station.country,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
+                        maxLines = 1,
                     )
                 }
                 val allTags = remember(station.tags) {
@@ -137,18 +140,18 @@ fun StationCard(
                         maxLines = 1,
                         modifier = Modifier
                             .padding(top = 2.dp)
-                            .basicMarquee(iterations = Int.MAX_VALUE)
+                            .basicMarquee(iterations = Int.MAX_VALUE),
                     )
                 }
                 if (station.bitrate > 0 || station.codec.isNotEmpty()) {
                     val qualityText = listOfNotNull(
                         station.codec.takeIf { it.isNotEmpty() },
-                        if (station.bitrate > 0) "${station.bitrate} kbps" else null
+                        if (station.bitrate > 0) "${station.bitrate} kbps" else null,
                     ).joinToString(" · ")
                     Text(
                         text = qualityText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -162,7 +165,7 @@ fun StationCard(
                         imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -174,13 +177,13 @@ fun StationCard(
 fun TagChip(tag: String) {
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant
+        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Text(
             text = tag,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
 }

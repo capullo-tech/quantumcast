@@ -36,7 +36,9 @@ class SnapserverDiscoveryManager(context: Context) {
 
     fun stopDiscovery() {
         discoveryListeners.forEach {
-            try { nsdManager.stopServiceDiscovery(it) } catch (_: Exception) {}
+            try {
+                nsdManager.stopServiceDiscovery(it)
+            } catch (_: Exception) {}
         }
         discoveryListeners.clear()
 
@@ -100,15 +102,26 @@ class SnapserverDiscoveryManager(context: Context) {
             ?.filter { !it.isLoopbackAddress }
             ?.mapNotNull { it.hostAddress }
             ?.toSet() ?: emptySet()
-    } catch (_: Exception) { emptySet() }
+    } catch (_: Exception) {
+        emptySet()
+    }
 
     private fun rebuildList() {
         val localIps = localIpAddresses()
         _discoveredServers.value = resolvedInfos.values.mapNotNull { info ->
             val host = info.host?.hostAddress ?: return@mapNotNull null
-            if (host in localIps) return@mapNotNull null  // skip self
+            if (host in localIps) return@mapNotNull null // skip self
             val name = info.serviceName
-                .let { if (it.startsWith(SERVICE_NAME_PREFIX)) it.substring(SERVICE_NAME_PREFIX.length) else it }
+                .let {
+                    if (it.startsWith(
+                            SERVICE_NAME_PREFIX,
+                        )
+                    ) {
+                        it.substring(SERVICE_NAME_PREFIX.length)
+                    } else {
+                        it
+                    }
+                }
             DiscoveredSnapserver(name, info.serviceType, host, info.port)
         }
     }

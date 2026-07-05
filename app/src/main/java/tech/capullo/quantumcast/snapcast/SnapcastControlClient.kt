@@ -89,7 +89,8 @@ class SnapcastControlClient(
                 val response = try {
                     snapJson.decodeFromString(SnapcastJSONRPCResponseSerializer, json)
                 } catch (e: Exception) {
-                    Log.d(TAG, "Decode error: $e"); null
+                    Log.d(TAG, "Decode error: $e")
+                    null
                 }
                 emit(response)
             } ?: run {
@@ -107,7 +108,7 @@ class SnapcastControlClient(
             ClientSetVolumeRequest(
                 id = requestIdCounter++,
                 params = VolumeParams(clientId, Volume(muted, percent)),
-            )
+            ),
         )
     }
 
@@ -116,7 +117,7 @@ class SnapcastControlClient(
             GroupSetClientsRequest(
                 id = requestIdCounter++,
                 params = GroupClientsParams(groupId, clientIds),
-            )
+            ),
         )
     }
 
@@ -125,7 +126,7 @@ class SnapcastControlClient(
             ServerDeleteClientRequest(
                 id = requestIdCounter++,
                 params = DeleteClientParams(clientId),
-            )
+            ),
         )
     }
 
@@ -134,7 +135,7 @@ class SnapcastControlClient(
             ClientSetNameRequest(
                 id = requestIdCounter++,
                 params = ClientNameParams(clientId, name),
-            )
+            ),
         )
     }
 
@@ -143,17 +144,20 @@ class SnapcastControlClient(
             ClientSetLatencyRequest(
                 id = requestIdCounter++,
                 params = LatencyParams(clientId, latencyMs),
-            )
+            ),
         )
     }
 
     suspend fun sendStreamControl(streamId: String, command: String) {
-        Log.d(TAG, "sendStreamControl: stream=$streamId command=$command session=${session != null}")
+        Log.d(
+            TAG,
+            "sendStreamControl: stream=$streamId command=$command session=${session != null}",
+        )
         session?.sendSerialized(
             StreamControlRequest(
                 id = requestIdCounter++,
                 params = StreamControlParams(id = streamId, command = command),
-            )
+            ),
         )
     }
 

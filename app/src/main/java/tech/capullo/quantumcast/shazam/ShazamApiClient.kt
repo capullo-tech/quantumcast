@@ -10,38 +10,36 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-data class ShazamResponse(
-    @SerializedName("track") val track: ShazamTrack? = null
-)
+data class ShazamResponse(@SerializedName("track") val track: ShazamTrack? = null)
 
 data class ShazamTrack(
     @SerializedName("title") val title: String = "",
     @SerializedName("subtitle") val subtitle: String = "",
     @SerializedName("images") val images: ShazamImages? = null,
-    @SerializedName("hub") val hub: ShazamHub? = null
+    @SerializedName("hub") val hub: ShazamHub? = null,
 )
 
 data class ShazamImages(
     @SerializedName("coverart") val coverart: String = "",
-    @SerializedName("coverarthq") val coverarthq: String = ""
+    @SerializedName("coverarthq") val coverarthq: String = "",
 )
 
 data class ShazamHub(
     @SerializedName("type") val type: String = "",
     @SerializedName("actions") val actions: List<ShazamAction> = emptyList(),
-    @SerializedName("providers") val providers: List<ShazamProvider> = emptyList()
+    @SerializedName("providers") val providers: List<ShazamProvider> = emptyList(),
 )
 
 data class ShazamProvider(
     @SerializedName("type") val type: String = "",
-    @SerializedName("actions") val actions: List<ShazamAction> = emptyList()
+    @SerializedName("actions") val actions: List<ShazamAction> = emptyList(),
 )
 
 data class ShazamAction(
     @SerializedName("id") val id: String = "",
     @SerializedName("name") val name: String = "",
     @SerializedName("type") val type: String = "",
-    @SerializedName("uri") val uri: String = ""
+    @SerializedName("uri") val uri: String = "",
 )
 
 object ShazamApiClient {
@@ -62,11 +60,11 @@ object ShazamApiClient {
             "&shazamapiversion=v3&sharehub=true&hubv5minorversion=v5.1&hidelb=true&video=v3"
 
         val bodyMap = mapOf(
-            "timezone"    to "America/New_York",
-            "signature"   to mapOf("uri" to sig.encodeToUri(), "samplems" to sig.sampleMs()),
-            "timestamp"   to System.currentTimeMillis(),
-            "context"     to emptyMap<String, Any>(),
-            "geolocation" to emptyMap<String, Any>()
+            "timezone" to "America/New_York",
+            "signature" to mapOf("uri" to sig.encodeToUri(), "samplems" to sig.sampleMs()),
+            "timestamp" to System.currentTimeMillis(),
+            "context" to emptyMap<String, Any>(),
+            "geolocation" to emptyMap<String, Any>(),
         )
 
         val req = Request.Builder()

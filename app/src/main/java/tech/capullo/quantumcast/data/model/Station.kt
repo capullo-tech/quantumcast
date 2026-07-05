@@ -15,8 +15,10 @@ data class Station(
     @SerializedName("votes") val votes: Int = 0,
     @SerializedName("clickcount") val clickCount: Int = 0,
     @SerializedName("codec") val codec: String = "",
-    @SerializedName("bitrate") val bitrate: Int = 0
+    @SerializedName("bitrate") val bitrate: Int = 0,
 ) {
     val streamUrl: String get() = url.ifEmpty { urlFallback }
-    val displayTags: List<String> get() = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.take(3)
+    val displayTags: List<String> get() = tags.split(",").map {
+        it.trim()
+    }.filter { it.isNotEmpty() }.take(3)
 }

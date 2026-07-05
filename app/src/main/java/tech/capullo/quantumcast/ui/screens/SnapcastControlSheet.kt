@@ -4,15 +4,15 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,10 +34,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import tech.capullo.quantumcast.snapcast.Group
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import tech.capullo.quantumcast.snapcast.Group
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -91,7 +91,7 @@ fun SnapcastControlSheet(
                     .background(
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                         RoundedCornerShape(2.dp),
-                    )
+                    ),
             )
         },
     ) {
@@ -123,8 +123,11 @@ fun SnapcastControlSheet(
         }
 
         // Group volume slider
-        val serverAvg = if (connectedClients.isEmpty()) 1f
-                        else connectedClients.map { it.config.volume.percent }.average().toFloat() / 100f
+        val serverAvg = if (connectedClients.isEmpty()) {
+            1f
+        } else {
+            connectedClients.map { it.config.volume.percent }.average().toFloat() / 100f
+        }
         var groupVolume by remember { mutableFloatStateOf(serverAvg) }
         var isDragging by remember { mutableStateOf(false) }
         // Snapshot of each client's volume at the moment the drag started
@@ -144,8 +147,13 @@ fun SnapcastControlSheet(
         // Slim bar like the web player's group slider (thin track, small round
         // thumb) instead of the tall M3 pill style
         val sliderEnabled = connectedClients.isNotEmpty()
-        val sliderColor = (if (!isBroadcaster) MaterialTheme.colorScheme.error
-                           else MaterialTheme.colorScheme.primary)
+        val sliderColor = (
+            if (!isBroadcaster) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+            )
             .copy(alpha = if (sliderEnabled) 1f else 0.4f)
         Row(
             modifier = Modifier
@@ -200,11 +208,13 @@ fun SnapcastControlSheet(
                     val now = System.currentTimeMillis()
                     debounceJob?.cancel()
                     if (now - lastGrpSentMs >= 80) {
-                        lastGrpSentMs = now; sendVols()
+                        lastGrpSentMs = now
+                        sendVols()
                     } else {
                         debounceJob = sliderScope.launch {
                             delay(80 - (now - lastGrpSentMs))
-                            lastGrpSentMs = System.currentTimeMillis(); sendVols()
+                            lastGrpSentMs = System.currentTimeMillis()
+                            sendVols()
                         }
                     }
                 },
@@ -222,8 +232,11 @@ fun SnapcastControlSheet(
                             finalVol < startGroup -> startVol * (finalVol / startGroup)
                             else -> startVol + (1f - startVol) * ((finalVol - startGroup) / (1f - startGroup))
                         }
-                        onClientVolumeChange(client.id, client.config.volume.muted,
-                            round(newVol.coerceIn(0f, 1f) * 100f).toInt())
+                        onClientVolumeChange(
+                            client.id,
+                            client.config.volume.muted,
+                            round(newVol.coerceIn(0f, 1f) * 100f).toInt(),
+                        )
                     }
                     // Wait for all server echoes before re-enabling server sync
                     settleJob = sliderScope.launch {
@@ -243,13 +256,13 @@ fun SnapcastControlSheet(
                             .fillMaxWidth()
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(sliderColor.copy(alpha = 0.25f))
+                            .background(sliderColor.copy(alpha = 0.25f)),
                     ) {
                         Box(
                             Modifier
                                 .fillMaxWidth(state.value.coerceIn(0f, 1f))
                                 .fillMaxHeight()
-                                .background(sliderColor)
+                                .background(sliderColor),
                         )
                     }
                 },
@@ -301,10 +314,12 @@ fun SnapcastControlSheet(
                 items(connectedClients, key = { it.id }) { client ->
                     val rawName = client.config.name.ifBlank { client.host.name.ifBlank { client.host.ip } }
                     val channelTag = Regex("\\s*\\[([LRS])\\]$").find(rawName)?.groupValues?.get(1)
-                    val displayName = if (channelTag != null)
+                    val displayName = if (channelTag != null) {
                         rawName.replace(Regex("\\s*\\[[LRS]\\]$"), "").trim()
                             .ifBlank { client.host.name.ifBlank { client.host.ip } }
-                    else rawName
+                    } else {
+                        rawName
+                    }
                     ClientCard(
                         name = displayName,
                         channelTag = channelTag,
@@ -324,11 +339,15 @@ fun SnapcastControlSheet(
                         onChannelCycle = if (channelTag != null) {
                             {
                                 val nextChannel = when (channelTag) {
-                                    "S" -> "left"; "L" -> "right"; else -> "stereo"
+                                    "S" -> "left"
+                                    "L" -> "right"
+                                    else -> "stereo"
                                 }
                                 onChangeClientChannel(client.id, nextChannel)
                             }
-                        } else null,
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -389,11 +408,20 @@ private fun ClientCard(
                             mode = knobMode,
                             onModeToggle = { knobMode = if (knobMode == KnobMode.LATENCY) KnobMode.VOLUME else KnobMode.LATENCY },
                             latency = latencyState,
-                            onLatencyChange = { v -> latencyState = v; onLatencyChange(v) },
+                            onLatencyChange = { v ->
+                                latencyState = v
+                                onLatencyChange(v)
+                            },
                             volume = round(volumeState * 100f).toInt(),
-                            onVolumeChange = { v -> volumeState = v / 100f; onVolumeChange(v) },
+                            onVolumeChange = { v ->
+                                volumeState = v / 100f
+                                onVolumeChange(v)
+                            },
                             muted = mutedState,
-                            onMutedToggle = { mutedState = !mutedState; onMutedToggle(mutedState) },
+                            onMutedToggle = {
+                                mutedState = !mutedState
+                                onMutedToggle(mutedState)
+                            },
                             baseSize = knobBaseSize,
                             isSnapclient = isSnapclient,
                         )
@@ -457,28 +485,39 @@ private fun ClientKnob(
     val knobSize by animateDpAsState(if (isActive) baseSize * 1.28f else baseSize, label = "knobSize")
     val indicatorScale by animateFloatAsState(if (isActive) 1.06f else 1f, label = "indScale")
 
-    val knobFillColor = if (isSnapclient) when {
-        isActive && mode == KnobMode.LATENCY -> MaterialTheme.colorScheme.errorContainer
-        isActive && mode == KnobMode.VOLUME  -> MaterialTheme.colorScheme.error
-        else                                 -> MaterialTheme.colorScheme.errorContainer
-    } else when {
-        isActive && mode == KnobMode.LATENCY -> MaterialTheme.colorScheme.primaryContainer
-        isActive && mode == KnobMode.VOLUME  -> MaterialTheme.colorScheme.tertiary
-        mode == KnobMode.LATENCY             -> MaterialTheme.colorScheme.secondaryContainer
-        else                                 -> MaterialTheme.colorScheme.tertiaryContainer
+    val knobFillColor = if (isSnapclient) {
+        when {
+            isActive && mode == KnobMode.LATENCY -> MaterialTheme.colorScheme.errorContainer
+            isActive && mode == KnobMode.VOLUME -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.errorContainer
+        }
+    } else {
+        when {
+            isActive && mode == KnobMode.LATENCY -> MaterialTheme.colorScheme.primaryContainer
+            isActive && mode == KnobMode.VOLUME -> MaterialTheme.colorScheme.tertiary
+            mode == KnobMode.LATENCY -> MaterialTheme.colorScheme.secondaryContainer
+            else -> MaterialTheme.colorScheme.tertiaryContainer
+        }
     }
     val knobEdgeColor = if (isSnapclient) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
-    val indicatorColor = if (isSnapclient) when (mode) {
-        KnobMode.LATENCY -> MaterialTheme.colorScheme.onErrorContainer
-        KnobMode.VOLUME  -> MaterialTheme.colorScheme.onError
-    } else when (mode) {
-        KnobMode.LATENCY -> MaterialTheme.colorScheme.onPrimaryContainer
-        KnobMode.VOLUME  -> MaterialTheme.colorScheme.onTertiary
+    val indicatorColor = if (isSnapclient) {
+        when (mode) {
+            KnobMode.LATENCY -> MaterialTheme.colorScheme.onErrorContainer
+            KnobMode.VOLUME -> MaterialTheme.colorScheme.onError
+        }
+    } else {
+        when (mode) {
+            KnobMode.LATENCY -> MaterialTheme.colorScheme.onPrimaryContainer
+            KnobMode.VOLUME -> MaterialTheme.colorScheme.onTertiary
+        }
     }
-    val centerTextColor = if (isSnapclient) MaterialTheme.colorScheme.onErrorContainer
-    else when (mode) {
-        KnobMode.LATENCY -> MaterialTheme.colorScheme.onSecondaryContainer
-        KnobMode.VOLUME  -> MaterialTheme.colorScheme.onTertiaryContainer
+    val centerTextColor = if (isSnapclient) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        when (mode) {
+            KnobMode.LATENCY -> MaterialTheme.colorScheme.onSecondaryContainer
+            KnobMode.VOLUME -> MaterialTheme.colorScheme.onTertiaryContainer
+        }
     }
 
     Box(
@@ -492,37 +531,77 @@ private fun ClientKnob(
                 detectTapGestures(
                     onTap = { onModeToggle() },
                     onDoubleTap = {
-                        isActive = false; prevSmoothedDelta = 0f; accDelta = 0f
+                        isActive = false
+                        prevSmoothedDelta = 0f
+                        accDelta = 0f
                         when (mode) {
-                            KnobMode.LATENCY -> if (displayLatency != 0) { displayLatency = 0; onLatencyChange(0) }
-                            KnobMode.VOLUME  -> onMutedToggle()
+                            KnobMode.LATENCY -> if (displayLatency != 0) {
+                                displayLatency = 0
+                                onLatencyChange(0)
+                            }
+                            KnobMode.VOLUME -> onMutedToggle()
                         }
                     },
                 )
             }
             .pointerInput(mode) {
                 detectDragGesturesAfterLongPress(
-                    onDragStart = { isActive = true; prevSmoothedDelta = 0f; accDelta = 0f },
-                    onDragEnd   = { isActive = false; prevSmoothedDelta = 0f; accDelta = 0f },
-                    onDragCancel = { isActive = false; prevSmoothedDelta = 0f; accDelta = 0f },
+                    onDragStart = {
+                        isActive = true
+                        prevSmoothedDelta = 0f
+                        accDelta = 0f
+                    },
+                    onDragEnd = {
+                        isActive = false
+                        prevSmoothedDelta = 0f
+                        accDelta = 0f
+                    },
+                    onDragCancel = {
+                        isActive = false
+                        prevSmoothedDelta = 0f
+                        accDelta = 0f
+                    },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        val delta = computeAngularDelta(center, change.position, dragAmount,
-                            knobRadiusPx, minActiveRadiusRatio, tinyMotionDeadzoneDeg, maxEventDeltaDeg)
+                        val delta = computeAngularDelta(
+                            center,
+                            change.position,
+                            dragAmount,
+                            knobRadiusPx,
+                            minActiveRadiusRatio,
+                            tinyMotionDeadzoneDeg,
+                            maxEventDeltaDeg,
+                        )
                         val smoothed = prevSmoothedDelta * smoothingPrevWeight + delta * smoothingCurrentWeight
                         prevSmoothedDelta = smoothed
                         accDelta += smoothed * angularGain
                         while (accDelta >= degreesPerStep) {
                             when (mode) {
-                                KnobMode.LATENCY -> if (displayLatency < maxLatency) { val v = (displayLatency + 1).coerceAtMost(maxLatency); displayLatency = v; onLatencyChange(v) }
-                                KnobMode.VOLUME  -> if (displayVolume < 100) { val v = (displayVolume + 1).coerceAtMost(100); displayVolume = v; onVolumeChange(v) }
+                                KnobMode.LATENCY -> if (displayLatency < maxLatency) {
+                                    val v = (displayLatency + 1).coerceAtMost(maxLatency)
+                                    displayLatency = v
+                                    onLatencyChange(v)
+                                }
+                                KnobMode.VOLUME -> if (displayVolume < 100) {
+                                    val v = (displayVolume + 1).coerceAtMost(100)
+                                    displayVolume = v
+                                    onVolumeChange(v)
+                                }
                             }
                             accDelta -= degreesPerStep
                         }
                         while (accDelta <= -degreesPerStep) {
                             when (mode) {
-                                KnobMode.LATENCY -> if (displayLatency > minLatency) { val v = (displayLatency - 1).coerceAtLeast(minLatency); displayLatency = v; onLatencyChange(v) }
-                                KnobMode.VOLUME  -> if (displayVolume > 0) { val v = (displayVolume - 1).coerceAtLeast(0); displayVolume = v; onVolumeChange(v) }
+                                KnobMode.LATENCY -> if (displayLatency > minLatency) {
+                                    val v = (displayLatency - 1).coerceAtLeast(minLatency)
+                                    displayLatency = v
+                                    onLatencyChange(v)
+                                }
+                                KnobMode.VOLUME -> if (displayVolume > 0) {
+                                    val v = (displayVolume - 1).coerceAtLeast(0)
+                                    displayVolume = v
+                                    onVolumeChange(v)
+                                }
                             }
                             accDelta += degreesPerStep
                         }
@@ -582,14 +661,19 @@ private fun ClientKnob(
 }
 
 private fun computeAngularDelta(
-    center: Offset, pointerPosition: Offset, dragAmount: Offset,
-    knobRadiusPx: Float, minActiveRadiusRatio: Float,
-    tinyMotionDeadzoneDeg: Float, maxEventDeltaDeg: Float,
+    center: Offset,
+    pointerPosition: Offset,
+    dragAmount: Offset,
+    knobRadiusPx: Float,
+    minActiveRadiusRatio: Float,
+    tinyMotionDeadzoneDeg: Float,
+    maxEventDeltaDeg: Float,
 ): Float {
     val v = pointerPosition - center
     val r = sqrt(v.x * v.x + v.y * v.y)
     if (r < knobRadiusPx * minActiveRadiusRatio || r <= 0f) return 0f
-    val tx = -v.y / r; val ty = v.x / r
+    val tx = -v.y / r
+    val ty = v.x / r
     val tangentialPx = dragAmount.x * tx + dragAmount.y * ty
     val deg = (tangentialPx / r) * (180f / PI.toFloat())
     if (abs(deg) < tinyMotionDeadzoneDeg) return 0f

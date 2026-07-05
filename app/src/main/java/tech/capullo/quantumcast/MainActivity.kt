@@ -11,6 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -20,11 +22,16 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SurroundSound
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.serialization.Serializable
 import tech.capullo.quantumcast.data.model.Station
 import tech.capullo.quantumcast.player.PlaybackService
 import tech.capullo.quantumcast.snapcast.DiscoveredSnapserver
@@ -32,20 +39,17 @@ import tech.capullo.quantumcast.snapcast.SnapserverDiscoveryManager
 import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
-import dagger.hilt.android.AndroidEntryPoint
-import androidx.navigation3.runtime.NavKey
-import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.runtime.rememberNavBackStack
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
-import androidx.navigation3.ui.NavDisplay
-import kotlinx.serialization.Serializable
 
 // Navigation3 tab destinations. @Serializable NavKeys (kotlinx-serialization is already applied)
 // so rememberNavBackStack can save/restore them across process death.
 @Serializable private data object SearchRoute : NavKey
+
 @Serializable private data object FavoritesRoute : NavKey
+
 @Serializable private data object SnapcastRoute : NavKey
+
 @Serializable private data object CountriesRoute : NavKey
+
 @Serializable private data object SettingsRoute : NavKey
 
 private data class TabItem(val route: NavKey, val label: String, val icon: ImageVector)
@@ -109,9 +113,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         when (intent.getStringExtra("dbg")) {
-            "shuffle"  -> vm.startShuffleRotation()
-            "skip"     -> vm.skipStation()
-            "stop"     -> vm.stopRotation()
+            "shuffle" -> vm.startShuffleRotation()
+            "skip" -> vm.skipStation()
+            "stop" -> vm.stopRotation()
             "snaptest" -> vm.startSnapTest()
         }
     }
@@ -132,32 +136,32 @@ private fun RadioApp(
 ) {
     val backStack = rememberNavBackStack(SearchRoute)
 
-    val searchResults           by vm.searchResults.collectAsState()
-    val playerState             by vm.playerState.collectAsState()
-    val rotationState           by vm.rotationState.collectAsState()
-    val favorites               by vm.favorites.collectAsState()
-    val favoriteUuids           by vm.favoriteUuids.collectAsState()
-    val settings                by vm.settings.collectAsState()
-    val countryList             by vm.countryList.collectAsState()
-    val countryStations         by vm.countryStations.collectAsState()
-    val selectedCountry         by vm.selectedCountry.collectAsState()
-    val groups                  by vm.groups.collectAsState()
-    val expandedGroupIds        by vm.expandedGroupIds.collectAsState()
-    val trackHistory            by vm.trackHistory.collectAsState()
-    val rotationQueue           by vm.rotationQueue.collectAsState()
-    val isShazamRunning         by vm.isShazamRunning.collectAsState()
-    val isShuffleLoading        by vm.isShuffleLoading.collectAsState()
-    val shuffleConnected        by vm.shuffleConnected.collectAsState()
-    val showTrackDetail         by vm.showDetailScreen.collectAsState()
-    val snapclientHost          by vm.snapclientHost.collectAsState()
-    val snapclientChannel       by vm.snapclientChannel.collectAsState()
-    val snapclientState         by vm.snapclientState.collectAsState()
-    val snapcastGroups          by vm.snapcastGroups.collectAsState()
-    val streamCanGoNext         by vm.streamCanGoNext.collectAsState()
-    val streamCanGoPrevious     by vm.streamCanGoPrevious.collectAsState()
-    val isStreamLocked          by vm.isStreamLocked.collectAsState()
-    val streamStats             by vm.streamStats.collectAsState()
-    val sleepTimerActive        by vm.sleepTimerActive.collectAsState()
+    val searchResults by vm.searchResults.collectAsState()
+    val playerState by vm.playerState.collectAsState()
+    val rotationState by vm.rotationState.collectAsState()
+    val favorites by vm.favorites.collectAsState()
+    val favoriteUuids by vm.favoriteUuids.collectAsState()
+    val settings by vm.settings.collectAsState()
+    val countryList by vm.countryList.collectAsState()
+    val countryStations by vm.countryStations.collectAsState()
+    val selectedCountry by vm.selectedCountry.collectAsState()
+    val groups by vm.groups.collectAsState()
+    val expandedGroupIds by vm.expandedGroupIds.collectAsState()
+    val trackHistory by vm.trackHistory.collectAsState()
+    val rotationQueue by vm.rotationQueue.collectAsState()
+    val isShazamRunning by vm.isShazamRunning.collectAsState()
+    val isShuffleLoading by vm.isShuffleLoading.collectAsState()
+    val shuffleConnected by vm.shuffleConnected.collectAsState()
+    val showTrackDetail by vm.showDetailScreen.collectAsState()
+    val snapclientHost by vm.snapclientHost.collectAsState()
+    val snapclientChannel by vm.snapclientChannel.collectAsState()
+    val snapclientState by vm.snapclientState.collectAsState()
+    val snapcastGroups by vm.snapcastGroups.collectAsState()
+    val streamCanGoNext by vm.streamCanGoNext.collectAsState()
+    val streamCanGoPrevious by vm.streamCanGoPrevious.collectAsState()
+    val isStreamLocked by vm.isStreamLocked.collectAsState()
+    val streamStats by vm.streamStats.collectAsState()
+    val sleepTimerActive by vm.sleepTimerActive.collectAsState()
     val sleepTimerSecondsRemaining by vm.sleepTimerSecondsRemaining.collectAsState()
 
     fun startCustomRotation(stations: List<Station>) = vm.startCustomRotation(stations)
@@ -174,7 +178,11 @@ private fun RadioApp(
             rotationQueue = rotationQueue,
             favoriteUuids = favoriteUuids,
             onBack = { vm.hideDetail() },
-            onOpenSettings = { vm.hideDetail(); backStack.clear(); backStack.add(SettingsRoute) },
+            onOpenSettings = {
+                vm.hideDetail()
+                backStack.clear()
+                backStack.add(SettingsRoute)
+            },
             onTogglePlayPause = vm::togglePlayPause,
             onIdentifyNow = vm::identifyNow,
             onCancelIdentify = vm::cancelIdentify,
@@ -244,7 +252,7 @@ private fun RadioApp(
                     }
                 }
             }
-        }
+        },
     ) { padding ->
         NavDisplay(
             backStack = backStack,
@@ -264,7 +272,10 @@ private fun RadioApp(
                         isShuffleLoading = isShuffleLoading,
                         shuffleConnected = shuffleConnected,
                         onStartCustomRotation = ::startCustomRotation,
-                        onPlay = { station -> vm.cancelRotation(); vm.play(station) },
+                        onPlay = { station ->
+                            vm.cancelRotation()
+                            vm.play(station)
+                        },
                         onToggleFavorite = vm::toggleFavorite,
                         vm = vm,
                         modifier = Modifier.padding(padding),
@@ -276,7 +287,10 @@ private fun RadioApp(
                         groups = groups,
                         expandedGroupIds = expandedGroupIds,
                         playerState = playerState,
-                        onPlay = { fav -> vm.cancelRotation(); vm.playFromFavorite(fav) },
+                        onPlay = { fav ->
+                            vm.cancelRotation()
+                            vm.playFromFavorite(fav)
+                        },
                         onRemove = vm::toggleFavorite,
                         onStartRotation = vm::startFavRotation,
                         onStartCustomRotation = ::startCustomRotation,
@@ -320,7 +334,10 @@ private fun RadioApp(
                         onLoadCountries = vm::loadCountries,
                         onSelectCountry = vm::selectCountry,
                         onBack = vm::clearCountrySelection,
-                        onPlay = { station -> vm.cancelRotation(); vm.play(station) },
+                        onPlay = { station ->
+                            vm.cancelRotation()
+                            vm.play(station)
+                        },
                         onToggleFavorite = vm::toggleFavorite,
                         onStartCustomRotation = ::startCustomRotation,
                         vm = vm,
@@ -342,7 +359,10 @@ private fun RadioApp(
                         onSetApiServer = { vm.updateSetting { setApiServer(it) } },
                         onSetSearchLimit = { vm.updateSetting { setSearchLimit(it) } },
                         onSetRandomBatchSize = { vm.updateSetting { setRandomBatchSize(it) } },
-                        onSetRotationMinutes = { vm.updateSetting { setRotationMinutes(it) }; vm.setLiveMinutes(it) },
+                        onSetRotationMinutes = {
+                            vm.updateSetting { setRotationMinutes(it) }
+                            vm.setLiveMinutes(it)
+                        },
                         onSetVlcNetworkCachingMs = { vm.updateSetting { setVlcNetworkCachingMs(it) } },
                         onSetShazamIntervalSeconds = { vm.updateSetting { setShazamIntervalSeconds(it) } },
                         onSetSleepTimerMinutes = { vm.updateSetting { setSleepTimerMinutes(it) } },

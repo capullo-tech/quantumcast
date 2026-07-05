@@ -19,28 +19,6 @@ import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import tech.capullo.quantumcast.MainActivity
-import tech.capullo.quantumcast.data.settings.BroadcastMode
-import tech.capullo.quantumcast.snapcast.SnapclientProcess
-import tech.capullo.quantumcast.snapcast.SnapcontrolCallbacks
-import tech.capullo.quantumcast.snapcast.SnapcontrolPlugin
-import tech.capullo.quantumcast.snapcast.firstArtist
-import tech.capullo.quantumcast.snapcast.SnapserverProcess
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.FileOutputStream
-import kotlin.random.Random
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
@@ -54,6 +32,28 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import tech.capullo.quantumcast.MainActivity
+import tech.capullo.quantumcast.data.settings.BroadcastMode
+import tech.capullo.quantumcast.snapcast.SnapclientProcess
+import tech.capullo.quantumcast.snapcast.SnapcontrolCallbacks
+import tech.capullo.quantumcast.snapcast.SnapcontrolPlugin
+import tech.capullo.quantumcast.snapcast.SnapserverProcess
+import tech.capullo.quantumcast.snapcast.firstArtist
+import java.io.FileOutputStream
+import kotlin.random.Random
 
 @androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : Service() {
@@ -78,7 +78,7 @@ class PlaybackService : Service() {
             tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState.STARTING,
         val snapcastGroups: List<tech.capullo.quantumcast.snapcast.Group> = emptyList(),
         val snapcastStreamArtUrl: String = "",
-        val artworkUrl: String = "",  // Shazam artwork; falls back to favicon
+        val artworkUrl: String = "", // Shazam artwork; falls back to favicon
         val streamCanPlay: Boolean = false,
         val streamCanPause: Boolean = false,
         val streamCanGoNext: Boolean = false,
@@ -131,15 +131,18 @@ class PlaybackService : Service() {
     // tee sits before volume so the FIFO always gets full-scale PCM.
     private var exoPlayer: ExoPlayer? = null
     private var fifoSink: FifoAudioBufferSink? = null
+
     @Volatile private var intentionalStop = false
 
     // Playlist resolution (.pls/.m3u/.asx → first stream entry; VLC did this
     // internally, ExoPlayer has no extractor for plain playlists).
     private var resolveJob: Job? = null
-    private var engineUrl = ""       // URL actually handed to ExoPlayer (post-resolution)
+    private var engineUrl = "" // URL actually handed to ExoPlayer (post-resolution)
     private var engineFifoPath = ""
     private var engineCachingMs = 1500
+
     @Volatile private var triedPlaylistFallback = false
+
     @Volatile private var customServerName: String = ""
 
     fun updateCustomServerName(name: String) {
@@ -157,16 +160,26 @@ class PlaybackService : Service() {
         // Rename the local Snapcast client if it is already connected
         val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return
         val channel = _state.value.snapclientChannel
-        val tag = when (channel) { "left" -> "[L]"; "right" -> "[R]"; else -> "[S]" }
+        val tag = when (channel) {
+            "left" -> "[L]"
+            "right" -> "[R]"
+            else -> "[S]"
+        }
         val newName = "${customServerName.ifBlank { Build.MODEL }} $tag"
         _state.update { state ->
-            state.copy(snapcastGroups = state.snapcastGroups.map { group ->
-                group.copy(clients = group.clients.map { c ->
-                    if (c.id == localId || c.id.contains(localId) || localId.contains(c.id))
-                        c.copy(config = c.config.copy(name = newName))
-                    else c
-                })
-            })
+            state.copy(
+                snapcastGroups = state.snapcastGroups.map { group ->
+                    group.copy(
+                        clients = group.clients.map { c ->
+                            if (c.id == localId || c.id.contains(localId) || localId.contains(c.id)) {
+                                c.copy(config = c.config.copy(name = newName))
+                            } else {
+                                c
+                            }
+                        },
+                    )
+                },
+            )
         }
         scope.launch {
             snapcastControl?.sendSetClientName(localId, newName)
@@ -284,8 +297,9 @@ class PlaybackService : Service() {
     private fun resumeLocalAudioAfterFocusLoss(reason: String) {
         if (!focusPausedLocalClient) return
         focusPausedLocalClient = false
-        focusResumeWatcher?.cancel(); focusResumeWatcher = null
-        requestAudioFocus()  // reclaim so the next loss is detected again
+        focusResumeWatcher?.cancel()
+        focusResumeWatcher = null
+        requestAudioFocus() // reclaim so the next loss is detected again
         startLocalSnapclient()
         Log.d(TAG, "Local snapclient restarted ($reason)")
     }
@@ -301,8 +315,9 @@ class PlaybackService : Service() {
                     quietSince = 0L
                 } else {
                     val now = System.currentTimeMillis()
-                    if (quietSince == 0L) quietSince = now
-                    else if (now - quietSince >= 3_000) {
+                    if (quietSince == 0L) {
+                        quietSince = now
+                    } else if (now - quietSince >= 3_000) {
                         withContext(Dispatchers.Main) { resumeLocalAudioAfterFocusLoss("other player quiet") }
                         break
                     }
@@ -389,8 +404,11 @@ class PlaybackService : Service() {
     // which was thread-safe - so marshal to main. The plugin's catch(Throwable)
     // used to swallow that exception silently (web pause/play did nothing).
     private fun runOnMain(block: () -> Unit) {
-        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
-        else android.os.Handler(android.os.Looper.getMainLooper()).post(block)
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            block()
+        } else {
+            android.os.Handler(android.os.Looper.getMainLooper()).post(block)
+        }
     }
 
     fun play() = runOnMain {
@@ -399,20 +417,23 @@ class PlaybackService : Service() {
         // Explicit "make sound" action doubles as last-resort recovery of a
         // focus-paused local snapclient (no-op when not focus-paused).
         resumeLocalAudioAfterFocusLoss("user play")
-        updateNotification(); updateMediaSession()
+        updateNotification()
+        updateMediaSession()
     }
 
     fun pause() = runOnMain {
         exoPlayer?.pause()
         _state.update { it.copy(isPlaying = false) }
-        updateNotification(); updateMediaSession()
+        updateNotification()
+        updateMediaSession()
     }
 
     fun stop() {
         stopEngine()
         stopSnapcast()
         _state.update { PlaybackState() }
-        updateNotification(); updateMediaSession()
+        updateNotification()
+        updateMediaSession()
     }
 
     fun toggleStreamLock() {
@@ -425,14 +446,24 @@ class PlaybackService : Service() {
         stopEngine()
         stopSnapcast()
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
-        _state.update { it.copy(
-            broadcastMode = BroadcastMode.SNAPCLIENT, snapclientHost = host, snapclientPort = port,
-            stationName = "", stationUrl = "", icyTitle = "", snapcastStreamArtUrl = "",
-        ) }
+        _state.update {
+            it.copy(
+                broadcastMode = BroadcastMode.SNAPCLIENT,
+                snapclientHost = host,
+                snapclientPort = port,
+                stationName = "",
+                stationUrl = "",
+                icyTitle = "",
+                snapcastStreamArtUrl = "",
+            )
+        }
         scope.launch { sc.connectionState.collect { s -> _state.update { it.copy(snapclientState = s) } } }
         snapclientJob = scope.launch {
-            sc.start(snapserverAddress = host, snapserverPort = port,
-                audioChannel = _state.value.snapclientChannel)
+            sc.start(
+                snapserverAddress = host,
+                snapserverPort = port,
+                audioChannel = _state.value.snapclientChannel,
+            )
         }
         startSnapcastControl(host)
         requestAudioFocus()
@@ -440,21 +471,21 @@ class PlaybackService : Service() {
     }
 
     private fun applyStreamProperties(props: tech.capullo.quantumcast.snapcast.StreamPlayerProperties) {
-        val meta        = props.metadata
-        val title       = meta?.title ?: ""
-        val artist      = meta?.firstArtist() ?: ""
+        val meta = props.metadata
+        val title = meta?.title ?: ""
+        val artist = meta?.firstArtist() ?: ""
         val stationName = meta?.station ?: ""
-        val art         = meta?.artUrl ?: ""
-        val country      = meta?.country ?: ""
-        val countryCode  = meta?.countryCode ?: ""
-        val codec        = meta?.codec ?: ""
-        val bitrate      = meta?.bitrate ?: 0
-        val url          = meta?.url ?: ""
-        val youtubeUrl   = meta?.youtubeUrl ?: ""
-        val spotifyUrl   = meta?.spotifyUrl ?: ""
+        val art = meta?.artUrl ?: ""
+        val country = meta?.country ?: ""
+        val countryCode = meta?.countryCode ?: ""
+        val codec = meta?.codec ?: ""
+        val bitrate = meta?.bitrate ?: 0
+        val url = meta?.url ?: ""
+        val youtubeUrl = meta?.youtubeUrl ?: ""
+        val spotifyUrl = meta?.spotifyUrl ?: ""
         val appleMusicUrl = meta?.appleMusicUrl ?: ""
-        val tags         = meta?.tags ?: ""
-        val uuid         = meta?.uuid ?: ""
+        val tags = meta?.tags ?: ""
+        val uuid = meta?.uuid ?: ""
         Log.d(TAG, "applyStreamProperties: status=${props.playbackStatus} canNext=${props.canGoNext} title=$title artist=$artist station=$stationName")
         _state.update { st ->
             st.copy(
@@ -463,9 +494,9 @@ class PlaybackService : Service() {
                 snapcastArtistName = artist,
                 snapcastStationName = if (stationName.isNotBlank()) stationName else st.snapcastStationName,
                 snapcastStreamArtUrl = when {
-                    art.isNotBlank() -> art        // new art arrived
-                    meta != null     -> ""         // metadata present but art cleared
-                    else             -> st.snapcastStreamArtUrl  // no metadata (play/pause event)
+                    art.isNotBlank() -> art // new art arrived
+                    meta != null -> "" // metadata present but art cleared
+                    else -> st.snapcastStreamArtUrl // no metadata (play/pause event)
                 },
                 snapcastCountry = if (country.isNotBlank()) country else st.snapcastCountry,
                 snapcastCountryCode = if (countryCode.isNotBlank()) countryCode else st.snapcastCountryCode,
@@ -481,9 +512,11 @@ class PlaybackService : Service() {
                 streamCanPause = props.canPause,
                 streamCanGoNext = props.canGoNext,
                 streamCanGoPrevious = props.canGoPrevious,
-                isPlaying = if (st.broadcastMode == BroadcastMode.SNAPCLIENT)
+                isPlaying = if (st.broadcastMode == BroadcastMode.SNAPCLIENT) {
                     props.playbackStatus == "playing"
-                else st.isPlaying,
+                } else {
+                    st.isPlaying
+                },
             )
         }
         // Do NOT call notifyPropertiesChanged() here - echoes back in QUANTUMCAST mode
@@ -497,7 +530,11 @@ class PlaybackService : Service() {
             .find { it.id == localId || it.id.contains(localId) } ?: return
         localChannelTagSet = true
         val channel = _state.value.snapclientChannel
-        val tag = when (channel) { "left" -> "[L]"; "right" -> "[R]"; else -> "[S]" }
+        val tag = when (channel) {
+            "left" -> "[L]"
+            "right" -> "[R]"
+            else -> "[S]"
+        }
         val baseName = customServerName.ifBlank {
             client.config.name.replace(Regex("\\s*\\[[LRS]\\]$"), "").trim()
                 .ifBlank { client.host.name.ifBlank { client.host.ip } }
@@ -514,7 +551,11 @@ class PlaybackService : Service() {
         val client = groups.flatMap { it.clients }
             .find { it.id == localId || it.id.contains(localId) } ?: return
         val tagMatch = Regex("\\s*\\[([LRS])\\]$").find(client.config.name)?.groupValues?.get(1) ?: return
-        val newChannel = when (tagMatch) { "L" -> "left"; "R" -> "right"; else -> "stereo" }
+        val newChannel = when (tagMatch) {
+            "L" -> "left"
+            "R" -> "right"
+            else -> "stereo"
+        }
         if (newChannel != _state.value.snapclientChannel) {
             Log.d(TAG, "Remote channel change detected → $newChannel")
             _state.update { it.copy(snapclientChannel = newChannel) }
@@ -537,7 +578,11 @@ class PlaybackService : Service() {
     }
 
     private fun changeClientChannelInternal(clientId: String, channel: String) {
-        val tag = when (channel) { "left" -> "[L]"; "right" -> "[R]"; else -> "[S]" }
+        val tag = when (channel) {
+            "left" -> "[L]"
+            "right" -> "[R]"
+            else -> "[S]"
+        }
         val client = _state.value.snapcastGroups.flatMap { it.clients }
             .find { it.id == clientId || it.id.contains(clientId) || clientId.contains(it.id) }
         val baseName = client?.config?.name?.replace(Regex("\\s*\\[[LRS]\\]$"), "")?.trim()
@@ -548,13 +593,19 @@ class PlaybackService : Service() {
 
         // Optimistic update so badge refreshes immediately
         _state.update { state ->
-            state.copy(snapcastGroups = state.snapcastGroups.map { group ->
-                group.copy(clients = group.clients.map { c ->
-                    if (c.id == clientId || c.id.contains(clientId) || clientId.contains(c.id))
-                        c.copy(config = c.config.copy(name = newName))
-                    else c
-                })
-            })
+            state.copy(
+                snapcastGroups = state.snapcastGroups.map { group ->
+                    group.copy(
+                        clients = group.clients.map { c ->
+                            if (c.id == clientId || c.id.contains(clientId) || clientId.contains(c.id)) {
+                                c.copy(config = c.config.copy(name = newName))
+                            } else {
+                                c
+                            }
+                        },
+                    )
+                },
+            )
         }
 
         scope.launch {
@@ -595,13 +646,21 @@ class PlaybackService : Service() {
     }
 
     fun updateIdentifiedTrack(
-        trackName: String, artistName: String,
-        youtubeUrl: String = "", spotifyUrl: String = "", appleMusicUrl: String = ""
+        trackName: String,
+        artistName: String,
+        youtubeUrl: String = "",
+        spotifyUrl: String = "",
+        appleMusicUrl: String = "",
     ) {
-        _state.update { it.copy(
-            shazamTrackName = trackName, shazamArtistName = artistName,
-            shazamYoutubeUrl = youtubeUrl, shazamSpotifyUrl = spotifyUrl, shazamAppleMusicUrl = appleMusicUrl,
-        ) }
+        _state.update {
+            it.copy(
+                shazamTrackName = trackName,
+                shazamArtistName = artistName,
+                shazamYoutubeUrl = youtubeUrl,
+                shazamSpotifyUrl = spotifyUrl,
+                shazamAppleMusicUrl = appleMusicUrl,
+            )
+        }
         snapcontrolPlugin?.notifyPropertiesChanged()
         updateMediaSession()
     }
@@ -629,8 +688,11 @@ class PlaybackService : Service() {
                 val r = PlaylistResolver.resolve(url)
                 withContext(Dispatchers.Main) {
                     if (engineUrl != url || !isActive) return@withContext
-                    if (r != null) Log.d(TAG, "Playlist resolved: $url → ${r.url}")
-                    else Log.w(TAG, "Playlist resolution failed, trying raw URL: $url")
+                    if (r != null) {
+                        Log.d(TAG, "Playlist resolved: $url → ${r.url}")
+                    } else {
+                        Log.w(TAG, "Playlist resolution failed, trying raw URL: $url")
+                    }
                     startEngine(r?.url ?: url, r?.mimeType)
                 }
             }
@@ -646,7 +708,10 @@ class PlaybackService : Service() {
         intentionalStop = false
         // Open the FIFO write end (O_RDWR) BEFORE anything else - parity with
         // VLC's sout, which held the write end open from sout start onward.
-        val sink = FifoAudioBufferSink(engineFifoPath).also { fifoSink = it; it.open() }
+        val sink = FifoAudioBufferSink(engineFifoPath).also {
+            fifoSink = it
+            it.open()
+        }
 
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
@@ -658,10 +723,14 @@ class PlaybackService : Service() {
             .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(8))
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ maxOf(engineCachingMs * 4, 15_000),
-                /* maxBufferMs = */ maxOf(engineCachingMs * 4, 50_000),
-                /* bufferForPlaybackMs = */ engineCachingMs.coerceIn(500, 10_000),
-                /* bufferForPlaybackAfterRebufferMs = */ (engineCachingMs * 2).coerceIn(1_000, 20_000),
+                /* minBufferMs = */
+                maxOf(engineCachingMs * 4, 15_000),
+                /* maxBufferMs = */
+                maxOf(engineCachingMs * 4, 50_000),
+                /* bufferForPlaybackMs = */
+                engineCachingMs.coerceIn(500, 10_000),
+                /* bufferForPlaybackAfterRebufferMs = */
+                (engineCachingMs * 2).coerceIn(1_000, 20_000),
             )
             .build()
         val player = ExoPlayer.Builder(this, FifoRenderersFactory(this, sink))
@@ -670,7 +739,7 @@ class PlaybackService : Service() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
             .also { exoPlayer = it }
-        player.volume = 0f  // local audio comes from the snapclient; tee is pre-volume
+        player.volume = 0f // local audio comes from the snapclient; tee is pre-volume
         player.addListener(exoListener)
         // mimeType hint: set when resolution found an HLS manifest behind a
         // playlist-looking URL that lacks the .m3u8 extension the factory sniffs.
@@ -691,10 +760,12 @@ class PlaybackService : Service() {
                     if (exoPlayer?.playWhenReady == true) onEnginePlaying() else onEnginePaused()
                 }
                 Player.STATE_BUFFERING -> {
-                    _state.update { it.copy(
-                        isBuffering = true,
-                        bufferingPercent = (exoPlayer?.bufferedPercentage ?: 0).toFloat(),
-                    ) }
+                    _state.update {
+                        it.copy(
+                            isBuffering = true,
+                            bufferingPercent = (exoPlayer?.bufferedPercentage ?: 0).toFloat(),
+                        )
+                    }
                 }
                 Player.STATE_ENDED -> {
                     // Live radio should never end - treat like VLC's EndReached
@@ -781,7 +852,8 @@ class PlaybackService : Service() {
             p.release()
         }
         exoPlayer = null
-        fifoSink?.close(); fifoSink = null
+        fifoSink?.close()
+        fifoSink = null
     }
 
     private fun onEnginePlaying() {
@@ -800,13 +872,15 @@ class PlaybackService : Service() {
             startSnapcast(snapserver, snapserverAddress = "localhost")
         }
         snapcontrolPlugin?.notifyPropertiesChanged()
-        updateNotification(); updateMediaSession()
+        updateNotification()
+        updateMediaSession()
     }
 
     private fun onEnginePaused() {
         _state.update { it.copy(isPlaying = false) }
         snapcontrolPlugin?.notifyPropertiesChanged()
-        updateNotification(); updateMediaSession()
+        updateNotification()
+        updateMediaSession()
     }
 
     private fun startBufferingTimeout(timeoutMs: Long = 15_000L) {
@@ -846,24 +920,28 @@ class PlaybackService : Service() {
     }
 
     private fun stopEngineWatchdog() {
-        engineWatchdogJob?.cancel(); engineWatchdogJob = null; lastEnginePosMs = -1L
+        engineWatchdogJob?.cancel()
+        engineWatchdogJob = null
+        lastEnginePosMs = -1L
     }
 
     fun startErrorAudio(durationMs: Long) {
         val fifo = snapserverProcess?.pipeFilepath ?: return
         errorAudioJob?.cancel()
         errorAudioJob = scope.launch(Dispatchers.IO) {
-            val chunkSamples = 4410  // 100ms at 44100Hz
+            val chunkSamples = 4410 // 100ms at 44100Hz
             val buf = ByteArray(chunkSamples * 4)
             try {
                 FileOutputStream(fifo, true).use { out ->
                     var elapsed = 0L
                     while (elapsed < durationMs && isActive) {
                         for (i in 0 until chunkSamples) {
-                            val s = Random.nextInt(-3276, 3276).toShort()  // ~10% amplitude
+                            val s = Random.nextInt(-3276, 3276).toShort() // ~10% amplitude
                             val b = i * 4
-                            buf[b] = s.toByte(); buf[b+1] = (s.toInt() shr 8).toByte()
-                            buf[b+2] = s.toByte(); buf[b+3] = (s.toInt() shr 8).toByte()
+                            buf[b] = s.toByte()
+                            buf[b + 1] = (s.toInt() shr 8).toByte()
+                            buf[b + 2] = s.toByte()
+                            buf[b + 3] = (s.toInt() shr 8).toByte()
                         }
                         out.write(buf)
                         elapsed += 100
@@ -884,8 +962,9 @@ class PlaybackService : Service() {
         stopEngineWatchdog()
         stopErrorAudio()
         cancelBufferingTimeout()
-        resolveJob?.cancel(); resolveJob = null
-        engineUrl = ""  // invalidates any resolve completion that raced the cancel
+        resolveJob?.cancel()
+        resolveJob = null
+        engineUrl = "" // invalidates any resolve completion that raced the cancel
         pendingSnapserver = null
         exoPlayer?.let { p ->
             p.removeListener(exoListener)
@@ -893,13 +972,13 @@ class PlaybackService : Service() {
             p.release()
         }
         exoPlayer = null
-        fifoSink?.close(); fifoSink = null
+        fifoSink?.close()
+        fifoSink = null
     }
 
     // --- Snapcast ---
 
-private fun ensureSnapserver(): SnapserverProcess =
-        snapserverProcess ?: SnapserverProcess(this).also { snapserverProcess = it }
+    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(this).also { snapserverProcess = it }
 
     private fun startSnapcast(snapserver: SnapserverProcess, snapserverAddress: String) {
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
@@ -911,26 +990,34 @@ private fun ensureSnapserver(): SnapserverProcess =
                 override val isPlaying get() = _state.value.isPlaying
                 override val isPaused get() = !_state.value.isPlaying && _state.value.stationUrl.isNotEmpty()
                 override val canSkip get() = broadcastCanSkip
-                override val currentTitle  get() = _state.value.shazamTrackName
+                override val currentTitle get() = _state.value.shazamTrackName
                     .ifEmpty { _state.value.icyTitle.ifEmpty { _state.value.stationName } }
-                override val currentArtist      get() = _state.value.shazamArtistName
-                override val currentAlbum       get() = _state.value.stationName
-                override val currentUrl         get() = _state.value.stationUrl
-                override val currentCountry      get() = _state.value.stationCountry
-                override val currentCountryCode  get() = _state.value.stationCountryCode
-                override val currentCodec        get() = _state.value.stationCodec
-                override val currentBitrate      get() = _state.value.stationBitrate
-                override val currentYoutubeUrl   get() = _state.value.shazamYoutubeUrl
-                override val currentSpotifyUrl   get() = _state.value.shazamSpotifyUrl
+                override val currentArtist get() = _state.value.shazamArtistName
+                override val currentAlbum get() = _state.value.stationName
+                override val currentUrl get() = _state.value.stationUrl
+                override val currentCountry get() = _state.value.stationCountry
+                override val currentCountryCode get() = _state.value.stationCountryCode
+                override val currentCodec get() = _state.value.stationCodec
+                override val currentBitrate get() = _state.value.stationBitrate
+                override val currentYoutubeUrl get() = _state.value.shazamYoutubeUrl
+                override val currentSpotifyUrl get() = _state.value.shazamSpotifyUrl
                 override val currentAppleMusicUrl get() = _state.value.shazamAppleMusicUrl
-                override val currentTags         get() = _state.value.stationTags
-                override val currentUuid         get() = _state.value.stationUuid
-                override val currentArtworkUrl   get() = _state.value.artworkUrl.ifEmpty { _state.value.stationFavicon }
+                override val currentTags get() = _state.value.stationTags
+                override val currentUuid get() = _state.value.stationUuid
+                override val currentArtworkUrl get() = _state.value.artworkUrl.ifEmpty { _state.value.stationFavicon }
                 override val currentArtworkFile: String? get() = null
-                override fun onPlay() { play() }
-                override fun onPause() { pause() }
-                override fun onSkipNext() { onSkipNextRequested?.invoke() }
-                override fun onSkipPrev() { onSkipPrevRequested?.invoke() }
+                override fun onPlay() {
+                    play()
+                }
+                override fun onPause() {
+                    pause()
+                }
+                override fun onSkipNext() {
+                    onSkipNextRequested?.invoke()
+                }
+                override fun onSkipPrev() {
+                    onSkipPrevRequested?.invoke()
+                }
             },
             parentJob = serviceJob,
         ).also { it.start() }
@@ -963,12 +1050,16 @@ private fun ensureSnapserver(): SnapserverProcess =
                                 ?.config?.name
                                 ?.replace(Regex("\\s*\\[[LRS]\\]$"), "")?.trim()
                                 ?.ifBlank { serverHost } ?: serverHost
-                        } else ""
-                        _state.update { it.copy(
-                            snapcastGroups = groups,
-                            snapserverHostname = hostname.ifBlank { it.snapserverHostname },
-                            snapclientDisplayName = displayName.ifBlank { it.snapclientDisplayName },
-                        ) }
+                        } else {
+                            ""
+                        }
+                        _state.update {
+                            it.copy(
+                                snapcastGroups = groups,
+                                snapserverHostname = hostname.ifBlank { it.snapserverHostname },
+                                snapclientDisplayName = displayName.ifBlank { it.snapclientDisplayName },
+                            )
+                        }
                         mergeGroupsIfNeeded(groups)
                         maybeSetInitialChannelTag(groups)
                         syncLocalChannelFromName(groups)
@@ -977,15 +1068,17 @@ private fun ensureSnapserver(): SnapserverProcess =
                         notif.result.server.streams
                             .find { it.id == activeStreamId }?.properties
                             ?.let { sp ->
-                                applyStreamProperties(tech.capullo.quantumcast.snapcast.StreamPlayerProperties(
-                                    playbackStatus = sp.playbackStatus ?: "",
-                                    canPlay = sp.canPlay,
-                                    canPause = sp.canPause,
-                                    canGoNext = sp.canGoNext,
-                                    canGoPrevious = sp.canGoPrevious,
-                                    canControl = sp.canControl,
-                                    metadata = sp.metadata,
-                                ))
+                                applyStreamProperties(
+                                    tech.capullo.quantumcast.snapcast.StreamPlayerProperties(
+                                        playbackStatus = sp.playbackStatus ?: "",
+                                        canPlay = sp.canPlay,
+                                        canPause = sp.canPause,
+                                        canGoNext = sp.canGoNext,
+                                        canGoPrevious = sp.canGoPrevious,
+                                        canControl = sp.canControl,
+                                        metadata = sp.metadata,
+                                    ),
+                                )
                             }
                     }
                     is tech.capullo.quantumcast.snapcast.ServerOnUpdate -> {
@@ -997,11 +1090,15 @@ private fun ensureSnapserver(): SnapserverProcess =
                                 ?.config?.name
                                 ?.replace(Regex("\\s*\\[[LRS]\\]$"), "")?.trim()
                                 ?.ifBlank { serverHost } ?: serverHost
-                        } else ""
-                        _state.update { it.copy(
-                            snapcastGroups = groups,
-                            snapclientDisplayName = displayName.ifBlank { it.snapclientDisplayName },
-                        ) }
+                        } else {
+                            ""
+                        }
+                        _state.update {
+                            it.copy(
+                                snapcastGroups = groups,
+                                snapclientDisplayName = displayName.ifBlank { it.snapclientDisplayName },
+                            )
+                        }
                         mergeGroupsIfNeeded(groups)
                         maybeSetInitialChannelTag(groups)
                         syncLocalChannelFromName(groups)
@@ -1013,24 +1110,36 @@ private fun ensureSnapserver(): SnapserverProcess =
                     is tech.capullo.quantumcast.snapcast.ClientOnVolumeChanged -> {
                         Log.d(TAG, "ClientOnVolumeChanged: client=${notif.params.clientId} volume=${notif.params.volume}")
                         _state.update { state ->
-                            state.copy(snapcastGroups = state.snapcastGroups.map { group ->
-                                group.copy(clients = group.clients.map { client ->
-                                    if (client.id == notif.params.clientId)
-                                        client.copy(config = client.config.copy(volume = notif.params.volume))
-                                    else client
-                                })
-                            })
+                            state.copy(
+                                snapcastGroups = state.snapcastGroups.map { group ->
+                                    group.copy(
+                                        clients = group.clients.map { client ->
+                                            if (client.id == notif.params.clientId) {
+                                                client.copy(config = client.config.copy(volume = notif.params.volume))
+                                            } else {
+                                                client
+                                            }
+                                        },
+                                    )
+                                },
+                            )
                         }
                     }
                     is tech.capullo.quantumcast.snapcast.ClientOnLatencyChanged -> {
                         _state.update { state ->
-                            state.copy(snapcastGroups = state.snapcastGroups.map { group ->
-                                group.copy(clients = group.clients.map { client ->
-                                    if (client.id == notif.params.clientId)
-                                        client.copy(config = client.config.copy(latency = notif.params.latency))
-                                    else client
-                                })
-                            })
+                            state.copy(
+                                snapcastGroups = state.snapcastGroups.map { group ->
+                                    group.copy(
+                                        clients = group.clients.map { client ->
+                                            if (client.id == notif.params.clientId) {
+                                                client.copy(config = client.config.copy(latency = notif.params.latency))
+                                            } else {
+                                                client
+                                            }
+                                        },
+                                    )
+                                },
+                            )
                         }
                     }
                     is tech.capullo.quantumcast.snapcast.ClientOnConnect,
@@ -1038,7 +1147,8 @@ private fun ensureSnapserver(): SnapserverProcess =
                     // Renames carry channel tags ([L]/[R]/[S]) set by web clients; refresh so
                     // syncLocalChannelFromName picks them up - without this, channel changes
                     // made from the web UI are never applied by the app.
-                    is tech.capullo.quantumcast.snapcast.ClientOnNameChanged -> {
+                    is tech.capullo.quantumcast.snapcast.ClientOnNameChanged,
+                    -> {
                         scope.launch { snapcastControl?.sendGetStatus() }
                     }
                     else -> {}
@@ -1074,15 +1184,23 @@ private fun ensureSnapserver(): SnapserverProcess =
         // and we don't parse arbitrary responses. Apply the change optimistically so the local
         // card updates immediately, same as every other client does via ClientOnVolumeChanged.
         _state.update { state ->
-            state.copy(snapcastGroups = state.snapcastGroups.map { group ->
-                group.copy(clients = group.clients.map { client ->
-                    if (client.id == clientId)
-                        client.copy(config = client.config.copy(
-                            volume = tech.capullo.quantumcast.snapcast.Volume(muted, percent)
-                        ))
-                    else client
-                })
-            })
+            state.copy(
+                snapcastGroups = state.snapcastGroups.map { group ->
+                    group.copy(
+                        clients = group.clients.map { client ->
+                            if (client.id == clientId) {
+                                client.copy(
+                                    config = client.config.copy(
+                                        volume = tech.capullo.quantumcast.snapcast.Volume(muted, percent),
+                                    ),
+                                )
+                            } else {
+                                client
+                            }
+                        },
+                    )
+                },
+            )
         }
         snapcastControl?.sendSetVolume(clientId, muted, percent)
     }
@@ -1098,11 +1216,16 @@ private fun ensureSnapserver(): SnapserverProcess =
 
     private fun stopSnapcast() {
         abandonAudioFocus()
-        snapcontrolPlugin?.stop(); snapcontrolPlugin = null
-        snapserverNsd?.stop(); snapserverNsd = null
-        snapcastControlJob?.cancel(); snapcastControlJob = null
-        snapcastControl?.client?.close(); snapcastControl = null
-        snapserverJob?.cancel(); snapserverJob = null
+        snapcontrolPlugin?.stop()
+        snapcontrolPlugin = null
+        snapserverNsd?.stop()
+        snapserverNsd = null
+        snapcastControlJob?.cancel()
+        snapcastControlJob = null
+        snapcastControl?.client?.close()
+        snapcastControl = null
+        snapserverJob?.cancel()
+        snapserverJob = null
         stopLocalSnapclient()
         snapserverProcess = null
         localChannelTagSet = false
@@ -1119,7 +1242,7 @@ private fun ensureSnapserver(): SnapserverProcess =
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
+                    .build(),
             )
             .setOnAudioFocusChangeListener(focusListener)
             .setWillPauseWhenDucked(false)
@@ -1130,15 +1253,18 @@ private fun ensureSnapserver(): SnapserverProcess =
     }
 
     private fun abandonAudioFocus() {
-        focusResumeWatcher?.cancel(); focusResumeWatcher = null
+        focusResumeWatcher?.cancel()
+        focusResumeWatcher = null
         focusRequest?.let { (getSystemService(AUDIO_SERVICE) as AudioManager).abandonAudioFocusRequest(it) }
         focusRequest = null
         focusPausedLocalClient = false
     }
 
     private fun stopLocalSnapclient() {
-        snapclientJob?.cancel(); snapclientJob = null
-        snapclientProcess?.destroy(); snapclientProcess = null
+        snapclientJob?.cancel()
+        snapclientJob = null
+        snapclientProcess?.destroy()
+        snapclientProcess = null
     }
 
     // Restart after focus regain, with the same target/channel the session used.
@@ -1149,7 +1275,7 @@ private fun ensureSnapserver(): SnapserverProcess =
             if (st.snapclientHost.isEmpty()) return
             st.snapclientHost to st.snapclientPort
         } else {
-            if (snapserverProcess == null) return  // broadcast ended meanwhile
+            if (snapserverProcess == null) return // broadcast ended meanwhile
             "localhost" to 1604
         }
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
@@ -1176,11 +1302,21 @@ private fun ensureSnapserver(): SnapserverProcess =
             // even though PlaybackState advertises the actions - route nowhere
             // and do nothing. Wire them to the same play/pause/skip used in-app.
             setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() { play() }
-                override fun onPause() { pause() }
-                override fun onStop() { pause() }
-                override fun onSkipToNext() { onSkipNextRequested?.invoke() }
-                override fun onSkipToPrevious() { onSkipPrevRequested?.invoke() }
+                override fun onPlay() {
+                    play()
+                }
+                override fun onPause() {
+                    pause()
+                }
+                override fun onStop() {
+                    pause()
+                }
+                override fun onSkipToNext() {
+                    onSkipNextRequested?.invoke()
+                }
+                override fun onSkipToPrevious() {
+                    onSkipPrevRequested?.invoke()
+                }
             })
             isActive = true
         }
@@ -1189,7 +1325,8 @@ private fun ensureSnapserver(): SnapserverProcess =
     private fun buildNotification(): Notification {
         val st = _state.value
         val tap = PendingIntent.getActivity(
-            this, 0,
+            this,
+            0,
             Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -1201,7 +1338,7 @@ private fun ensureSnapserver(): SnapserverProcess =
                         BroadcastMode.QUANTUMCAST -> "Broadcasting"
                         BroadcastMode.SNAPCLIENT -> "Listening in"
                     }
-                }
+                },
             )
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(tap)
@@ -1214,7 +1351,7 @@ private fun ensureSnapserver(): SnapserverProcess =
             builder.setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(it)
-                    .setShowActionsInCompactView()
+                    .setShowActionsInCompactView(),
             )
         }
         return builder.build()
@@ -1223,7 +1360,9 @@ private fun ensureSnapserver(): SnapserverProcess =
     private fun startForegroundNotification() {
         val notif = buildNotification()
         ServiceCompat.startForeground(
-            this, NOTIFICATION_ID, notif,
+            this,
+            NOTIFICATION_ID,
+            notif,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0,
         )
     }
@@ -1239,13 +1378,14 @@ private fun ensureSnapserver(): SnapserverProcess =
             PlaybackStateCompat.Builder()
                 .setActions(
                     PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS,
                 )
                 .setState(
                     if (st.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
-                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1f,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    1f,
                 )
-                .build()
+                .build(),
         )
         mediaSession?.setMetadata(
             MediaMetadataCompat.Builder()
@@ -1259,7 +1399,7 @@ private fun ensureSnapserver(): SnapserverProcess =
                         putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
                     }
                 }
-                .build()
+                .build(),
         )
     }
 
@@ -1287,29 +1427,37 @@ private fun ensureSnapserver(): SnapserverProcess =
                         .data(url)
                         .allowHardware(false)
                         .size(512)
-                        .build()
+                        .build(),
                 )
             }.getOrNull()
-            val bmp = ((result as? coil.request.SuccessResult)?.drawable
-                as? android.graphics.drawable.BitmapDrawable)?.bitmap
-            if (bmp != null) withContext(Dispatchers.Main) {
-                if (url == sessionArtUrl) {
-                    sessionArtBitmap = bmp
-                    updateNotification()
-                    updateMediaSession()
+            val bmp = (
+                (result as? coil.request.SuccessResult)?.drawable
+                    as? android.graphics.drawable.BitmapDrawable
+                )?.bitmap
+            if (bmp != null) {
+                withContext(Dispatchers.Main) {
+                    if (url == sessionArtUrl) {
+                        sessionArtBitmap = bmp
+                        updateNotification()
+                        updateMediaSession()
+                    }
                 }
             }
         }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        stop(); stopSelf(); super.onTaskRemoved(rootIntent)
+        stop()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
         stop()
-        mediaSession?.release(); mediaSession = null
-        serviceJob.cancel(); scope.cancel()
+        mediaSession?.release()
+        mediaSession = null
+        serviceJob.cancel()
+        scope.cancel()
         super.onDestroy()
     }
 }

@@ -10,3 +10,4 @@ captures/
 .kotlin/
 run-qc-build.cmd
 build-share.log
+run-qc-spotless.cmd

@@ -33,8 +33,8 @@ internal fun usefulLocalIps(): List<LocalIp> {
                 name.startsWith("swlan") || name.startsWith("ap") -> "Hotspot"
                 name.startsWith("wlan") -> "Wi-Fi"
                 name.startsWith("eth") -> "Ethernet"
-                name.startsWith("tun") || name.startsWith("tailscale")
-                    || name.startsWith("wg") || name.startsWith("ppp") -> "VPN"
+                name.startsWith("tun") || name.startsWith("tailscale") ||
+                    name.startsWith("wg") || name.startsWith("ppp") -> "VPN"
                 else -> continue
             }
             for (addr in nif.inetAddresses) {
@@ -49,7 +49,10 @@ internal fun usefulLocalIps(): List<LocalIp> {
 
 internal fun qrBitmap(content: String, size: Int = 512): android.graphics.Bitmap? = try {
     val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
-        content, com.google.zxing.BarcodeFormat.QR_CODE, size, size,
+        content,
+        com.google.zxing.BarcodeFormat.QR_CODE,
+        size,
+        size,
         mapOf(com.google.zxing.EncodeHintType.MARGIN to 1),
     )
     val pixels = IntArray(size * size) { i ->

@@ -4,11 +4,11 @@ import android.content.Context
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
-import org.json.JSONArray
-import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -48,7 +48,11 @@ class SnapserverProcess(private val context: Context) {
     }
 
     private val pipeArgs = listOf(
-        STREAM_NAME, CODEC, PIPE_MODE, DRYOUT_MS, SAMPLE_FORMAT,
+        STREAM_NAME,
+        CODEC,
+        PIPE_MODE,
+        DRYOUT_MS,
+        SAMPLE_FORMAT,
         "controlscript=$nativeLibDir/libsnapcontrol.so",
     ).joinToString("&")
 
@@ -62,9 +66,11 @@ class SnapserverProcess(private val context: Context) {
         //   - When VLC actually starts writing PCM, Snapserver reads real audio
         if (pipeFile.exists()) pipeFile.delete()
         try {
-            Os.mkfifo(pipeFile.absolutePath,
+            Os.mkfifo(
+                pipeFile.absolutePath,
                 OsConstants.S_IRUSR or OsConstants.S_IWUSR or
-                OsConstants.S_IRGRP or OsConstants.S_IWGRP)
+                    OsConstants.S_IRGRP or OsConstants.S_IWGRP,
+            )
         } catch (e: Exception) {
             Log.e(TAG, "mkfifo failed: ${e.message}")
         }
@@ -90,7 +96,7 @@ class SnapserverProcess(private val context: Context) {
                 [http]
                 port = 1680
                 doc_root = $webUiPath
-                """.trimIndent() + "\n"
+                """.trimIndent() + "\n",
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write snapserver.conf: ${e.message}")
@@ -120,8 +126,11 @@ class SnapserverProcess(private val context: Context) {
             is JSONObject -> {
                 val keys = node.keys().asSequence().toList()
                 for (key in keys) {
-                    if (key == "muted") node.put("muted", false)
-                    else clearMuted(node.opt(key))
+                    if (key == "muted") {
+                        node.put("muted", false)
+                    } else {
+                        clearMuted(node.opt(key))
+                    }
                 }
             }
             is JSONArray -> for (i in 0 until node.length()) clearMuted(node.opt(i))
@@ -132,9 +141,11 @@ class SnapserverProcess(private val context: Context) {
         val pb = ProcessBuilder()
             .command(
                 "$nativeLibDir/libsnapserver.so",
-                "--config", confFile,
+                "--config",
+                confFile,
                 "--server.datadir=$cacheDir",
-                "--stream.source", "pipe://$pipeFilepath?$pipeArgs",
+                "--stream.source",
+                "pipe://$pipeFilepath?$pipeArgs",
                 "--http.doc_root=${File(context.filesDir, "webui").absolutePath}",
                 "--server.name=${android.os.Build.MODEL}",
             )

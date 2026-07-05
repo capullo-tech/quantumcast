@@ -37,19 +37,24 @@ class FifoAudioBufferSink(private val fifoPath: String) : TeeAudioProcessor.Audi
 
     // Opened on the caller's thread (main), written on the playback thread
     @Volatile private var fd: FileDescriptor? = null
+
     @Volatile private var out: FileOutputStream? = null
+
     // Writes stay disabled until the player reports playing (VLC parity: sout
     // only wrote after Event.Playing). The FIFO holds only ~370ms of PCM and
     // snapserver (the reader) isn't started yet during preroll - writing early
     // fills the pipe and BLOCKS the playback thread before STATE_READY can
     // fire: deadlock, buffering stuck at 0%.
     @Volatile private var writeEnabled = false
+
     // A released ExoPlayer flushes its sink asynchronously; without this flag
     // the dying player's flush() would reopen the closed FIFO and dribble
     // stale buffers into the next session's fresh pipe.
     @Volatile private var closed = false
 
-    fun enableWrites() { writeEnabled = true }
+    fun enableWrites() {
+        writeEnabled = true
+    }
 
     fun open() {
         if (closed || out != null) return
@@ -66,9 +71,11 @@ class FifoAudioBufferSink(private val fifoPath: String) : TeeAudioProcessor.Audi
     fun close() {
         closed = true
         writeEnabled = false
-        try { out?.close() } catch (_: Exception) {}
+        try {
+            out?.close()
+        } catch (_: Exception) {}
         out = null
-        fd = null  // closed via the stream
+        fd = null // closed via the stream
     }
 
     override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
@@ -78,7 +85,7 @@ class FifoAudioBufferSink(private val fifoPath: String) : TeeAudioProcessor.Audi
     }
 
     override fun handleBuffer(buffer: ByteBuffer) {
-        if (!writeEnabled) return  // preroll PCM is dropped, see writeEnabled
+        if (!writeEnabled) return // preroll PCM is dropped, see writeEnabled
         val o = out ?: return
         try {
             val ch = o.channel
@@ -88,7 +95,9 @@ class FifoAudioBufferSink(private val fifoPath: String) : TeeAudioProcessor.Audi
         }
     }
 
-    companion object { private const val TAG = "FifoAudioSink" }
+    companion object {
+        private const val TAG = "FifoAudioSink"
+    }
 }
 
 /**
@@ -108,10 +117,7 @@ class FifoAudioBufferSink(private val fifoPath: String) : TeeAudioProcessor.Audi
  * here if that ever happens in the wild.
  */
 @UnstableApi
-class FifoRenderersFactory(
-    context: Context,
-    private val fifoSink: FifoAudioBufferSink,
-) : DefaultRenderersFactory(context) {
+class FifoRenderersFactory(context: Context, private val fifoSink: FifoAudioBufferSink) : DefaultRenderersFactory(context) {
 
     init {
         setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON)
@@ -128,11 +134,13 @@ class FifoRenderersFactory(
         }
         val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(44100) }
         return DefaultAudioSink.Builder(context)
-            .setEnableFloatOutput(false)  // keep the chain in 16-bit PCM
+            .setEnableFloatOutput(false) // keep the chain in 16-bit PCM
             .setAudioProcessorChain(
                 DefaultAudioSink.DefaultAudioProcessorChain(
-                    mixer, resampler, TeeAudioProcessor(fifoSink),
-                )
+                    mixer,
+                    resampler,
+                    TeeAudioProcessor(fifoSink),
+                ),
             )
             .build()
     }

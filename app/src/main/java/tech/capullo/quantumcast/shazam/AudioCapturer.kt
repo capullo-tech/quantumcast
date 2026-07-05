@@ -15,10 +15,13 @@ import java.util.concurrent.TimeUnit
 object AudioCapturer {
     @Volatile var lastOutRate: Int = 0
         private set
+
     @Volatile var lastOutCh: Int = 0
         private set
+
     @Volatile var lastCodec: String = ""
         private set
+
     @Volatile var lastBitrate: Int = 0
         private set
 
@@ -28,24 +31,23 @@ object AudioCapturer {
         .followRedirects(true)
         .build()
 
-    suspend fun capture(streamUrl: String, context: Context): ShortArray? =
-        withContext(Dispatchers.IO) {
-            Log.d("Shazam", "capture: $streamUrl")
+    suspend fun capture(streamUrl: String, context: Context): ShortArray? = withContext(Dispatchers.IO) {
+        Log.d("Shazam", "capture: $streamUrl")
 
-            // Strategy 1: OkHttp direct download - grabs bytes at live edge immediately.
-            // MediaExtractor.setDataSource() pre-buffers live streams (can take 90+ seconds).
-            tryDownloadAndDecode(streamUrl, context)?.let { return@withContext it }
+        // Strategy 1: OkHttp direct download - grabs bytes at live edge immediately.
+        // MediaExtractor.setDataSource() pre-buffers live streams (can take 90+ seconds).
+        tryDownloadAndDecode(streamUrl, context)?.let { return@withContext it }
 
-            // Strategy 1b: HLS - fetch M3U8 playlist, download content segments directly.
-            // Strategy 1 rejects M3U8 content-type/magic; this resolves segments manually.
-            Log.d("Shazam", "capture: trying HLS segment strategy")
-            tryHlsCapture(streamUrl, context)?.let { return@withContext it }
+        // Strategy 1b: HLS - fetch M3U8 playlist, download content segments directly.
+        // Strategy 1 rejects M3U8 content-type/magic; this resolves segments manually.
+        Log.d("Shazam", "capture: trying HLS segment strategy")
+        tryHlsCapture(streamUrl, context)?.let { return@withContext it }
 
-            Log.d("Shazam", "capture: trying MediaExtractor fallback")
+        Log.d("Shazam", "capture: trying MediaExtractor fallback")
 
-            // Strategy 2: MediaExtractor - last resort for unusual stream formats
-            tryDirectExtractor(streamUrl)
-        }
+        // Strategy 2: MediaExtractor - last resort for unusual stream formats
+        tryDirectExtractor(streamUrl)
+    }
 
     private fun tryDirectExtractor(url: String): ShortArray? {
         val extractor = MediaExtractor()
@@ -60,7 +62,11 @@ object AudioCapturer {
                 val f = extractor.getTrackFormat(i)
                 val mime = f.getString(MediaFormat.KEY_MIME)
                 Log.d("Shazam", "directExtractor: track $i mime=$mime")
-                if (mime?.startsWith("audio/") == true) { trackIdx = i; fmt = f; break }
+                if (mime?.startsWith("audio/") == true) {
+                    trackIdx = i
+                    fmt = f
+                    break
+                }
             }
             if (trackIdx < 0 || fmt == null) {
                 Log.w("Shazam", "directExtractor: no audio track")
@@ -72,7 +78,9 @@ object AudioCapturer {
             Log.w("Shazam", "directExtractor: failed", e)
             return null
         } finally {
-            try { extractor.release() } catch (_: Exception) {}
+            try {
+                extractor.release()
+            } catch (_: Exception) {}
         }
     }
 
@@ -85,13 +93,18 @@ object AudioCapturer {
                 .build()
 
             http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) { Log.w("Shazam", "download: HTTP ${resp.code}"); return null }
+                if (!resp.isSuccessful) {
+                    Log.w("Shazam", "download: HTTP ${resp.code}")
+                    return null
+                }
 
                 val ct = resp.header("Content-Type", "")?.lowercase() ?: ""
                 Log.d("Shazam", "download: Content-Type=$ct")
                 if (ct.contains("text/") || ct.contains("html") ||
-                    ct.contains("mpegurl") || ct.contains("x-scpls")) {
-                    Log.w("Shazam", "download: rejected content type"); return null
+                    ct.contains("mpegurl") || ct.contains("x-scpls")
+                ) {
+                    Log.w("Shazam", "download: rejected content type")
+                    return null
                 }
 
                 val buf = ByteArray(200_000)
@@ -104,12 +117,17 @@ object AudioCapturer {
                     }
                 }
 
-                if (total < 8192) { Log.w("Shazam", "download: too small ($total bytes)"); return null }
+                if (total < 8192) {
+                    Log.w("Shazam", "download: too small ($total bytes)")
+                    return null
+                }
 
                 val hdr = buf.copyOf(minOf(total, 16)).toString(Charsets.ISO_8859_1)
                 if (hdr.startsWith("#EXTM3U") || hdr.startsWith("<?xml") ||
-                    hdr.startsWith("<html") || hdr.startsWith("[playlist]")) {
-                    Log.w("Shazam", "download: rejected by magic bytes: ${hdr.take(15)}"); return null
+                    hdr.startsWith("<html") || hdr.startsWith("[playlist]")
+                ) {
+                    Log.w("Shazam", "download: rejected by magic bytes: ${hdr.take(15)}")
+                    return null
                 }
 
                 Log.d("Shazam", "download: got $total bytes")
@@ -126,16 +144,21 @@ object AudioCapturer {
                 for (i in 0 until extractor.trackCount) {
                     val f = extractor.getTrackFormat(i)
                     if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                        trackIdx = i; fmt = f; break
+                        trackIdx = i
+                        fmt = f
+                        break
                     }
                 }
                 if (trackIdx < 0 || fmt == null) {
-                    Log.w("Shazam", "download: no audio track in chunk"); return null
+                    Log.w("Shazam", "download: no audio track in chunk")
+                    return null
                 }
                 extractor.selectTrack(trackIdx)
                 return decodeTrack(extractor, fmt)
             } finally {
-                try { extractor.release() } catch (_: Exception) {}
+                try {
+                    extractor.release()
+                } catch (_: Exception) {}
             }
         } catch (e: Exception) {
             Log.e("Shazam", "download: exception", e)
@@ -147,7 +170,10 @@ object AudioCapturer {
 
     private fun tryHlsCapture(playlistUrl: String, context: Context): ShortArray? {
         val segments = resolveHlsSegments(playlistUrl) ?: return null
-        if (segments.isEmpty()) { Log.w("Shazam", "hls: no content segments"); return null }
+        if (segments.isEmpty()) {
+            Log.w("Shazam", "hls: no content segments")
+            return null
+        }
 
         // Take the 2 most recent segments (live edge) - each ~12 s, more than enough for Shazam
         val toFetch = segments.takeLast(2)
@@ -163,7 +189,10 @@ object AudioCapturer {
                         }
                 }.onFailure { Log.w("Shazam", "hls: segment error: ${it.message}") }
             }
-            if (downloaded.isEmpty()) { Log.w("Shazam", "hls: no segments downloaded"); return null }
+            if (downloaded.isEmpty()) {
+                Log.w("Shazam", "hls: no segments downloaded")
+                return null
+            }
 
             // Strip ID3/preamble from first segment, then concatenate
             val first = downloaded[0]
@@ -172,26 +201,47 @@ object AudioCapturer {
             val combined = ByteArray(totalSize).also { buf ->
                 first.copyInto(buf, 0, trimStart)
                 var off = first.size - trimStart
-                for (b in downloaded.drop(1)) { b.copyInto(buf, off); off += b.size }
+                for (b in downloaded.drop(1)) {
+                    b.copyInto(buf, off)
+                    off += b.size
+                }
             }
-            if (combined.size < 8192) { Log.w("Shazam", "hls: combined too small (${combined.size})"); return null }
+            if (combined.size < 8192) {
+                Log.w("Shazam", "hls: combined too small (${combined.size})")
+                return null
+            }
             Log.d("Shazam", "hls: ${combined.size} bytes from ${downloaded.size} segments")
             tmp.writeBytes(combined)
 
             val extractor = MediaExtractor()
             return try {
                 extractor.setDataSource(tmp.absolutePath)
-                var trackIdx = -1; var fmt: MediaFormat? = null
+                var trackIdx = -1
+                var fmt: MediaFormat? = null
                 for (i in 0 until extractor.trackCount) {
                     val f = extractor.getTrackFormat(i)
-                    if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) { trackIdx = i; fmt = f; break }
+                    if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                        trackIdx = i
+                        fmt = f
+                        break
+                    }
                 }
-                if (trackIdx < 0 || fmt == null) { Log.w("Shazam", "hls: no audio track"); null }
-                else { extractor.selectTrack(trackIdx); decodeTrack(extractor, fmt) }
-            } finally { runCatching { extractor.release() } }
+                if (trackIdx < 0 || fmt == null) {
+                    Log.w("Shazam", "hls: no audio track")
+                    null
+                } else {
+                    extractor.selectTrack(trackIdx)
+                    decodeTrack(extractor, fmt)
+                }
+            } finally {
+                runCatching { extractor.release() }
+            }
         } catch (e: Exception) {
-            Log.e("Shazam", "hls: exception", e); return null
-        } finally { tmp.delete() }
+            Log.e("Shazam", "hls: exception", e)
+            return null
+        } finally {
+            tmp.delete()
+        }
     }
 
     private fun resolveHlsSegments(url: String): List<String>? {
@@ -204,8 +254,11 @@ object AudioCapturer {
         // Master playlist - recurse into first variant stream
         if (text.contains("#EXT-X-STREAM-INF")) {
             val variantUrl = text.lines().firstOrNull { !it.startsWith("#") && it.isNotBlank() } ?: return null
-            val resolved = if (variantUrl.startsWith("http")) variantUrl
-                           else "${url.substringBeforeLast("/")}/$variantUrl"
+            val resolved = if (variantUrl.startsWith("http")) {
+                variantUrl
+            } else {
+                "${url.substringBeforeLast("/")}/$variantUrl"
+            }
             return resolveHlsSegments(resolved)
         }
 
@@ -228,9 +281,21 @@ object AudioCapturer {
 
     private fun decodeTrack(extractor: MediaExtractor, fmt: MediaFormat): ShortArray? {
         val mime = fmt.getString(MediaFormat.KEY_MIME) ?: return null
-        val srcRate = try { fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE) } catch (_: Exception) { 44100 }
-        val srcCh = try { fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT) } catch (_: Exception) { 2 }
-        val declaredBitrate = try { fmt.getInteger(MediaFormat.KEY_BIT_RATE) } catch (_: Exception) { 0 }
+        val srcRate = try {
+            fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+        } catch (_: Exception) {
+            44100
+        }
+        val srcCh = try {
+            fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+        } catch (_: Exception) {
+            2
+        }
+        val declaredBitrate = try {
+            fmt.getInteger(MediaFormat.KEY_BIT_RATE)
+        } catch (_: Exception) {
+            0
+        }
         Log.d("Shazam", "decode: mime=$mime rate=$srcRate ch=$srcCh bitrate=$declaredBitrate")
 
         val codec = try {
@@ -283,18 +348,26 @@ object AudioCapturer {
                     }
                     MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val of = codec.outputFormat
-                        outRate = try { of.getInteger(MediaFormat.KEY_SAMPLE_RATE) } catch (_: Exception) { outRate }
-                        outCh  = try { of.getInteger(MediaFormat.KEY_CHANNEL_COUNT) } catch (_: Exception) { outCh }
+                        outRate = try {
+                            of.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        } catch (_: Exception) {
+                            outRate
+                        }
+                        outCh = try {
+                            of.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        } catch (_: Exception) {
+                            outCh
+                        }
                         lastOutRate = outRate
-                        lastOutCh   = outCh
+                        lastOutCh = outCh
                         lastBitrate = declaredBitrate
-                        lastCodec   = when {
+                        lastCodec = when {
                             mime == "audio/mp4a-latm" && outRate > srcRate * 1.4 && outCh > srcCh -> "HE-AAC v2"
-                            mime == "audio/mp4a-latm" && outRate > srcRate * 1.4               -> "HE-AAC"
-                            mime == "audio/mp4a-latm"                                           -> "AAC-LC"
-                            mime == "audio/mpeg" || mime == "audio/mp3"                         -> "MP3"
-                            mime == "audio/ogg"                                                 -> "OGG"
-                            mime == "audio/flac"                                                -> "FLAC"
+                            mime == "audio/mp4a-latm" && outRate > srcRate * 1.4 -> "HE-AAC"
+                            mime == "audio/mp4a-latm" -> "AAC-LC"
+                            mime == "audio/mpeg" || mime == "audio/mp3" -> "MP3"
+                            mime == "audio/ogg" -> "OGG"
+                            mime == "audio/flac" -> "FLAC"
                             else -> mime.substringAfter("/")
                         }
                         Log.d("Shazam", "decode: output format updated → $lastCodec ${outRate}Hz ${outCh}ch")
@@ -311,11 +384,18 @@ object AudioCapturer {
             if (chunks.isEmpty()) return null
 
             val raw = ShortArray(chunks.sumOf { it.size }).also {
-                var off = 0; for (c in chunks) { c.copyInto(it, off); off += c.size }
+                var off = 0
+                for (c in chunks) {
+                    c.copyInto(it, off)
+                    off += c.size
+                }
             }
             return toMono16k(raw, outCh, outRate)
         } finally {
-            try { codec.stop(); codec.release() } catch (_: Exception) {}
+            try {
+                codec.stop()
+                codec.release()
+            } catch (_: Exception) {}
         }
     }
 
@@ -326,17 +406,21 @@ object AudioCapturer {
         for (i in 0 until size - 3) {
             if (buf[i] != 0xFF.toByte()) continue
             val b1 = buf[i + 1].toInt() and 0xFF
-            if (b1 and 0xF0 == 0xF0) return i  // ADTS AAC (0xFFF sync)
-            if (b1 and 0xE0 == 0xE0 && b1 and 0x06 != 0x00) return i  // MP3 (0xFFE + non-free layer)
+            if (b1 and 0xF0 == 0xF0) return i // ADTS AAC (0xFFF sync)
+            if (b1 and 0xE0 == 0xE0 && b1 and 0x06 != 0x00) return i // MP3 (0xFFE + non-free layer)
         }
         return 0
     }
 
     private fun toMono16k(pcm: ShortArray, channels: Int, srcRate: Int): ShortArray {
-        val mono = if (channels == 1) pcm else ShortArray(pcm.size / channels) { i ->
-            var sum = 0
-            for (c in 0 until channels) sum += pcm[i * channels + c].toInt()
-            (sum / channels).toShort()
+        val mono = if (channels == 1) {
+            pcm
+        } else {
+            ShortArray(pcm.size / channels) { i ->
+                var sum = 0
+                for (c in 0 until channels) sum += pcm[i * channels + c].toInt()
+                (sum / channels).toShort()
+            }
         }
         if (srcRate == 16000) return mono
         return resampleLinear(mono, srcRate, 16000)

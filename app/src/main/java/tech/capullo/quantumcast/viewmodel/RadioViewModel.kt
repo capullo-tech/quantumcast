@@ -13,7 +13,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import tech.capullo.quantumcast.data.db.FavoriteEntity
 import tech.capullo.quantumcast.data.db.FavoriteGroupEntity
 import tech.capullo.quantumcast.data.model.Country
@@ -25,10 +26,9 @@ import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.quantumcast.player.PlaybackService
 import tech.capullo.quantumcast.shazam.AudioCapturer
 import tech.capullo.quantumcast.shazam.ShazamRecognizer
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
 import java.io.InputStream
 import java.io.OutputStream
+import javax.inject.Inject
 
 data class PlayerState(
     val station: Station? = null,
@@ -55,7 +55,7 @@ data class RotationState(
     val totalSeconds: Int = 0,
     val stationIndex: Int = 0,
     val totalStations: Int = 0,
-    val timerPaused: Boolean = false
+    val timerPaused: Boolean = false,
 ) {
     val progress: Float get() = if (totalSeconds > 0) 1f - secondsRemaining.toFloat() / totalSeconds else 0f
 }
@@ -119,8 +119,12 @@ class RadioViewModel @Inject constructor(
 
     private val _showDetailScreen = MutableStateFlow(false)
     val showDetailScreen: StateFlow<Boolean> = _showDetailScreen
-    fun showDetail() { _showDetailScreen.value = true }
-    fun hideDetail() { _showDetailScreen.value = false }
+    fun showDetail() {
+        _showDetailScreen.value = true
+    }
+    fun hideDetail() {
+        _showDetailScreen.value = false
+    }
 
     init {
         // Entangle on launch: runs once per VM lifetime (= app open, not config change).
@@ -149,7 +153,7 @@ class RadioViewModel @Inject constructor(
     val snapclientChannel: StateFlow<String> = _snapclientChannel
 
     private val _snapclientState = MutableStateFlow(
-        tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState.STARTING
+        tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState.STARTING,
     )
     val snapclientState: StateFlow<tech.capullo.quantumcast.snapcast.SnapclientProcess.ConnectionState> = _snapclientState
 
@@ -207,7 +211,10 @@ class RadioViewModel @Inject constructor(
             svc.onSkipPrevRequested = { viewModelScope.launch { skipPrevStation() } }
             svc.onPlayPauseRequested = { viewModelScope.launch { togglePlayPause() } }
             svc.onStationError = { viewModelScope.launch { handleStationError() } }
-            svc.onStationPlaying = { consecutiveErrors = 0; retryJob?.cancel() }
+            svc.onStationPlaying = {
+                consecutiveErrors = 0
+                retryJob?.cancel()
+            }
             // Collect (not one-shot): at bind time DataStore may not have emitted the
             // persisted settings yet, so a single read sees the "" default and the
             // server falls back to Build.MODEL until the user re-applies the name.
@@ -252,8 +259,12 @@ class RadioViewModel @Inject constructor(
                                     tags = svcState.snapcastTags.ifBlank { base.tags },
                                     uuid = svcState.snapcastUuid.ifBlank { base.uuid },
                                 )
-                            } else ps.station
-                        } else ps.station
+                            } else {
+                                ps.station
+                            }
+                        } else {
+                            ps.station
+                        }
 
                         // Mirror local Shazam: when broadcaster has identified the track, build a
                         // synthetic TrackLookup so NowPlayingHero takes the same identified-track
@@ -269,7 +280,9 @@ class RadioViewModel @Inject constructor(
                                 spotifyUrl = svcState.snapcastSpotifyUrl,
                                 appleMusicUrl = svcState.snapcastAppleMusicUrl,
                             )
-                        } else null
+                        } else {
+                            null
+                        }
 
                         ps.copy(
                             isPlaying = svcState.isPlaying,
@@ -314,7 +327,9 @@ class RadioViewModel @Inject constructor(
         }
     }
 
-    fun onAppForeground() { playbackService?.onAppForeground() }
+    fun onAppForeground() {
+        playbackService?.onAppForeground()
+    }
 
     fun connectPlayer() {
         val ctx = context
@@ -323,7 +338,9 @@ class RadioViewModel @Inject constructor(
     }
 
     fun disconnectPlayer() {
-        try { context.unbindService(serviceConnection) } catch (_: Exception) {}
+        try {
+            context.unbindService(serviceConnection)
+        } catch (_: Exception) {}
         playbackService = null
         serviceStateJob?.cancel()
     }
@@ -362,8 +379,18 @@ class RadioViewModel @Inject constructor(
     }
 
     fun playFromFavorite(fav: FavoriteEntity) {
-        play(Station(uuid = fav.uuid, name = fav.name, url = fav.url, favicon = fav.favicon,
-            country = fav.country, tags = fav.tags, codec = fav.codec, bitrate = fav.bitrate))
+        play(
+            Station(
+                uuid = fav.uuid,
+                name = fav.name,
+                url = fav.url,
+                favicon = fav.favicon,
+                country = fav.country,
+                tags = fav.tags,
+                codec = fav.codec,
+                bitrate = fav.bitrate,
+            ),
+        )
     }
 
     fun togglePlayPause() {
@@ -377,7 +404,9 @@ class RadioViewModel @Inject constructor(
         }
         if (_playerState.value.isPlaying) {
             svc.pause()
-            shazamJob?.cancel(); shazamJob = null; _isShazamRunning.value = false
+            shazamJob?.cancel()
+            shazamJob = null
+            _isShazamRunning.value = false
             if (_rotationState.value.isActive) _rotationState.update { it.copy(timerPaused = true) }
         } else {
             svc.play()
@@ -390,22 +419,31 @@ class RadioViewModel @Inject constructor(
         viewModelScope.launch {
             val streamId = _snapcastGroups.value.firstOrNull()?.streamId
             Log.d(TAG, "sendPlayerControl: command=$command streamId=$streamId groups=${_snapcastGroups.value.size}")
-            if (streamId == null) { Log.w(TAG, "sendPlayerControl: no stream id - groups empty, aborting"); return@launch }
+            if (streamId == null) {
+                Log.w(TAG, "sendPlayerControl: no stream id - groups empty, aborting")
+                return@launch
+            }
             playbackService?.sendPlayerControl(streamId, command)
         }
     }
 
     fun stop() {
-        sleepTimerJob?.cancel(); sleepTimerJob = null
-        _sleepTimerActive.value = false; _sleepTimerSecondsRemaining.value = 0
-        shazamJob?.cancel(); shazamJob = null; _isShazamRunning.value = false
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerActive.value = false
+        _sleepTimerSecondsRemaining.value = 0
+        shazamJob?.cancel()
+        shazamJob = null
+        _isShazamRunning.value = false
         playbackService?.stop()
         _playerState.update { it.copy(station = null, isPlaying = false) }
     }
 
     // --- Rotation ---
 
-    fun startFavRotation() { startRotation(RotationMode.FAVORITES) }
+    fun startFavRotation() {
+        startRotation(RotationMode.FAVORITES)
+    }
 
     private val _isShuffleLoading = MutableStateFlow(false)
     val isShuffleLoading: StateFlow<Boolean> = _isShuffleLoading
@@ -451,10 +489,13 @@ class RadioViewModel @Inject constructor(
         startRotation(RotationMode.CUSTOM, openDetail)
     }
 
-    fun setLiveMinutes(minutes: Int) { _liveMinutes.value = minutes.coerceIn(1, 60) }
+    fun setLiveMinutes(minutes: Int) {
+        _liveMinutes.value = minutes.coerceIn(1, 60)
+    }
 
     private fun startRotation(mode: RotationMode, openDetailOnFirstPlay: Boolean = true) {
-        rotationJob?.cancel(); reachabilityCache.clear()
+        rotationJob?.cancel()
+        reachabilityCache.clear()
         rotationJob = viewModelScope.launch {
             _liveMinutes.value = settings.value.rotationMinutes
             _rotationState.value = RotationState(isActive = true, mode = mode)
@@ -468,29 +509,48 @@ class RadioViewModel @Inject constructor(
                     }.shuffled()
                     RotationMode.CUSTOM -> _rotationQueue.value
                 }
-                if (stations.isEmpty()) { _rotationState.value = RotationState(); return@launch }
-                _rotationQueue.value = stations; reachabilityCache.clear()
+                if (stations.isEmpty()) {
+                    _rotationState.value = RotationState()
+                    return@launch
+                }
+                _rotationQueue.value = stations
+                reachabilityCache.clear()
                 var consecutiveSkips = 0
                 inner@ while (isActive) {
                     val liveStations = if (mode == RotationMode.CUSTOM) _rotationQueue.value else stations
-                    if (liveStations.isEmpty()) { _rotationState.value = RotationState(); return@launch }
-                    if (currentIndex >= liveStations.size) { currentIndex = 0; break@inner }
+                    if (liveStations.isEmpty()) {
+                        _rotationState.value = RotationState()
+                        return@launch
+                    }
+                    if (currentIndex >= liveStations.size) {
+                        currentIndex = 0
+                        break@inner
+                    }
                     val station = liveStations[currentIndex]
                     val reachable = reachabilityCache.remove(station.streamUrl) ?: isReachable(station.streamUrl)
                     if (!reachable) {
                         currentIndex++
-                        if (++consecutiveSkips >= liveStations.size) { _rotationState.value = RotationState(); return@launch }
+                        if (++consecutiveSkips >= liveStations.size) {
+                            _rotationState.value = RotationState()
+                            return@launch
+                        }
                         continue@inner
                     }
                     consecutiveSkips = 0
                     playInternal(station, openDetail = firstPlay && openDetailOnFirstPlay)
                     firstPlay = false
                     val prewarmJob = launch(Dispatchers.IO) {
-                        var look = currentIndex + 1; var found = 0
+                        var look = currentIndex + 1
+                        var found = 0
                         while (look < liveStations.size && found < 3 && isActive) {
                             val url = liveStations[look].streamUrl
-                            if (!reachabilityCache.containsKey(url)) { val ok = isReachable(url); reachabilityCache[url] = ok; if (ok) found++ }
-                            else if (reachabilityCache[url] == true) found++
+                            if (!reachabilityCache.containsKey(url)) {
+                                val ok = isReachable(url)
+                                reachabilityCache[url] = ok
+                                if (ok) found++
+                            } else if (reachabilityCache[url] == true) {
+                                found++
+                            }
                             look++
                         }
                     }
@@ -510,11 +570,16 @@ class RadioViewModel @Inject constructor(
     }
 
     private suspend fun runCountdown(): CountdownResult {
-        var elapsed = 0L; var lastLiveMinutes = _liveMinutes.value; val tickMs = 200L
+        var elapsed = 0L
+        var lastLiveMinutes = _liveMinutes.value
+        val tickMs = 200L
         while (currentCoroutineContext().isActive) {
             skipChannel.tryReceive().getOrNull()?.let { return it }
             val currentMinutes = _liveMinutes.value
-            if (currentMinutes != lastLiveMinutes) { lastLiveMinutes = currentMinutes; elapsed = 0L }
+            if (currentMinutes != lastLiveMinutes) {
+                lastLiveMinutes = currentMinutes
+                elapsed = 0L
+            }
             val totalSec = currentMinutes * 60
             val remainingSec = (totalSec - (elapsed / 1000).toInt()).coerceAtLeast(0)
             _rotationState.update { it.copy(secondsRemaining = remainingSec, totalSeconds = totalSec) }
@@ -580,7 +645,8 @@ class RadioViewModel @Inject constructor(
             return
         }
         val now = System.currentTimeMillis()
-        if (now - lastSkipMs < 400) return; lastSkipMs = now
+        if (now - lastSkipMs < 400) return
+        lastSkipMs = now
         Log.d(TAG, "skipStation [QUANTUMCAST] → CountdownResult.Next")
         skipChannel.trySend(CountdownResult.Next)
     }
@@ -594,29 +660,50 @@ class RadioViewModel @Inject constructor(
             return
         }
         val now = System.currentTimeMillis()
-        if (now - lastSkipMs < 400) return; lastSkipMs = now
+        if (now - lastSkipMs < 400) return
+        lastSkipMs = now
         Log.d(TAG, "skipPrevStation [QUANTUMCAST] → CountdownResult.Prev")
         skipChannel.trySend(CountdownResult.Prev)
     }
-    fun jumpToQueueStation(index: Int) { skipChannel.trySend(CountdownResult.Jump(index)) }
+    fun jumpToQueueStation(index: Int) {
+        skipChannel.trySend(CountdownResult.Jump(index))
+    }
     fun removeFromRotationQueue(index: Int) {
         val newQueue = _rotationQueue.value.toMutableList().also { if (index in it.indices) it.removeAt(index) }
         _rotationQueue.value = newQueue
         if (newQueue.isEmpty()) stopRotation()
     }
-    fun clearTrackHistory() { _trackHistory.value = emptyList() }
+    fun clearTrackHistory() {
+        _trackHistory.value = emptyList()
+    }
     fun deleteTrackHistoryAt(index: Int) {
         _trackHistory.update { list -> list.toMutableList().also { if (index in it.indices) it.removeAt(index) } }
     }
-    fun toggleTimerPause() { _rotationState.update { it.copy(timerPaused = !it.timerPaused) } }
-    fun stopRotation() { rotationJob?.cancel(); rotationJob = null; _rotationState.value = RotationState(); stop() }
-    fun cancelRotation() { rotationJob?.cancel(); rotationJob = null; _rotationState.value = RotationState() }
+    fun toggleTimerPause() {
+        _rotationState.update { it.copy(timerPaused = !it.timerPaused) }
+    }
+    fun stopRotation() {
+        rotationJob?.cancel()
+        rotationJob = null
+        _rotationState.value = RotationState()
+        stop()
+    }
+    fun cancelRotation() {
+        rotationJob?.cancel()
+        rotationJob = null
+        _rotationState.value = RotationState()
+    }
 
     // --- Search ---
 
-    fun resetSearch() { _searchResults.value = UiState.Idle }
+    fun resetSearch() {
+        _searchResults.value = UiState.Idle
+    }
     fun searchStations(query: String) {
-        if (query.isBlank()) { loadTopStations(); return }
+        if (query.isBlank()) {
+            loadTopStations()
+            return
+        }
         viewModelScope.launch {
             _searchResults.value = UiState.Loading
             runCatching { repo.search(query, settings.value.searchLimit) }
@@ -653,44 +740,78 @@ class RadioViewModel @Inject constructor(
         }
     }
     fun selectCountry(country: Country) {
-        _selectedCountry.value = country; _countryStations.value = UiState.Loading
+        _selectedCountry.value = country
+        _countryStations.value = UiState.Loading
         viewModelScope.launch {
             runCatching { repo.getStationsByCountry(country.name, settings.value.searchLimit) }
                 .onSuccess { _countryStations.value = UiState.Success(it) }
                 .onFailure { _countryStations.value = UiState.Error(it.message ?: "Failed") }
         }
     }
-    fun clearCountrySelection() { _selectedCountry.value = null; _countryStations.value = UiState.Idle }
+    fun clearCountrySelection() {
+        _selectedCountry.value = null
+        _countryStations.value = UiState.Idle
+    }
 
     // --- Favorites ---
 
-    fun toggleFavorite(station: Station) { viewModelScope.launch { runCatching { repo.toggleFavorite(station) } } }
-    fun toggleGroupExpanded(id: String) { _expandedGroupIds.update { ids -> if (id in ids) ids - id else ids + id } }
-    fun createGroup(name: String, uuids: Set<String>) {
-        viewModelScope.launch { val id = repo.createGroup(name, uuids); _expandedGroupIds.update { it + id } }
+    fun toggleFavorite(station: Station) {
+        viewModelScope.launch { runCatching { repo.toggleFavorite(station) } }
     }
-    fun renameGroup(id: String, name: String) { viewModelScope.launch { repo.renameGroup(id, name) } }
-    fun deleteGroup(id: String) { viewModelScope.launch { repo.deleteGroup(id); _expandedGroupIds.update { it - id } } }
+    fun toggleGroupExpanded(id: String) {
+        _expandedGroupIds.update { ids -> if (id in ids) ids - id else ids + id }
+    }
+    fun createGroup(name: String, uuids: Set<String>) {
+        viewModelScope.launch {
+            val id = repo.createGroup(name, uuids)
+            _expandedGroupIds.update { it + id }
+        }
+    }
+    fun renameGroup(id: String, name: String) {
+        viewModelScope.launch { repo.renameGroup(id, name) }
+    }
+    fun deleteGroup(id: String) {
+        viewModelScope.launch {
+            repo.deleteGroup(id)
+            _expandedGroupIds.update { it - id }
+        }
+    }
     fun assignToGroup(uuids: Set<String>, groupId: String) {
         viewModelScope.launch { repo.assignToGroup(uuids, groupId, startOrder = favorites.value.count { it.groupId == groupId }) }
     }
-    fun unassignFromGroup(uuids: Set<String>) { viewModelScope.launch { repo.unassignFromGroup(uuids) } }
-    fun reorderFavoriteInGroup(uuid: String, newSortOrder: Int) { viewModelScope.launch { repo.updateFavoriteSortOrder(uuid, newSortOrder) } }
-    fun reorderGroup(id: String, newSortOrder: Int) { viewModelScope.launch { repo.updateGroupSortOrder(id, newSortOrder) } }
-    fun exportFavorites(outputStream: OutputStream) { viewModelScope.launch(Dispatchers.IO) { runCatching { repo.exportFavorites(outputStream) } } }
-    fun importFavorites(inputStream: InputStream) { viewModelScope.launch(Dispatchers.IO) { runCatching { repo.importFavorites(inputStream) } } }
+    fun unassignFromGroup(uuids: Set<String>) {
+        viewModelScope.launch { repo.unassignFromGroup(uuids) }
+    }
+    fun reorderFavoriteInGroup(uuid: String, newSortOrder: Int) {
+        viewModelScope.launch { repo.updateFavoriteSortOrder(uuid, newSortOrder) }
+    }
+    fun reorderGroup(id: String, newSortOrder: Int) {
+        viewModelScope.launch { repo.updateGroupSortOrder(id, newSortOrder) }
+    }
+    fun exportFavorites(outputStream: OutputStream) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.exportFavorites(outputStream) } }
+    }
+    fun importFavorites(inputStream: InputStream) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.importFavorites(inputStream) } }
+    }
 
     // --- Snapclient (QuantumCast tab) ---
 
     fun connectToSnapserver(host: String, port: Int = 1604) {
         // Stop any active rotation and Shazam - we're switching to listener mode
         cancelRotation()
-        shazamJob?.cancel(); shazamJob = null; _isShazamRunning.value = false
+        shazamJob?.cancel()
+        shazamJob = null
+        _isShazamRunning.value = false
         // Synthetic station so NowPlayingBar + Screen show the connected server
-        _playerState.update { it.copy(
-            station = tech.capullo.quantumcast.data.model.Station(uuid = "snapclient-$host", name = host),
-            isPlaying = false, icyTitle = "", currentTrack = null,
-        ) }
+        _playerState.update {
+            it.copy(
+                station = tech.capullo.quantumcast.data.model.Station(uuid = "snapclient-$host", name = host),
+                isPlaying = false,
+                icyTitle = "",
+                currentTrack = null,
+            )
+        }
         _trackHistory.value = emptyList()
         _streamStats.value = null
         _showDetailScreen.value = true
@@ -708,7 +829,9 @@ class RadioViewModel @Inject constructor(
         playbackService?.setSnapclientChannel(channel)
     }
 
-    fun toggleStreamLock() { playbackService?.toggleStreamLock() }
+    fun toggleStreamLock() {
+        playbackService?.toggleStreamLock()
+    }
 
     fun adjustClientVolume(clientId: String, muted: Boolean, percent: Int) {
         Log.d(TAG, "adjustClientVolume: client=$clientId percent=$percent muted=$muted")
@@ -726,17 +849,33 @@ class RadioViewModel @Inject constructor(
 
     // --- Settings ---
 
-    fun updateSetting(block: suspend SettingsRepository.() -> Unit) { viewModelScope.launch { settingsRepo.block() } }
-    fun setShareService(v: tech.capullo.quantumcast.data.settings.ShareService) { viewModelScope.launch { settingsRepo.setShareService(v) } }
-    fun setCustomServerName(v: String) { viewModelScope.launch { settingsRepo.setCustomServerName(v); playbackService?.updateCustomServerName(v) } }
+    fun updateSetting(block: suspend SettingsRepository.() -> Unit) {
+        viewModelScope.launch { settingsRepo.block() }
+    }
+    fun setShareService(v: tech.capullo.quantumcast.data.settings.ShareService) {
+        viewModelScope.launch { settingsRepo.setShareService(v) }
+    }
+    fun setCustomServerName(v: String) {
+        viewModelScope.launch {
+            settingsRepo.setCustomServerName(v)
+            playbackService?.updateCustomServerName(v)
+        }
+    }
 
     // --- Shazam ---
 
-    fun identifyNow() { _playerState.value.station?.streamUrl?.let { startShazamLoop(it) } }
-    fun cancelIdentify() { shazamJob?.cancel(); shazamJob = null; _isShazamRunning.value = false }
+    fun identifyNow() {
+        _playerState.value.station?.streamUrl?.let { startShazamLoop(it) }
+    }
+    fun cancelIdentify() {
+        shazamJob?.cancel()
+        shazamJob = null
+        _isShazamRunning.value = false
+    }
 
     private fun startShazamLoop(streamUrl: String) {
-        shazamJob?.cancel(); _isShazamRunning.value = true
+        shazamJob?.cancel()
+        _isShazamRunning.value = true
         shazamJob = viewModelScope.launch(Dispatchers.IO) {
             delay(4_000)
             while (isActive) {
@@ -746,23 +885,31 @@ class RadioViewModel @Inject constructor(
                     _streamStats.value = StreamStats(codec = AudioCapturer.lastCodec, bitrate = AudioCapturer.lastBitrate / 1000, sampleRate = AudioCapturer.lastOutRate, channels = AudioCapturer.lastOutCh)
                 }
                 val station = _playerState.value.station
-                val stationName = station?.name ?: ""; val stationCountryCode = station?.countryCode ?: ""
-                val max = settings.value.maxHistorySongs; val keep = if (max <= 0) 500 else max
+                val stationName = station?.name ?: ""
+                val stationCountryCode = station?.countryCode ?: ""
+                val max = settings.value.maxHistorySongs
+                val keep = if (max <= 0) 500 else max
                 if (result != null) {
                     val entry = result.copy(stationName = stationName, stationCountryCode = stationCountryCode)
                     _playerState.update { it.copy(currentTrack = entry) }
                     _trackHistory.update { list ->
                         val base = if (list.firstOrNull()?.isLoading == true) list.drop(1) else list
                         val top = base.firstOrNull()
-                        if (top != null && !top.isLoading && !top.notFound && top.trackName == entry.trackName && top.artistName == entry.artistName) base
-                        else listOf(entry) + base.take(keep - 1)
+                        if (top != null && !top.isLoading && !top.notFound && top.trackName == entry.trackName && top.artistName == entry.artistName) {
+                            base
+                        } else {
+                            listOf(entry) + base.take(keep - 1)
+                        }
                     }
                     if (result.trackName.isNotBlank()) {
                         withContext(Dispatchers.Main) {
                             playbackService?.updateIcyTitle("${result.trackName} - ${result.artistName}")
                             playbackService?.updateIdentifiedTrack(
-                                result.trackName, result.artistName,
-                                result.youtubeUrl, result.spotifyUrl, result.appleMusicUrl
+                                result.trackName,
+                                result.artistName,
+                                result.youtubeUrl,
+                                result.spotifyUrl,
+                                result.appleMusicUrl,
                             )
                             if (result.artworkUrl.isNotBlank()) {
                                 playbackService?.updateArtwork(result.artworkUrl)
@@ -786,16 +933,24 @@ class RadioViewModel @Inject constructor(
 
     fun toggleSleepTimer() {
         if (_sleepTimerActive.value) {
-            sleepTimerJob?.cancel(); sleepTimerJob = null; _sleepTimerActive.value = false; _sleepTimerSecondsRemaining.value = 0
+            sleepTimerJob?.cancel()
+            sleepTimerJob = null
+            _sleepTimerActive.value = false
+            _sleepTimerSecondsRemaining.value = 0
         } else {
             val totalSec = settings.value.sleepTimerMinutes * 60
-            _sleepTimerActive.value = true; _sleepTimerSecondsRemaining.value = totalSec
+            _sleepTimerActive.value = true
+            _sleepTimerSecondsRemaining.value = totalSec
             sleepTimerJob = viewModelScope.launch {
                 val startMs = System.currentTimeMillis()
                 while (isActive) {
                     val remaining = (totalSec - ((System.currentTimeMillis() - startMs) / 1000).toInt()).coerceAtLeast(0)
                     _sleepTimerSecondsRemaining.value = remaining
-                    if (remaining <= 0) { _sleepTimerActive.value = false; playbackService?.pause(); return@launch }
+                    if (remaining <= 0) {
+                        _sleepTimerActive.value = false
+                        playbackService?.pause()
+                        return@launch
+                    }
                     delay(1000)
                 }
             }
@@ -810,11 +965,15 @@ class RadioViewModel @Inject constructor(
             val port = if (parsed.port != -1) parsed.port else (if (parsed.protocol == "https") 443 else 80)
             java.net.Socket().use { it.connect(java.net.InetSocketAddress(parsed.host, port), 1500) }
             true
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     override fun onCleared() {
-        rotationJob?.cancel(); shazamJob?.cancel(); sleepTimerJob?.cancel()
+        rotationJob?.cancel()
+        shazamJob?.cancel()
+        sleepTimerJob?.cancel()
         disconnectPlayer()
         super.onCleared()
     }
@@ -828,15 +987,17 @@ class RadioViewModel @Inject constructor(
         _showDetailScreen.value = true
         // Call playStation directly with QUANTUMCAST - bypasses DataStore so mode is guaranteed
         playbackService?.playStation(
-            url      = "https://ice2.somafm.com/groovesalad-256-mp3",
-            title    = "SnapTest: Groove Salad",
-            artist   = "SomaFM",
-            uuid     = "snaptest-001",
-            favicon  = "",
+            url = "https://ice2.somafm.com/groovesalad-256-mp3",
+            title = "SnapTest: Groove Salad",
+            artist = "SomaFM",
+            uuid = "snaptest-001",
+            favicon = "",
             broadcastMode = tech.capullo.quantumcast.data.settings.BroadcastMode.QUANTUMCAST,
         ) ?: Log.e("SnapTest", "FAIL: PlaybackService not bound yet - retry in 2s")
         Log.i("SnapTest", "=== SNAP TEST playStation dispatched ===")
     }
 
-    companion object { private const val TAG = "RadioViewModel" }
+    companion object {
+        private const val TAG = "RadioViewModel"
+    }
 }

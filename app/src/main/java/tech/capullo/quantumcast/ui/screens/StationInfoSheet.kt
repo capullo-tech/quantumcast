@@ -28,7 +28,7 @@ private fun countryCodeToFlag(code: String): String {
     if (code.length != 2) return ""
     val base = 0x1F1E6 - 0x41
     return String(Character.toChars(code[0].uppercaseChar().code + base)) +
-           String(Character.toChars(code[1].uppercaseChar().code + base))
+        String(Character.toChars(code[1].uppercaseChar().code + base))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,7 +38,7 @@ fun StationInfoSheet(
     isFavorite: Boolean,
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState()
@@ -46,14 +46,14 @@ fun StationInfoSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+        dragHandle = { BottomSheetDefaults.DragHandle() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // Header: favicon + name + play/fav actions
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -61,20 +61,21 @@ fun StationInfoSheet(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     if (station.favicon.isNotEmpty()) {
                         AsyncImage(
                             model = station.favicon,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
                         )
                     } else {
                         Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
                             Icon(
-                                Icons.Default.PlayArrow, null,
+                                Icons.Default.PlayArrow,
+                                null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(12.dp)
+                                modifier = Modifier.padding(12.dp),
                             )
                         }
                     }
@@ -84,16 +85,19 @@ fun StationInfoSheet(
                     text = station.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = { onPlay(); onDismiss() }) {
+                IconButton(onClick = {
+                    onPlay()
+                    onDismiss()
+                }) {
                     Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.primary)
                 }
                 IconButton(onClick = onToggleFavorite) {
                     Icon(
                         if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         if (isFavorite) "Remove favorite" else "Add favorite",
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -130,7 +134,7 @@ fun StationInfoSheet(
                         "Tags",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(allTags) { tag -> TagChip(tag) }
@@ -145,14 +149,14 @@ fun StationInfoSheet(
                         "Stream URL",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = station.streamUrl,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         )
                         IconButton(onClick = {
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -173,20 +177,20 @@ private fun InfoRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(80.dp)
+            modifier = Modifier.width(80.dp),
         )
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         )
     }
 }

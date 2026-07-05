@@ -29,7 +29,7 @@ object PlaylistResolver {
     // Playlists are tiny; this also caps how much of a live audio body we
     // pull before the binary check rejects it (~1s at 128kbps).
     private const val MAX_BYTES = 16 * 1024
-    private const val MAX_DEPTH = 3  // playlist → playlist → stream
+    private const val MAX_DEPTH = 3 // playlist → playlist → stream
 
     private val client by lazy {
         OkHttpClient.Builder()
@@ -50,18 +50,26 @@ object PlaylistResolver {
      */
     fun resolve(url: String, depth: Int = 0): Resolved? {
         if (depth >= MAX_DEPTH) return null
-        val text = try { fetchText(url) } catch (e: Exception) { null } ?: return null
+        val text = try {
+            fetchText(url)
+        } catch (e: Exception) {
+            null
+        } ?: return null
         if (text.contains("#EXT-X-")) return Resolved(url, MimeTypes.APPLICATION_M3U8)
         val body = text.trimStart('\uFEFF').trimStart()
         val entry = when {
             body.startsWith("[playlist]", ignoreCase = true) -> firstPlsEntry(body)
             body.startsWith("#EXTM3U") -> firstM3uEntry(body)
             body.startsWith("<") && body.contains("<asx", ignoreCase = true) -> firstAsxEntry(body)
-            looksLikeUrlList(body) -> firstM3uEntry(body)  // headerless .m3u
+            looksLikeUrlList(body) -> firstM3uEntry(body) // headerless .m3u
             else -> null
         } ?: return null
-        val abs = try { URL(URL(url), entry).toString() } catch (e: Exception) { return null }
-        if (abs == url) return null  // self-reference guard
+        val abs = try {
+            URL(URL(url), entry).toString()
+        } catch (e: Exception) {
+            return null
+        }
+        if (abs == url) return null // self-reference guard
         return if (hasPlaylistExtension(abs)) resolve(abs, depth + 1) else Resolved(abs)
     }
 
@@ -80,7 +88,7 @@ object PlaylistResolver {
             }
             if (n == 0) return null
             for (i in 0 until minOf(n, 512)) {
-                if (bytes[i] == 0.toByte()) return null  // binary → an actual audio stream
+                if (bytes[i] == 0.toByte()) return null // binary → an actual audio stream
             }
             return String(bytes, 0, n, Charsets.UTF_8)
         }
@@ -88,17 +96,16 @@ object PlaylistResolver {
 
     private val plsFileLine = Regex("""^\s*File(\d+)\s*=\s*(.+)$""", RegexOption.IGNORE_CASE)
 
-    private fun firstPlsEntry(text: String): String? =
-        text.lineSequence()
-            .mapNotNull { plsFileLine.find(it) }
-            .sortedBy { it.groupValues[1].toIntOrNull() ?: Int.MAX_VALUE }
-            .firstOrNull()?.groupValues?.get(2)?.trim()
+    private fun firstPlsEntry(text: String): String? = text.lineSequence()
+        .mapNotNull { plsFileLine.find(it) }
+        .sortedBy { it.groupValues[1].toIntOrNull() ?: Int.MAX_VALUE }
+        .firstOrNull()?.groupValues?.get(2)?.trim()
 
-    private fun firstM3uEntry(text: String): String? =
-        text.lineSequence().map { it.trim() }
-            .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+    private fun firstM3uEntry(text: String): String? = text.lineSequence().map { it.trim() }
+        .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
 
-    private val asxHref = Regex("""<ref[^>]*\bhref\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    private val asxHref =
+        Regex("""<ref[^>]*\bhref\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
     private fun firstAsxEntry(text: String): String? = asxHref.find(text)?.groupValues?.get(1)?.trim()
 

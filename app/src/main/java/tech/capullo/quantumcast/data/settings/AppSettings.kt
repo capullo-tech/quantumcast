@@ -15,8 +15,8 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class ShareService { YOUTUBE, SPOTIFY, APPLE_MUSIC }
 
 enum class BroadcastMode {
-    QUANTUMCAST,   // VLC → FIFO → Snapserver + local Snapclient (always on)
-    SNAPCLIENT     // Qcast tab: Snapclient connected to external Snapserver
+    QUANTUMCAST, // VLC → FIFO → Snapserver + local Snapclient (always on)
+    SNAPCLIENT, // Qcast tab: Snapclient connected to external Snapserver
 }
 
 data class AppSettings(
@@ -41,7 +41,7 @@ enum class RadioServer(val label: String, val url: String) {
     DE1("Germany (de1)", "https://de1.api.radio-browser.info/"),
     NL1("Netherlands (nl1)", "https://nl1.api.radio-browser.info/"),
     AT1("Austria (at1)", "https://at1.api.radio-browser.info/"),
-    CUSTOM("Custom", "")
+    CUSTOM("Custom", ""),
 }
 
 class SettingsRepository(private val context: Context) {

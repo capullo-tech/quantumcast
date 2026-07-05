@@ -1,7 +1,6 @@
 package tech.capullo.quantumcast.shazam
 
 import okhttp3.OkHttpClient
-import okhttp3.Request as OkRequest
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList.YouTube
@@ -10,6 +9,7 @@ import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.TimeUnit
+import okhttp3.Request as OkRequest
 
 // OkHttp-backed Downloader for NewPipe Extractor
 private object NewPipeDownloader : Downloader() {
@@ -26,8 +26,8 @@ private object NewPipeDownloader : Downloader() {
         val body = request.dataToSend()
         val okRequest = when (request.httpMethod()) {
             "POST" -> builder.post((body ?: byteArrayOf()).toRequestBody()).build()
-            "PUT"  -> builder.put((body ?: byteArrayOf()).toRequestBody()).build()
-            else   -> builder.get().build()
+            "PUT" -> builder.put((body ?: byteArrayOf()).toRequestBody()).build()
+            else -> builder.get().build()
         }
 
         val resp = client.newCall(okRequest).execute()
@@ -36,7 +36,7 @@ private object NewPipeDownloader : Downloader() {
             resp.message,
             resp.headers.toMultimap(),
             resp.body?.string(),
-            resp.request.url.toString()
+            resp.request.url.toString(),
         )
     }
 }

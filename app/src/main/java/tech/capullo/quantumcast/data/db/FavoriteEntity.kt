@@ -15,5 +15,5 @@ data class FavoriteEntity(
     val bitrate: Int,
     val addedAt: Long = System.currentTimeMillis(),
     val groupId: String = "",
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
 )

@@ -45,7 +45,6 @@ fun SnapcastScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
-
             // --- Connection status ---
             if (connectedHost.isNotEmpty()) {
                 item {
@@ -163,7 +162,9 @@ fun SnapcastScreen(
                                     Icon(Icons.Default.Clear, contentDescription = "Clear")
                                 }
                             }
-                        } else null,
+                        } else {
+                            null
+                        },
                     )
                     Button(onClick = { connect() }) { Text("Connect") }
                 }
