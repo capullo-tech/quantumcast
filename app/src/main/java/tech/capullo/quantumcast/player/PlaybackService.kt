@@ -7,9 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -47,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tech.capullo.audio.contracts.NowPlaying
 import tech.capullo.audio.contracts.PlaybackController
+import tech.capullo.audio.player.AudioFocusController
 import tech.capullo.audio.player.FifoAudioBufferSink
 import tech.capullo.audio.player.FifoRenderersFactory
 import tech.capullo.audio.snapcast.SnapclientProcess
@@ -251,84 +249,19 @@ class PlaybackService : Service() {
     private var sessionArtJob: Job? = null
 
     // --- Audio focus ---
-    // Focus affects ONLY the local snapclient (the audible part of this device).
-    // The broadcast pipeline (ExoPlayer → FIFO → snapserver → remote clients) must
-    // never react to focus changes: other rooms keep playing while e.g. a
-    // YouTube video takes over this phone's speaker.
-    private var focusRequest: AudioFocusRequest? = null
-    private var focusPausedLocalClient = false
-    private var focusResumeWatcher: Job? = null
-
-    // Resume triggers, in order of reliability:
-    // 1. App brought to foreground (onAppForeground) - always reclaims audio.
-    // 2. AUDIOFOCUS_GAIN - delivered only after TRANSIENT losses (calls, nav).
-    // 3. Quiet-watcher - after a PERMANENT loss Android never redistributes
-    //    focus (no GAIN when Spotify/YouTube stop), so poll isMusicActive and
-    //    resume once the other player has been silent for a few seconds.
-    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        when (change) {
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                if (snapclientProcess != null) {
-                    focusPausedLocalClient = true
-                    stopLocalSnapclient()
-                    startFocusResumeWatcher()
-                    Log.d(TAG, "Audio focus lost (permanent) → local snapclient stopped, watcher armed")
-                }
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                // No watcher here: during a voice call isMusicActive is false
-                // and the watcher would blast radio into the call. GAIN is
-                // reliably delivered after transient losses.
-                if (snapclientProcess != null) {
-                    focusPausedLocalClient = true
-                    stopLocalSnapclient()
-                    Log.d(TAG, "Audio focus lost (transient) → local snapclient stopped")
-                }
-            }
-            AudioManager.AUDIOFOCUS_GAIN -> resumeLocalAudioAfterFocusLoss("focus gain")
-            // CAN_DUCK: keep playing at full volume - a native process can't be
-            // ducked cheaply and radio over a brief beep is acceptable.
-        }
+    // Focus affects ONLY the local snapclient (the audible part of this device). The broadcast
+    // pipeline (ExoPlayer → FIFO → snapserver → remote clients) must never react to focus changes:
+    // other rooms keep playing while e.g. a YouTube video takes over this phone's speaker.
+    // The shared controller owns the permanent/transient distinction + isMusicActive quiet-watcher
+    // recovery; QuantumCast supplies only the local-snapclient stop/start callbacks.
+    private val audioFocus by lazy {
+        AudioFocusController(this, onPause = ::stopLocalSnapclient, onResume = ::startLocalSnapclient)
     }
 
-    // Called from the Activity (via ViewModel) whenever the app returns to the
-    // foreground: the user is looking at QuantumCast, so local audio comes back
-    // even if another app still holds focus - reclaiming focus pauses it.
-    fun onAppForeground() {
-        resumeLocalAudioAfterFocusLoss("app foreground")
-    }
-
-    private fun resumeLocalAudioAfterFocusLoss(reason: String) {
-        if (!focusPausedLocalClient) return
-        focusPausedLocalClient = false
-        focusResumeWatcher?.cancel()
-        focusResumeWatcher = null
-        requestAudioFocus() // reclaim so the next loss is detected again
-        startLocalSnapclient()
-        Log.d(TAG, "Local snapclient restarted ($reason)")
-    }
-
-    private fun startFocusResumeWatcher() {
-        focusResumeWatcher?.cancel()
-        focusResumeWatcher = scope.launch {
-            val am = getSystemService(AUDIO_SERVICE) as AudioManager
-            var quietSince = 0L
-            while (isActive && focusPausedLocalClient) {
-                delay(2_000)
-                if (am.isMusicActive) {
-                    quietSince = 0L
-                } else {
-                    val now = System.currentTimeMillis()
-                    if (quietSince == 0L) {
-                        quietSince = now
-                    } else if (now - quietSince >= 3_000) {
-                        withContext(Dispatchers.Main) { resumeLocalAudioAfterFocusLoss("other player quiet") }
-                        break
-                    }
-                }
-            }
-        }
-    }
+    // Called from the Activity (via ViewModel) whenever the app returns to the foreground: the user
+    // is looking at QuantumCast, so local audio comes back even if another app still holds focus -
+    // reclaiming focus pauses it.
+    fun onAppForeground() = audioFocus.refocus()
 
     companion object {
         const val ACTION_SKIP_NEXT = "tech.capullo.quantumcast.SKIP_NEXT"
@@ -394,7 +327,7 @@ class PlaybackService : Service() {
             startExoToFifo(url, snapserverProcess!!.pipeFilepath, vlcNetworkCachingMs)
             // Starting a station is an explicit "make sound" action - recover a
             // focus-paused local snapclient too (no-op when not focus-paused).
-            resumeLocalAudioAfterFocusLoss("station play")
+            audioFocus.refocus()
         } else {
             // First play or after a full stop - build the Snapcast stack from scratch.
             stopSnapcast()
@@ -425,7 +358,7 @@ class PlaybackService : Service() {
         _state.update { it.copy(isPlaying = true) }
         // Explicit "make sound" action doubles as last-resort recovery of a
         // focus-paused local snapclient (no-op when not focus-paused).
-        resumeLocalAudioAfterFocusLoss("user play")
+        audioFocus.refocus()
         updateNotification()
         updateMediaSession()
     }
@@ -475,7 +408,7 @@ class PlaybackService : Service() {
             )
         }
         startSnapcastControl(host)
-        requestAudioFocus()
+        audioFocus.request()
         Log.d(TAG, "Snapclient → $host:$port")
     }
 
@@ -1111,7 +1044,7 @@ class PlaybackService : Service() {
         startSnapcastControl("localhost")
 
         // Local snapclient is the audible part - join the focus arbitration for it
-        requestAudioFocus()
+        audioFocus.request()
     }
 
     private fun startSnapcastControl(host: String) {
@@ -1297,7 +1230,7 @@ class PlaybackService : Service() {
     }
 
     private fun stopSnapcast() {
-        abandonAudioFocus()
+        audioFocus.abandon()
         snapcontrolPlugin?.stop()
         snapcontrolPlugin = null
         snapserverNsd?.stop()
@@ -1313,34 +1246,8 @@ class PlaybackService : Service() {
         localChannelTagSet = false
     }
 
-    // --- Audio focus helpers (local snapclient only - see focusListener) ---
-
-    private fun requestAudioFocus() {
-        // Re-requesting with the same AudioFocusRequest after a loss is valid -
-        // no early return: after AUDIOFOCUS_LOSS our request is inactive and
-        // must be submitted again to reclaim focus.
-        val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build(),
-            )
-            .setOnAudioFocusChangeListener(focusListener)
-            .setWillPauseWhenDucked(false)
-            .build()
-            .also { focusRequest = it }
-        // A FAILED result must not silence this device - keep playing regardless.
-        (getSystemService(AUDIO_SERVICE) as AudioManager).requestAudioFocus(req)
-    }
-
-    private fun abandonAudioFocus() {
-        focusResumeWatcher?.cancel()
-        focusResumeWatcher = null
-        focusRequest?.let { (getSystemService(AUDIO_SERVICE) as AudioManager).abandonAudioFocusRequest(it) }
-        focusRequest = null
-        focusPausedLocalClient = false
-    }
+    // --- Local snapclient lifecycle (the audible part; the shared AudioFocusController's
+    // onPause/onResume callbacks) ---
 
     private fun stopLocalSnapclient() {
         snapclientJob?.cancel()
