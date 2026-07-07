@@ -154,6 +154,7 @@ private fun RadioApp(
     val shuffleConnected by vm.shuffleConnected.collectAsState()
     val showTrackDetail by vm.showDetailScreen.collectAsState()
     val snapclientHost by vm.snapclientHost.collectAsState()
+    val broadcastHttpPort by vm.broadcastHttpPort.collectAsState()
     val snapclientChannel by vm.snapclientChannel.collectAsState()
     val snapclientState by vm.snapclientState.collectAsState()
     val snapcastGroups by vm.snapcastGroups.collectAsState()
@@ -200,6 +201,7 @@ private fun RadioApp(
             onToggleSleepTimer = vm::toggleSleepTimer,
             streamStats = streamStats,
             snapcastGroups = snapcastGroups,
+            broadcastHttpPort = broadcastHttpPort,
             snapclientChannel = snapclientChannel,
             onAdjustClientVolume = vm::adjustClientVolume,
             onAdjustClientLatency = vm::adjustClientLatency,
@@ -311,10 +313,11 @@ private fun RadioApp(
                         discoveredServers = discoveredServers,
                         connectedHost = snapclientHost,
                         snapclientState = snapclientState,
+                        httpPort = broadcastHttpPort,
                         lastManualHost = settings.lastManualHost,
                         onStartDiscovery = { discoveryManager.startDiscovery() },
                         onConnectToServer = { server ->
-                            vm.connectToSnapserver(server.hostAddress, server.port)
+                            vm.connectToSnapserver(server.hostAddress, server.port, server.httpPort)
                         },
                         onConnectManually = { host, port ->
                             vm.connectToSnapserver(host, port)

@@ -49,6 +49,7 @@ import tech.capullo.audio.player.FifoAudioBufferSink
 import tech.capullo.audio.player.FifoRenderersFactory
 import tech.capullo.audio.snapcast.SnapclientProcess
 import tech.capullo.audio.snapcast.SnapcontrolPlugin
+import tech.capullo.audio.snapcast.SnapserverPorts
 import tech.capullo.audio.snapcast.SnapserverProcess
 import tech.capullo.audio.snapcast.firstArtist
 import tech.capullo.quantumcast.MainActivity
@@ -75,6 +76,8 @@ class PlaybackService : Service() {
         val broadcastMode: BroadcastMode = BroadcastMode.QUANTUMCAST,
         val snapclientHost: String = "",
         val snapclientPort: Int = 1604,
+        /** This broadcaster's resolved HTTP (web player + control) port - for the web/QR URL. */
+        val broadcastHttpPort: Int = 1680,
         val snapclientChannel: String = "stereo",
         val snapclientState: tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState =
             tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState.STARTING,
@@ -384,7 +387,7 @@ class PlaybackService : Service() {
         snapcontrolPlugin?.isStreamLocked = locked
     }
 
-    fun connectAsSnapclient(host: String, port: Int = 1604) {
+    fun connectAsSnapclient(host: String, port: Int = 1604, httpPort: Int = 1680) {
         stopEngine()
         stopSnapcast()
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
@@ -407,9 +410,9 @@ class PlaybackService : Service() {
                 audioChannel = _state.value.snapclientChannel,
             )
         }
-        startSnapcastControl(host)
+        startSnapcastControl(host, httpPort)
         audioFocus.request()
-        Log.d(TAG, "Snapclient → $host:$port")
+        Log.d(TAG, "Snapclient → $host:$port (control :$httpPort)")
     }
 
     private fun applyStreamProperties(props: tech.capullo.audio.snapcast.StreamPlayerProperties) {
@@ -920,7 +923,9 @@ class PlaybackService : Service() {
 
     // --- Snapcast ---
 
-    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(this, STREAM_NAME).also { snapserverProcess = it }
+    // OS-assigned ports so multiple capullo apps coexist and the ports aren't a fixed guess; the
+    // resolved trio is read back off snapserver.ports to wire the snapclient / NSD / control / web URL.
+    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(this, STREAM_NAME, SnapserverPorts.free()).also { snapserverProcess = it }
 
     // --- Snapcast control-plugin adapter (capullo-audio SnapcontrolPlugin) ---
     // The engine's SnapcontrolPlugin is driven by the platform contract: a StateFlow<NowPlaying>
@@ -1023,9 +1028,11 @@ class PlaybackService : Service() {
     }
 
     private fun startSnapcast(snapserver: SnapserverProcess, snapserverAddress: String) {
+        val ports = snapserver.ports
+        _state.update { it.copy(broadcastHttpPort = ports.httpPort) }
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
         snapserverJob = scope.launch { snapserver.start() }
-        snapclientJob = scope.launch { sc.start(snapserverAddress) }
+        snapclientJob = scope.launch { sc.start(snapserverAddress, ports.streamPort) }
 
         snapcontrolPlugin = SnapcontrolPlugin(
             state = snapNowPlaying,
@@ -1037,19 +1044,20 @@ class PlaybackService : Service() {
         }
         publishNowPlaying()
 
-        // Register Snapserver via NSD so other devices can discover us
-        snapserverNsd = tech.capullo.audio.snapcast.SnapserverNsdRegistrar(this).also { it.start(customServerName) }
+        // Register Snapserver via NSD so other devices can discover us (carrying the resolved ports)
+        snapserverNsd = tech.capullo.audio.snapcast.SnapserverNsdRegistrar(this)
+            .also { it.start(customServerName, ports.streamPort, ports.tcpPort, ports.httpPort) }
 
         // Connect to our own Snapserver control socket to track connected clients
-        startSnapcastControl("localhost")
+        startSnapcastControl("localhost", ports.httpPort)
 
         // Local snapclient is the audible part - join the focus arbitration for it
         audioFocus.request()
     }
 
-    private fun startSnapcastControl(host: String) {
+    private fun startSnapcastControl(host: String, httpPort: Int) {
         snapcastControlJob?.cancel()
-        val client = tech.capullo.audio.snapcast.SnapcastControlClient(host)
+        val client = tech.capullo.audio.snapcast.SnapcastControlClient(host, httpPort)
             .also { snapcastControl = it }
         snapcastControlJob = scope.launch {
             client.initialize()
@@ -1264,8 +1272,8 @@ class PlaybackService : Service() {
             if (st.snapclientHost.isEmpty()) return
             st.snapclientHost to st.snapclientPort
         } else {
-            if (snapserverProcess == null) return // broadcast ended meanwhile
-            "localhost" to 1604
+            val sp = snapserverProcess ?: return // broadcast ended meanwhile
+            "localhost" to sp.ports.streamPort
         }
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
         if (st.broadcastMode == BroadcastMode.SNAPCLIENT) {

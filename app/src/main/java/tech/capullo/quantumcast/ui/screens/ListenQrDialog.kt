@@ -70,6 +70,7 @@ internal fun qrBitmap(content: String, size: Int = 512): android.graphics.Bitmap
 @Composable
 internal fun ListenQrDialog(
     ips: List<LocalIp>,
+    httpPort: Int,
     initial: LocalIp? = null,
     onDismiss: () -> Unit,
 ) {
@@ -85,7 +86,7 @@ internal fun ListenQrDialog(
 
     val context = LocalContext.current
     var selected by remember(ips) { mutableStateOf(initial?.takeIf { it in ips } ?: ips.first()) }
-    val url = "http://${selected.address}:1680"
+    val url = "http://${selected.address}:$httpPort"
     val qr = remember(url) { qrBitmap(url) }
     AlertDialog(
         onDismissRequest = onDismiss,

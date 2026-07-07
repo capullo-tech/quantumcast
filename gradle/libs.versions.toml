@@ -40,7 +40,7 @@ capulloSourceRadiobrowser = "f3d8e0b"
 # SnapcontrolPlugin, Nsd/Discovery, FIFO) instead of QC's local snapcast/* + player/FifoAudioSink
 # copies. QC keeps its own PlaybackService orchestration (Strategy 1); the engine facade
 # CapulloAudioEngine is intentionally NOT used. Composite build locally, jitpack on CI.
-capulloAudio = "1041e1f"  # pinned to an immutable jitpack commit (see the note above)
+capulloAudio = "aaece3a"  # pinned to an immutable jitpack commit (see the note above)
 # --- Test ---
 junit = "4.13.2"
 

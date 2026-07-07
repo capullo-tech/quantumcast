@@ -112,6 +112,7 @@ fun TrackDetailScreen(
     onToggleSleepTimer: () -> Unit = {},
     streamStats: RadioViewModel.StreamStats? = null,
     snapcastGroups: List<Group> = emptyList(),
+    broadcastHttpPort: Int = 1680,
     snapclientChannel: String = "stereo",
     onAdjustClientVolume: (clientId: String, muted: Boolean, percent: Int) -> Unit = { _, _, _ -> },
     onAdjustClientLatency: (clientId: String, latencyMs: Int) -> Unit = { _, _ -> },
@@ -425,6 +426,7 @@ fun TrackDetailScreen(
             isBroadcaster = !isSnapclientMode,
             isStreamLocked = isStreamLocked,
             onToggleStreamLock = onToggleStreamLock,
+            httpPort = broadcastHttpPort,
             onDismiss = { showSnapcastSheet = false },
         )
     }

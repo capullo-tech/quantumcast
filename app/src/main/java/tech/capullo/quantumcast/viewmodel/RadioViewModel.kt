@@ -149,6 +149,10 @@ class RadioViewModel @Inject constructor(
     private val _snapclientHost = MutableStateFlow("")
     val snapclientHost: StateFlow<String> = _snapclientHost
 
+    // This broadcaster's resolved HTTP (web player) port, for the web/QR URL shown in SnapcastScreen.
+    private val _broadcastHttpPort = MutableStateFlow(1680)
+    val broadcastHttpPort: StateFlow<Int> = _broadcastHttpPort
+
     private val _snapclientChannel = MutableStateFlow("stereo")
     val snapclientChannel: StateFlow<String> = _snapclientChannel
 
@@ -294,6 +298,7 @@ class RadioViewModel @Inject constructor(
                         )
                     }
                     _snapclientHost.value = svcState.snapclientHost
+                    _broadcastHttpPort.value = svcState.broadcastHttpPort
                     _snapclientChannel.value = svcState.snapclientChannel
                     _snapclientState.value = svcState.snapclientState
                     _snapcastGroups.value = svcState.snapcastGroups
@@ -797,7 +802,7 @@ class RadioViewModel @Inject constructor(
 
     // --- Snapclient (QuantumCast tab) ---
 
-    fun connectToSnapserver(host: String, port: Int = 1604) {
+    fun connectToSnapserver(host: String, port: Int = 1604, httpPort: Int = 1680) {
         // Stop any active rotation and Shazam - we're switching to listener mode
         cancelRotation()
         shazamJob?.cancel()
@@ -816,7 +821,7 @@ class RadioViewModel @Inject constructor(
         _streamStats.value = null
         _showDetailScreen.value = true
         viewModelScope.launch { settingsRepo.setLastManualHost(host) }
-        playbackService?.connectAsSnapclient(host, port)
+        playbackService?.connectAsSnapclient(host, port, httpPort)
     }
 
     fun disconnectSnapclient() {

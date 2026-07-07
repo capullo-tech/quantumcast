@@ -25,6 +25,7 @@ fun SnapcastScreen(
     discoveredServers: List<DiscoveredSnapserver>,
     connectedHost: String,
     snapclientState: SnapclientProcess.ConnectionState,
+    httpPort: Int = 1680,
     lastManualHost: String = "",
     onStartDiscovery: () -> Unit,
     onConnectToServer: (DiscoveredSnapserver) -> Unit,
@@ -38,7 +39,7 @@ fun SnapcastScreen(
     var qrIp by remember { mutableStateOf<LocalIp?>(null) }
     LaunchedEffect(Unit) { onStartDiscovery() }
 
-    qrIp?.let { ip -> ListenQrDialog(ips = localIps, initial = ip, onDismiss = { qrIp = null }) }
+    qrIp?.let { ip -> ListenQrDialog(ips = localIps, httpPort = httpPort, initial = ip, onDismiss = { qrIp = null }) }
 
     Column(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -183,7 +184,7 @@ fun SnapcastScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                     )
                 }
-                items(localIps) { ip -> LocalIpRow(ip, onClick = { qrIp = ip }) }
+                items(localIps) { ip -> LocalIpRow(ip, httpPort = httpPort, onClick = { qrIp = ip }) }
             } else {
                 item {
                     Text(
@@ -201,7 +202,7 @@ fun SnapcastScreen(
 }
 
 @Composable
-private fun LocalIpRow(ip: LocalIp, onClick: () -> Unit) {
+private fun LocalIpRow(ip: LocalIp, httpPort: Int, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,7 +223,7 @@ private fun LocalIpRow(ip: LocalIp, onClick: () -> Unit) {
         )
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("${ip.address}:1680", style = MaterialTheme.typography.bodyMedium)
+            Text("${ip.address}:$httpPort", style = MaterialTheme.typography.bodyMedium)
             Text(ip.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(
