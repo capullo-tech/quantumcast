@@ -29,6 +29,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,6 +40,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -54,12 +57,17 @@ import tech.capullo.audio.snapcast.SnapserverProcess
 import tech.capullo.audio.snapcast.firstArtist
 import tech.capullo.quantumcast.MainActivity
 import tech.capullo.quantumcast.data.settings.BroadcastMode
+import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.source.radiobrowser.resolver.PlaylistResolver
 import java.io.FileOutputStream
 import kotlin.random.Random
 
+@AndroidEntryPoint
 @androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : Service() {
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
 
     // --- State exposed to ViewModel ---
 
@@ -217,6 +225,15 @@ class PlaybackService : Service() {
     private var snapclientJob: Job? = null
     private var snapcastControlJob: Job? = null
     private var localChannelTagSet = false
+    // Own snapclient vol/latency restore + persist (spatial-role memory). Restore applies the saved
+    // values on connect and is only marked done once the server reflects them, so the default 100/0
+    // during the restore window can't be persisted over the saved value (restore-before-observe).
+    @Volatile private var savedVol = 100
+    @Volatile private var savedLat = 0
+    private var volLatRestored = false
+    private var volLatApplied = false
+    private var lastPersistedVol = -1
+    private var lastPersistedLat = Int.MIN_VALUE
 
     var onSkipNextRequested: (() -> Unit)? = null
     var onSkipPrevRequested: (() -> Unit)? = null
@@ -285,6 +302,15 @@ class PlaybackService : Service() {
         createNotificationChannel()
         setupMediaSession()
         startForegroundNotification()
+        // Restore this device's persisted spatial role so it applies on the next broadcast/connect
+        // (maybeSetInitialChannelTag reads _state.snapclientChannel). Seeded before the client
+        // connects, so no observe race - the initial tag is the saved value, not the default.
+        scope.launch {
+            val saved = settingsRepository.settings.first()
+            savedVol = saved.snapclientVolume
+            savedLat = saved.snapclientLatency
+            _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
@@ -505,6 +531,42 @@ class PlaybackService : Service() {
             Log.d(TAG, "Remote channel change detected → $newChannel")
             _state.update { it.copy(snapclientChannel = newChannel) }
             snapclientProcess?.setChannel(newChannel)
+            scope.launch { settingsRepository.setSnapclientChannel(newChannel) }
+        }
+    }
+
+    // Restore this device's saved volume/latency onto its own snapclient on connect, then persist
+    // any later change. Gated by volLatRestored - set only once the server reflects the saved values
+    // back - so the server's transient default (100/0) during the restore window can't be persisted
+    // over what we saved.
+    private fun restoreOrPersistOwnVolLat(groups: List<tech.capullo.audio.snapcast.Group>) {
+        val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return
+        val own = groups.flatMap { it.clients }
+            .find { it.id == localId || it.id.contains(localId) } ?: return
+        val vol = own.config.volume.percent
+        val lat = own.config.latency
+        if (!volLatRestored) {
+            if (vol == savedVol && lat == savedLat) {
+                volLatRestored = true
+                lastPersistedVol = vol
+                lastPersistedLat = lat
+            } else if (!volLatApplied) {
+                volLatApplied = true
+                scope.launch {
+                    snapcastControl?.sendSetVolume(own.id, own.config.volume.muted, savedVol)
+                    snapcastControl?.sendSetLatency(own.id, savedLat)
+                    snapcastControl?.sendGetStatus()
+                }
+            }
+            return
+        }
+        if (vol != lastPersistedVol || lat != lastPersistedLat) {
+            lastPersistedVol = vol
+            lastPersistedLat = lat
+            scope.launch {
+                settingsRepository.setSnapclientVolume(vol)
+                settingsRepository.setSnapclientLatency(lat)
+            }
         }
     }
 
@@ -515,6 +577,7 @@ class PlaybackService : Service() {
         } else {
             // Snapclient not yet connected - just update state and channel for when it does
             _state.update { it.copy(snapclientChannel = channel) }
+            scope.launch { settingsRepository.setSnapclientChannel(channel) }
         }
     }
 
@@ -563,6 +626,7 @@ class PlaybackService : Service() {
         if (localId != null && (clientId == localId || clientId.contains(localId) || localId.contains(clientId))) {
             _state.update { it.copy(snapclientChannel = channel) }
             snapclientProcess?.setChannel(channel)
+            scope.launch { settingsRepository.setSnapclientChannel(channel) }
         }
     }
 
@@ -1086,6 +1150,7 @@ class PlaybackService : Service() {
                         mergeGroupsIfNeeded(groups)
                         maybeSetInitialChannelTag(groups)
                         syncLocalChannelFromName(groups)
+                        restoreOrPersistOwnVolLat(groups)
                         // Read current stream state on connect (so NowPlaying shows immediately)
                         val activeStreamId = groups.firstOrNull()?.streamId
                         notif.result.server.streams
@@ -1125,6 +1190,7 @@ class PlaybackService : Service() {
                         mergeGroupsIfNeeded(groups)
                         maybeSetInitialChannelTag(groups)
                         syncLocalChannelFromName(groups)
+                        restoreOrPersistOwnVolLat(groups)
                     }
                     is tech.capullo.audio.snapcast.StreamOnProperties -> {
                         val props = notif.params.properties
@@ -1252,6 +1318,8 @@ class PlaybackService : Service() {
         stopLocalSnapclient()
         snapserverProcess = null
         localChannelTagSet = false
+        volLatRestored = false
+        volLatApplied = false
     }
 
     // --- Local snapclient lifecycle (the audible part; the shared AudioFocusController's

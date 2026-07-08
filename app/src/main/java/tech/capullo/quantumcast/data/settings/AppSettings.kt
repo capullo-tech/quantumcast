@@ -35,6 +35,11 @@ data class AppSettings(
     val autoEntangleOnLaunch: Boolean = false,
     val webDebugPanel: Boolean = false,
     val webAutoplay: Boolean = false,
+    // This device's own snapclient spatial role - persisted so a set-once L/R + latency + volume
+    // arrangement survives a restart ("power on and it's working"). Defaults = today's behaviour.
+    val snapclientChannel: String = "stereo",
+    val snapclientVolume: Int = 100,
+    val snapclientLatency: Int = 0,
 )
 
 enum class RadioServer(val label: String, val url: String) {
@@ -62,6 +67,9 @@ class SettingsRepository(private val context: Context) {
         val AUTO_ENTANGLE_ON_LAUNCH = booleanPreferencesKey("auto_entangle_on_launch")
         val WEB_DEBUG_PANEL = booleanPreferencesKey("web_debug_panel")
         val WEB_AUTOPLAY = booleanPreferencesKey("web_autoplay")
+        val SNAPCLIENT_CHANNEL = stringPreferencesKey("snapclient_channel")
+        val SNAPCLIENT_VOLUME = intPreferencesKey("snapclient_volume")
+        val SNAPCLIENT_LATENCY = intPreferencesKey("snapclient_latency")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data
@@ -87,6 +95,9 @@ class SettingsRepository(private val context: Context) {
                 autoEntangleOnLaunch = prefs[Keys.AUTO_ENTANGLE_ON_LAUNCH] ?: false,
                 webDebugPanel = prefs[Keys.WEB_DEBUG_PANEL] ?: false,
                 webAutoplay = prefs[Keys.WEB_AUTOPLAY] ?: false,
+                snapclientChannel = prefs[Keys.SNAPCLIENT_CHANNEL] ?: "stereo",
+                snapclientVolume = prefs[Keys.SNAPCLIENT_VOLUME] ?: 100,
+                snapclientLatency = prefs[Keys.SNAPCLIENT_LATENCY] ?: 0,
             )
         }
 
@@ -109,4 +120,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setAutoEntangleOnLaunch(v: Boolean) = update { it[Keys.AUTO_ENTANGLE_ON_LAUNCH] = v }
     suspend fun setWebDebugPanel(v: Boolean) = update { it[Keys.WEB_DEBUG_PANEL] = v }
     suspend fun setWebAutoplay(v: Boolean) = update { it[Keys.WEB_AUTOPLAY] = v }
+    suspend fun setSnapclientChannel(v: String) = update { it[Keys.SNAPCLIENT_CHANNEL] = v }
+    suspend fun setSnapclientVolume(v: Int) = update { it[Keys.SNAPCLIENT_VOLUME] = v.coerceIn(0, 100) }
+    suspend fun setSnapclientLatency(v: Int) = update { it[Keys.SNAPCLIENT_LATENCY] = v }
 }
