@@ -18,6 +18,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import tech.capullo.audio.snapcast.DiscoveredSnapserver
 import tech.capullo.audio.snapcast.SnapclientProcess
+import tech.capullo.audio.ui.ListenQrDialog
+import tech.capullo.audio.ui.LocalIp
+import tech.capullo.audio.ui.NO_IP_NOTE
+import tech.capullo.audio.ui.usefulLocalIps
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

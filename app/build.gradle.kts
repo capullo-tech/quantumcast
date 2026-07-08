@@ -132,6 +132,7 @@ dependencies {
     // snapcast + ffmpeg native .so and of ktor (its SnapcastControlClient websocket) - QC references
     // none of those at compile time anymore, so their former direct declarations were dropped here.
     implementation(libs.capullo.audio)
+    implementation(libs.capullo.audio.ui) // shared control sheet + QR dialog
 
     // Serialization runtime - Navigation3 `@Serializable data object … : NavKey` route keys.
     implementation(libs.kotlinx.serialization.json)

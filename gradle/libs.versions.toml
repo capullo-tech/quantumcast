@@ -81,6 +81,8 @@ zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 # capullo-tech first-party libraries (composite build locally, jitpack coordinate on CI)
 capullo-source-radiobrowser = { module = "com.github.capullo-tech:capullo-source-radiobrowser", version.ref = "capulloSourceRadiobrowser" }
 capullo-audio = { module = "com.github.capullo-tech:capullo-audio", version.ref = "capulloAudio" }
+# Shared client Compose UI (control sheet, QR dialog) - same repo/commit as the engine.
+capullo-audio-ui = { module = "com.github.capullo-tech:capullo-audio-ui", version.ref = "capulloAudio" }
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
 
