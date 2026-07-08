@@ -311,6 +311,26 @@ class PlaybackService : Service() {
             savedLat = saved.snapclientLatency
             _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
         }
+        // Persist own client's volume/latency on ANY change (slider, knob, remote controller).
+        // GetStatus-only observation missed incremental ClientOnVolumeChanged updates, so this
+        // watches state directly. Gated by volLatRestored so the connect-time default can't be
+        // persisted over the saved values.
+        scope.launch {
+            _state.collect { s ->
+                if (!volLatRestored) return@collect
+                val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return@collect
+                val own = s.snapcastGroups.flatMap { it.clients }
+                    .find { it.id == localId || it.id.contains(localId) } ?: return@collect
+                val vol = own.config.volume.percent
+                val lat = own.config.latency
+                if (vol != lastPersistedVol || lat != lastPersistedLat) {
+                    lastPersistedVol = vol
+                    lastPersistedLat = lat
+                    settingsRepository.setSnapclientVolume(vol)
+                    settingsRepository.setSnapclientLatency(lat)
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
@@ -559,14 +579,6 @@ class PlaybackService : Service() {
                 }
             }
             return
-        }
-        if (vol != lastPersistedVol || lat != lastPersistedLat) {
-            lastPersistedVol = vol
-            lastPersistedLat = lat
-            scope.launch {
-                settingsRepository.setSnapclientVolume(vol)
-                settingsRepository.setSnapclientLatency(lat)
-            }
         }
     }
 
