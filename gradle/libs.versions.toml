@@ -40,7 +40,7 @@ capulloSourceRadiobrowser = "f3d8e0b"
 # SnapcontrolPlugin, Nsd/Discovery, FIFO) instead of QC's local snapcast/* + player/FifoAudioSink
 # copies. QC keeps its own PlaybackService orchestration (Strategy 1); the engine facade
 # CapulloAudioEngine is intentionally NOT used. Composite build locally, jitpack on CI.
-capulloAudio = "aaece3a"  # pinned to an immutable jitpack commit (see the note above)
+capulloAudio = "fc5883e"  # pinned to an immutable jitpack commit (see the note above)
 # --- Test ---
 junit = "4.13.2"
 
@@ -80,9 +80,13 @@ reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reo
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 # capullo-tech first-party libraries (composite build locally, jitpack coordinate on CI)
 capullo-source-radiobrowser = { module = "com.github.capullo-tech:capullo-source-radiobrowser", version.ref = "capulloSourceRadiobrowser" }
-capullo-audio = { module = "com.github.capullo-tech:capullo-audio", version.ref = "capulloAudio" }
+# jitpack multi-module coords: the engine (module name == repo name) is served flat AND nested;
+# capullo-audio-ui (a non-repo-name module) is ONLY at the nested group com.github.capullo-tech.capullo-audio.
+# Both must use the SAME (nested) group or Gradle sees the engine twice (flat direct + nested transitive
+# via -ui) and fails on duplicate classes.
+capullo-audio = { module = "com.github.capullo-tech.capullo-audio:capullo-audio", version.ref = "capulloAudio" }
 # Shared client Compose UI (control sheet, QR dialog) - same repo/commit as the engine.
-capullo-audio-ui = { module = "com.github.capullo-tech:capullo-audio-ui", version.ref = "capulloAudio" }
+capullo-audio-ui = { module = "com.github.capullo-tech.capullo-audio:capullo-audio-ui", version.ref = "capulloAudio" }
 # Test
 junit = { module = "junit:junit", version.ref = "junit" }
 

@@ -35,9 +35,9 @@ if (file("../capullo-source-radiobrowser").exists()) {
 if (file("../capullo-audio").exists()) {
     includeBuild("../capullo-audio") {
         dependencySubstitution {
-            substitute(module("com.github.capullo-tech:capullo-audio"))
+            substitute(module("com.github.capullo-tech.capullo-audio:capullo-audio"))
                 .using(project(":capullo-audio"))
-            substitute(module("com.github.capullo-tech:capullo-audio-ui"))
+            substitute(module("com.github.capullo-tech.capullo-audio:capullo-audio-ui"))
                 .using(project(":capullo-audio-ui"))
         }
     }
