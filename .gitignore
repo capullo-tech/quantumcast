@@ -13,3 +13,4 @@ build-share.log
 run-qc-spotless.cmd
 run-qc-onC.cmd
 app-qc-fresh.apk
+device-verify.apk

@@ -125,11 +125,14 @@ fun TrackDetailScreen(
     streamCanGoPrevious: Boolean = false,
     isStreamLocked: Boolean = false,
     onToggleStreamLock: () -> Unit = {},
+    onResetSelf: () -> Unit = {},
+    onResetAll: () -> Unit = {},
     shareService: tech.capullo.quantumcast.data.settings.ShareService = tech.capullo.quantumcast.data.settings.ShareService.YOUTUBE,
     onSetShareService: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val ownClientId = remember { tech.capullo.audio.snapcast.SnapclientProcess.localHostId(context) }
     var showHistorySheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var showSnapcastSheet by remember { mutableStateOf(false) }
@@ -186,63 +189,8 @@ fun TrackDetailScreen(
                         onLongPress = { showHistorySheet = true },
                     )
                 }
-                IconButton(onClick = { showSnapcastSheet = true }) {
-                    // Clients icon - the count of OTHER connected clients (self
-                    // excluded, same rule as the web player) sits in the icon
-                    // center in place of the dot; alone = plain surround-sound.
-                    // Tint still keys on any connection so the icon stays lit
-                    // while broadcasting solo.
-                    val iconContext = LocalContext.current
-                    val ownClientId = remember {
-                        tech.capullo.audio.snapcast.SnapclientProcess.localHostId(iconContext)
-                    }
-                    val totalConnected = snapcastGroups.sumOf { g -> g.clients.count { c -> c.connected } }
-                    val otherCount = snapcastGroups.sumOf { g ->
-                        g.clients.count { c -> c.connected && c.id != ownClientId }
-                    }
-                    val clientsTint = if (totalConnected > 0) {
-                        if (isSnapclientMode) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        }
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    }
-                    if (otherCount > 0) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                painterResource(R.drawable.ic_surround_sound_nodot),
-                                contentDescription = "Connected devices",
-                                tint = clientsTint,
-                            )
-                            Text(
-                                text = if (otherCount > 99) "99" else "$otherCount",
-                                color = clientsTint,
-                                fontSize = 8.sp,
-                                lineHeight = 8.sp,
-                                letterSpacing = 0.sp,
-                                fontWeight = FontWeight.Black,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    } else {
-                        Icon(
-                            Icons.Default.SurroundSound,
-                            contentDescription = "Connected devices",
-                            tint = clientsTint,
-                        )
-                    }
-                }
-                if (rotationState.isActive) {
-                    IconButton(onClick = { showQueueSheet = true }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.FormatListBulleted,
-                            contentDescription = "Queue",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
+                // Snapcast clients (o) and the rotation queue moved OUT of the top bar into the
+                // transport-controls row (snapcast left of prev, queue right of next).
                 IconButton(onClick = onToggleSleepTimer) {
                     if (sleepTimerActive && sleepTimerSecondsRemaining > 0) {
                         val m = sleepTimerSecondsRemaining / 60
@@ -382,7 +330,7 @@ fun TrackDetailScreen(
                         onToggleFavorite = { onToggleFavorite(station) },
                     )
                 }
-                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked)
+                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true })
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -427,6 +375,9 @@ fun TrackDetailScreen(
             isBroadcaster = !isSnapclientMode,
             isStreamLocked = isStreamLocked,
             onToggleStreamLock = onToggleStreamLock,
+            localClientId = ownClientId,
+            onResetSelf = onResetSelf,
+            onResetAll = onResetAll,
             httpPort = broadcastHttpPort,
             onDismiss = { showSnapcastSheet = false },
         )
@@ -1189,6 +1140,49 @@ private fun NowPlayingInfo(
     }
 }
 
+// Snapcast clients (o) button - the count of OTHER connected clients (self excluded, same rule
+// as the web player) sits in the icon center; alone = plain surround-sound. Tint keys on any
+// connection so it stays lit while broadcasting solo. Lives in the transport row now.
+@Composable
+private fun SnapcastClientsButton(
+    snapcastGroups: List<tech.capullo.audio.snapcast.Group>,
+    ownClientId: String,
+    isSnapclientMode: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+        val totalConnected = snapcastGroups.sumOf { g -> g.clients.count { c -> c.connected } }
+        val otherCount = snapcastGroups.sumOf { g ->
+            g.clients.count { c -> c.connected && c.id != ownClientId }
+        }
+        val clientsTint = if (totalConnected > 0) {
+            if (isSnapclientMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+        }
+        if (otherCount > 0) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painterResource(R.drawable.ic_surround_sound_nodot),
+                    contentDescription = "Connected devices",
+                    tint = clientsTint,
+                )
+                Text(
+                    text = if (otherCount > 99) "99" else "$otherCount",
+                    color = clientsTint,
+                    fontSize = 8.sp,
+                    lineHeight = 8.sp,
+                    letterSpacing = 0.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            Icon(Icons.Default.SurroundSound, contentDescription = "Connected devices", tint = clientsTint)
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NowPlayingControls(
@@ -1204,6 +1198,10 @@ private fun NowPlayingControls(
     streamCanGoNext: Boolean = false,
     streamCanGoPrevious: Boolean = false,
     isStreamLocked: Boolean = false,
+    snapcastGroups: List<tech.capullo.audio.snapcast.Group> = emptyList(),
+    ownClientId: String = "",
+    onOpenSnapcast: () -> Unit = {},
+    onOpenQueue: () -> Unit = {},
 ) {
     val lockedInClient = isSnapclientMode && isStreamLocked
     // Blinking alpha for paused timer - always create the transition, gate usage
@@ -1235,6 +1233,14 @@ private fun NowPlayingControls(
             contentColor = MaterialTheme.colorScheme.onError,
             disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.38f),
             disabledContentColor = MaterialTheme.colorScheme.onError.copy(alpha = 0.38f),
+        )
+
+        // Snapcast clients (o) - leftmost, flanking the transport controls.
+        SnapcastClientsButton(
+            snapcastGroups = snapcastGroups,
+            ownClientId = ownClientId,
+            isSnapclientMode = isSnapclientMode,
+            onClick = onOpenSnapcast,
         )
 
         // Prev - visible during rotation, in snapclient mode when server supports it, or when locked
@@ -1327,6 +1333,17 @@ private fun NowPlayingControls(
                 ) {
                     Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(24.dp))
                 }
+            }
+        }
+
+        // Rotation queue - rightmost, flanking the transport controls (only while a rotation is active).
+        if (rotationState.isActive) {
+            IconButton(onClick = onOpenQueue, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.FormatListBulleted,
+                    contentDescription = "Queue",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }

@@ -852,6 +852,14 @@ class RadioViewModel @Inject constructor(
         playbackService?.changeClientChannel(clientId, channel)
     }
 
+    fun resetSelf() {
+        playbackService?.resetSelf()
+    }
+
+    fun resetAll() {
+        playbackService?.resetAll()
+    }
+
     // --- Settings ---
 
     fun updateSetting(block: suspend SettingsRepository.() -> Unit) {

@@ -213,6 +213,8 @@ private fun RadioApp(
             streamCanGoPrevious = streamCanGoPrevious,
             isStreamLocked = isStreamLocked,
             onToggleStreamLock = vm::toggleStreamLock,
+            onResetSelf = vm::resetSelf,
+            onResetAll = vm::resetAll,
             shareService = settings.shareService,
             onSetShareService = vm::setShareService,
             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = detailAlpha.value },

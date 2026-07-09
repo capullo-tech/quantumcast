@@ -1315,6 +1315,42 @@ class PlaybackService : Service() {
         snapcastControl?.sendSetLatency(clientId, latencyMs)
     }
 
+    // Reset controls (broadcaster only). "Reset" = stereo / 100% / 0ms latency.
+    private suspend fun resetClientToDefaults(clientId: String) {
+        changeClientChannelInternal(clientId, "stereo")
+        adjustClientVolume(clientId, 100, false)
+        adjustClientLatency(clientId, 0)
+    }
+
+    // Reset forgets this device's saved spatial role so it sticks next launch. Only THIS device's
+    // persistence is cleared - remote devices restore their own saved config on next reconnect.
+    private suspend fun clearOwnPersistence() {
+        savedVol = 100
+        savedLat = 0
+        lastPersistedVol = 100
+        lastPersistedLat = 0
+        settingsRepository.setSnapclientChannel("stereo")
+        settingsRepository.setSnapclientVolume(100)
+        settingsRepository.setSnapclientLatency(0)
+        _state.update { it.copy(snapclientChannel = "stereo") }
+    }
+
+    fun resetSelf() {
+        val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() }
+        scope.launch {
+            clearOwnPersistence()
+            if (localId != null) resetClientToDefaults(localId)
+        }
+    }
+
+    fun resetAll() {
+        val clients = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
+        scope.launch {
+            clearOwnPersistence()
+            clients.forEach { resetClientToDefaults(it.id) }
+        }
+    }
+
     private fun stopSnapcast() {
         audioFocus.abandon()
         snapcontrolPlugin?.stop()
