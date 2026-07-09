@@ -30,7 +30,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -60,6 +59,7 @@ import tech.capullo.quantumcast.data.settings.BroadcastMode
 import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.source.radiobrowser.resolver.PlaylistResolver
 import java.io.FileOutputStream
+import javax.inject.Inject
 import kotlin.random.Random
 
 @AndroidEntryPoint
@@ -225,10 +225,12 @@ class PlaybackService : Service() {
     private var snapclientJob: Job? = null
     private var snapcastControlJob: Job? = null
     private var localChannelTagSet = false
+
     // Own snapclient vol/latency restore + persist (spatial-role memory). Restore applies the saved
     // values on connect and is only marked done once the server reflects them, so the default 100/0
     // during the restore window can't be persisted over the saved value (restore-before-observe).
     @Volatile private var savedVol = 100
+
     @Volatile private var savedLat = 0
     private var volLatRestored = false
     private var volLatApplied = false
