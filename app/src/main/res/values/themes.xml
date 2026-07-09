@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.RadioApp" parent="Theme.Material3.DayNight.NoActionBar" />
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.RadioApp" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Android 12+ system splash: paint the launch window the launcher-icon
+             background colour (ic_launcher_background = #300234) so the cold-start
+             screen matches the icon instead of showing a bare default square. -->
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">#300234</item>
+    </style>
 </resources>
