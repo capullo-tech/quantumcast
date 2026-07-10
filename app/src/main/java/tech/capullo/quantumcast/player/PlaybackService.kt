@@ -280,11 +280,6 @@ class PlaybackService : Service() {
         AudioFocusController(this, onPause = ::stopLocalSnapclient, onResume = ::startLocalSnapclient)
     }
 
-    // Called from the Activity (via ViewModel) whenever the app returns to the foreground: the user
-    // is looking at QuantumCast, so local audio comes back even if another app still holds focus -
-    // reclaiming focus pauses it.
-    fun onAppForeground() = audioFocus.refocus()
-
     companion object {
         const val ACTION_SKIP_NEXT = "tech.capullo.quantumcast.SKIP_NEXT"
         const val ACTION_SKIP_PREV = "tech.capullo.quantumcast.SKIP_PREV"

@@ -103,12 +103,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Returning to the app reclaims local audio after a focus loss
-        vm.onAppForeground()
-    }
-
     // ADB test: adb shell am start -n tech.capullo.quantumcast/.MainActivity --es dbg shuffle
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

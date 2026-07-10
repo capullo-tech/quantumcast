@@ -322,10 +322,6 @@ class RadioViewModel @Inject constructor(
                     }
                 }
             }
-            // Bind happens when the activity (re)opens - count it as coming to
-            // the foreground so focus-paused local audio resumes reliably even
-            // though onResume fired before the service connection was up.
-            svc.onAppForeground()
             Log.d(TAG, "PlaybackService connected")
         }
 
@@ -341,10 +337,6 @@ class RadioViewModel @Inject constructor(
             webCfgJob?.cancel()
             Log.d(TAG, "PlaybackService disconnected")
         }
-    }
-
-    fun onAppForeground() {
-        playbackService?.onAppForeground()
     }
 
     fun connectPlayer() {
