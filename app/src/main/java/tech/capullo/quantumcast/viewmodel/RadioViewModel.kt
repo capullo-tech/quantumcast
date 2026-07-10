@@ -48,6 +48,10 @@ sealed class UiState<out T> {
 
 enum class RotationMode { RANDOM, FAVORITES, CUSTOM }
 
+// Play-order of the (custom) rotation queue - SEQUENTIAL = the order the user built it in,
+// SHUFFLED = the upcoming stations reshuffled. RANDOM/FAVORITES don't carry a user order.
+enum class RotationOrder { SEQUENTIAL, SHUFFLED }
+
 data class RotationState(
     val isActive: Boolean = false,
     val mode: RotationMode = RotationMode.RANDOM,
@@ -56,6 +60,10 @@ data class RotationState(
     val stationIndex: Int = 0,
     val totalStations: Int = 0,
     val timerPaused: Boolean = false,
+    val order: RotationOrder = RotationOrder.SEQUENTIAL,
+    // repeat=true (default) loops the queue at the end; false stops after the last station
+    // (finite CUSTOM/FAVORITES only - RANDOM is inherently endless).
+    val repeat: Boolean = true,
 ) {
     val progress: Float get() = if (totalSeconds > 0) 1f - secondsRemaining.toFloat() / totalSeconds else 0f
 }
@@ -101,6 +109,9 @@ class RadioViewModel @Inject constructor(
 
     private val _rotationQueue = MutableStateFlow<List<Station>>(emptyList())
     val rotationQueue: StateFlow<List<Station>> = _rotationQueue
+
+    // The custom rotation's original order, used to restore SEQUENTIAL after a SHUFFLED toggle.
+    private var rotationBaseQueue: List<Station> = emptyList()
 
     private val _liveMinutes = MutableStateFlow(3)
     val liveMinutes: StateFlow<Int> = _liveMinutes
@@ -490,6 +501,7 @@ class RadioViewModel @Inject constructor(
 
     fun startCustomRotation(stations: List<Station>, openDetail: Boolean = true) {
         _rotationQueue.value = stations
+        rotationBaseQueue = stations
         _liveMinutes.value = settings.value.rotationMinutes
         startRotation(RotationMode.CUSTOM, openDetail)
     }
@@ -528,6 +540,12 @@ class RadioViewModel @Inject constructor(
                         return@launch
                     }
                     if (currentIndex >= liveStations.size) {
+                        // Reached the end of a finite queue. With repeat off, stop advancing but
+                        // leave the last station playing (rotation deactivates → single-station UI).
+                        if (mode != RotationMode.RANDOM && !_rotationState.value.repeat) {
+                            _rotationState.value = RotationState()
+                            return@launch
+                        }
                         currentIndex = 0
                         break@inner
                     }
@@ -686,6 +704,36 @@ class RadioViewModel @Inject constructor(
     }
     fun toggleTimerPause() {
         _rotationState.update { it.copy(timerPaused = !it.timerPaused) }
+    }
+
+    // Shuffle ⇄ sequential the UPCOMING stations of a custom rotation (the currently-playing
+    // station and anything already played stay put, so the countdown isn't interrupted). The
+    // rotation loop live-reads _rotationQueue for CUSTOM, so the reorder takes effect on the
+    // next advance without touching the running coroutine.
+    fun toggleRotationOrder() {
+        val st = _rotationState.value
+        if (!st.isActive || st.mode != RotationMode.CUSTOM) return
+        val newOrder = if (st.order == RotationOrder.SHUFFLED) RotationOrder.SEQUENTIAL else RotationOrder.SHUFFLED
+        val q = _rotationQueue.value
+        if (q.isEmpty()) {
+            _rotationState.update { it.copy(order = newOrder) }
+            return
+        }
+        val curIdx = (st.stationIndex - 1).coerceIn(0, q.lastIndex)
+        val prefix = q.take(curIdx + 1)
+        val remainingUuids = q.drop(curIdx + 1).map { it.uuid }.toSet()
+        val newSuffix = when (newOrder) {
+            RotationOrder.SHUFFLED -> q.drop(curIdx + 1).shuffled()
+            RotationOrder.SEQUENTIAL -> rotationBaseQueue.filter { it.uuid in remainingUuids }
+        }
+        _rotationQueue.value = prefix + newSuffix
+        _rotationState.update { it.copy(order = newOrder) }
+    }
+
+    // Loop the queue at the end (default) vs. stop after the last station. Honoured by the
+    // rotation loop's wrap check; moot for endless RANDOM.
+    fun toggleRotationRepeat() {
+        _rotationState.update { it.copy(repeat = !it.repeat) }
     }
     fun stopRotation() {
         rotationJob?.cancel()

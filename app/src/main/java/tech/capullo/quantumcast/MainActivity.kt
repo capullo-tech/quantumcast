@@ -190,6 +190,8 @@ private fun RadioApp(
             onSkip = vm::skipStation,
             onSkipPrev = vm::skipPrevStation,
             onToggleTimerPause = vm::toggleTimerPause,
+            onToggleRotationOrder = vm::toggleRotationOrder,
+            onToggleRotationRepeat = vm::toggleRotationRepeat,
             onStopRotation = vm::stopRotation,
             onToggleFavorite = vm::toggleFavorite,
             onRemoveFromQueue = vm::removeFromRotationQueue,

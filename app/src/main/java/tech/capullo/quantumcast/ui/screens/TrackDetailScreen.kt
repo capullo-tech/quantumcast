@@ -26,7 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
@@ -39,8 +39,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Snooze
@@ -52,8 +54,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -74,6 +81,8 @@ import tech.capullo.audio.ui.SnapcastControlSheet
 import tech.capullo.quantumcast.R
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
+import tech.capullo.quantumcast.viewmodel.RotationMode
+import tech.capullo.quantumcast.viewmodel.RotationOrder
 import tech.capullo.quantumcast.viewmodel.RotationState
 import tech.capullo.source.radiobrowser.data.model.Station
 import tech.capullo.source.radiobrowser.data.model.TrackLookup
@@ -102,6 +111,8 @@ fun TrackDetailScreen(
     onSkip: () -> Unit = {},
     onSkipPrev: () -> Unit = {},
     onToggleTimerPause: () -> Unit = {},
+    onToggleRotationOrder: () -> Unit = {},
+    onToggleRotationRepeat: () -> Unit = {},
     onStopRotation: () -> Unit = {},
     onToggleFavorite: (Station) -> Unit = {},
     onRemoveFromQueue: (Int) -> Unit = {},
@@ -235,11 +246,12 @@ fun TrackDetailScreen(
             var artSwipeDx by remember { mutableFloatStateOf(0f) }
             val artScope = rememberCoroutineScope()
 
-            // Art area: fills full width, flexible height, preserves aspect ratio
+            // Art area: fixed square (full width). A fixed size means an art reload or a
+            // metadata change never resizes it or shifts anything below it (TC parity).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .aspectRatio(1f)
                     .pointerInput(canSwipeArt, onSkip, onSkipPrev) {
                         if (!canSwipeArt) return@pointerInput
                         detectHorizontalDragGestures(
@@ -307,6 +319,8 @@ fun TrackDetailScreen(
 
             Spacer(Modifier.height(12.dp))
             val isFavorite = station?.uuid?.let { it in favoriteUuids } == true
+            // Track info sits directly under the (fixed) art and grows DOWNWARD into the
+            // flexible spacer below - more/fewer metadata lines never move the art or transport.
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -330,7 +344,16 @@ fun TrackDetailScreen(
                         onToggleFavorite = { onToggleFavorite(station) },
                     )
                 }
-                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true })
+            }
+            // Flexible gap absorbs all art/metadata height variation so the transport below
+            // holds a fixed position - the buttons never jump when the art or metadata changes.
+            Spacer(Modifier.weight(1f))
+            // Transport pinned to the bottom.
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true }, onToggleOrder = onToggleRotationOrder, onToggleRepeat = onToggleRotationRepeat)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -1183,6 +1206,13 @@ private fun SnapcastClientsButton(
     }
 }
 
+// TC-standard now-playing transport. Two rows, matching Telecloud's PlayerScreen:
+//   row 1 (transport) - play/pause ALWAYS screen-centered, flanked by two equal-weight zones so
+//     the primary button never moves off-centre regardless of which side buttons are present:
+//     [order] [prev]  ( play )  [next+ring] [repeat]
+//   row 2 (secondary) - snapcast (o) left · queue right (SpaceBetween).
+// The full transport shows only while a local rotation is active; single-station and snapclient/
+// listen-in modes keep their minimal set (just restyled + centered).
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NowPlayingControls(
@@ -1202,9 +1232,13 @@ private fun NowPlayingControls(
     ownClientId: String = "",
     onOpenSnapcast: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
+    onToggleOrder: () -> Unit = {},
+    onToggleRepeat: () -> Unit = {},
 ) {
     val lockedInClient = isSnapclientMode && isStreamLocked
-    // Blinking alpha for paused timer - always create the transition, gate usage
+    val rotationActive = rotationState.isActive && !isSnapclientMode
+
+    // Blinking alpha for a paused rotation timer - always create the transition, gate usage
     val inf = rememberInfiniteTransition(label = "blink")
     val blinkAnimAlpha by inf.animateFloat(
         initialValue = 1f,
@@ -1217,135 +1251,206 @@ private fun NowPlayingControls(
     )
     val blinkAlpha = if (rotationState.timerPaused) blinkAnimAlpha else 1f
 
-    Row(
+    val snapFilledColors = IconButtonDefaults.filledIconButtonColors(
+        containerColor = MaterialTheme.colorScheme.error,
+        contentColor = MaterialTheme.colorScheme.onError,
+        disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.38f),
+        disabledContentColor = MaterialTheme.colorScheme.onError.copy(alpha = 0.38f),
+    )
+    val sideTint = if (isSnapclientMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        val snapTonalColors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            disabledContainerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.38f),
-            disabledContentColor = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.38f),
-        )
-        val snapFilledColors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.error,
-            contentColor = MaterialTheme.colorScheme.onError,
-            disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.38f),
-            disabledContentColor = MaterialTheme.colorScheme.onError.copy(alpha = 0.38f),
-        )
-
-        // Snapcast clients (o) - leftmost, flanking the transport controls.
-        SnapcastClientsButton(
-            snapcastGroups = snapcastGroups,
-            ownClientId = ownClientId,
-            isSnapclientMode = isSnapclientMode,
-            onClick = onOpenSnapcast,
-        )
-
-        // Prev - visible during rotation, in snapclient mode when server supports it, or when locked
-        if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
-            FilledTonalIconButton(
-                onClick = onSkipPrev,
-                enabled = !lockedInClient,
-                modifier = Modifier.size(48.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                colors = if (isSnapclientMode) snapTonalColors else IconButtonDefaults.filledTonalIconButtonColors(),
+        // ---- Transport row: two equal-weight zones flank a fixed, always-centered play button.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // LEFT zone (hugs play): order (custom rotation only) + prev
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(24.dp))
-            }
-        }
-
-        // Play / Pause - always centered at 64dp; shows lock when broadcaster has locked
-        Box(contentAlignment = Alignment.Center) {
-            FilledIconButton(
-                onClick = onTogglePlayPause,
-                enabled = !lockedInClient,
-                modifier = Modifier.size(64.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                colors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors(),
-            ) {
-                if (lockedInClient) {
-                    Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(32.dp))
-                } else if (isBuffering) {
-                    Box(contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            progress = { (bufferingPercent / 100f).coerceIn(0f, 1f) },
-                            modifier = Modifier.size(36.dp),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
-                        )
-                        Text(
-                            text = "${bufferingPercent.toInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary,
+                if (rotationActive && rotationState.mode == RotationMode.CUSTOM) {
+                    // Shuffle on/off (like repeat) - on = reshuffled upcoming, off = listed order
+                    val shuffled = rotationState.order == RotationOrder.SHUFFLED
+                    IconButton(onClick = onToggleOrder) {
+                        Icon(
+                            Icons.Default.Shuffle,
+                            contentDescription = if (shuffled) "Shuffle on" else "Shuffle off",
+                            modifier = Modifier.size(26.dp),
+                            tint = if (shuffled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                } else {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        modifier = Modifier.size(32.dp),
-                    )
+                }
+                if (rotationActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
+                    IconButton(
+                        onClick = onSkipPrev,
+                        enabled = !lockedInClient,
+                        modifier = Modifier.size(56.dp).alpha(if (lockedInClient) 0.38f else 1f),
+                    ) {
+                        Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(40.dp), tint = sideTint)
+                    }
                 }
             }
-        }
 
-        // Next - ring + button when rotation active (only for local mode); plain button in snapclient mode
-        when {
-            rotationState.isActive && !isSnapclientMode -> {
-                Box(contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(
-                        progress = { rotationState.progress },
-                        modifier = Modifier.size(64.dp).alpha(blinkAlpha),
-                        strokeWidth = 3.dp,
-                        color = if (rotationState.timerPaused) {
-                            MaterialTheme.colorScheme.secondary
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            // CENTER: play / pause - fixed 68dp, never moves off-centre; shows lock when locked.
+            // 8dp horizontal padding keeps a gap to prev/next (parity with TC's 8dp spacing).
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                FilledIconButton(
+                    onClick = onTogglePlayPause,
+                    enabled = !lockedInClient,
+                    modifier = Modifier.size(68.dp).alpha(if (lockedInClient) 0.38f else 1f),
+                    colors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors(),
+                ) {
+                    if (lockedInClient) {
+                        Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(40.dp))
+                    } else if (isBuffering) {
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                progress = { (bufferingPercent / 100f).coerceIn(0f, 1f) },
+                                modifier = Modifier.size(40.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
+                            )
+                            Text(
+                                text = "${bufferingPercent.toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(40.dp),
+                        )
+                    }
+                }
+            }
+
+            // RIGHT zone (hugs play): next (+ in-button countdown ring in rotation) + repeat
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                when {
+                    rotationActive -> NextButtonWithRing(
+                        progress = rotationState.progress,
+                        timerPaused = rotationState.timerPaused,
+                        blinkAlpha = blinkAlpha,
+                        onSkip = onSkip,
+                        onToggleTimerPause = onToggleTimerPause,
                     )
-                    Surface(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .pointerInput(onSkip, onToggleTimerPause) {
-                                detectTapGestures(
-                                    onTap = { onSkip() },
-                                    onLongPress = { onToggleTimerPause() },
-                                )
-                            },
-                        shape = RoundedCornerShape(50),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(Icons.Default.SkipNext, "Skip (long-press to pause timer)", modifier = Modifier.size(24.dp))
+                    isSnapclientMode && (streamCanGoNext || lockedInClient) -> {
+                        IconButton(
+                            onClick = onSkip,
+                            enabled = !lockedInClient,
+                            modifier = Modifier.size(56.dp).alpha(if (lockedInClient) 0.38f else 1f),
+                        ) {
+                            Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(40.dp), tint = sideTint)
                         }
                     }
                 }
-            }
-            isSnapclientMode && (streamCanGoNext || lockedInClient) -> {
-                FilledTonalIconButton(
-                    onClick = onSkip,
-                    enabled = !lockedInClient,
-                    modifier = Modifier.size(48.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                    colors = snapTonalColors,
-                ) {
-                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(24.dp))
+                // Repeat on/off - finite rotation only (moot for endless RANDOM)
+                if (rotationActive && rotationState.mode != RotationMode.RANDOM) {
+                    IconButton(onClick = onToggleRepeat) {
+                        Icon(
+                            Icons.Default.Repeat,
+                            contentDescription = if (rotationState.repeat) "Repeat on" else "Repeat off",
+                            modifier = Modifier.size(26.dp),
+                            tint = if (rotationState.repeat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
 
-        // Rotation queue - rightmost, flanking the transport controls (only while a rotation is active).
-        if (rotationState.isActive) {
-            IconButton(onClick = onOpenQueue, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    Icons.AutoMirrored.Filled.FormatListBulleted,
-                    contentDescription = "Queue",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
+        // ---- Secondary row: snapcast (o) left · queue right (queue only while rotating).
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SnapcastClientsButton(
+                snapcastGroups = snapcastGroups,
+                ownClientId = ownClientId,
+                isSnapclientMode = isSnapclientMode,
+                onClick = onOpenSnapcast,
+            )
+            if (rotationActive) {
+                IconButton(onClick = onOpenQueue, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Queue",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            } else {
+                Spacer(Modifier.size(48.dp))
             }
         }
+    }
+}
+
+// Next button with the rotation countdown drawn as a ring ON the button's own 56dp border -
+// fixed size, no gap between ring and button, so the countdown never resizes/re-centres the row.
+// Tap = skip · long-press = pause/resume the timer.
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NextButtonWithRing(
+    progress: Float,
+    timerPaused: Boolean,
+    blinkAlpha: Float,
+    onSkip: () -> Unit,
+    onToggleTimerPause: () -> Unit,
+) {
+    val ringColor = if (timerPaused) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .drawBehind {
+                val sw = 3.dp.toPx()
+                val inset = sw / 2f
+                val arcSize = Size(size.width - sw, size.height - sw)
+                val topLeft = Offset(inset, inset)
+                drawArc(
+                    color = trackColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(sw),
+                )
+                drawArc(
+                    color = ringColor.copy(alpha = blinkAlpha),
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(sw, cap = StrokeCap.Round),
+                )
+            }
+            .pointerInput(onSkip, onToggleTimerPause) {
+                detectTapGestures(onTap = { onSkip() }, onLongPress = { onToggleTimerPause() })
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Default.SkipNext,
+            contentDescription = "Skip (long-press to pause timer)",
+            modifier = Modifier.size(40.dp),
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
