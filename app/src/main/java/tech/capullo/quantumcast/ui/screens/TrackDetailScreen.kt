@@ -53,6 +53,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
@@ -149,12 +150,21 @@ fun TrackDetailScreen(
     var showSnapcastSheet by remember { mutableStateOf(false) }
     var swipeDx by remember { mutableFloatStateOf(0f) }
 
+    // Blur the screen content behind the snapcast sheet, matching the web player's
+    // `backdrop-filter: blur` overlay (the sheet itself lives in its own window and
+    // stays sharp; the sheet darkens the backdrop via its scrim).
+    val snapBackdropBlur by animateDpAsState(
+        targetValue = if (showSnapcastSheet) 12.dp else 0.dp,
+        label = "snapBackdropBlur",
+    )
+
     BackHandler { onBack() }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .blur(snapBackdropBlur)
             .draggable(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { delta -> swipeDx += delta },
