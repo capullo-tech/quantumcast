@@ -998,7 +998,13 @@ class PlaybackService : Service() {
 
     // OS-assigned ports so multiple capullo apps coexist and the ports aren't a fixed guess; the
     // resolved trio is read back off snapserver.ports to wire the snapclient / NSD / control / web URL.
-    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(this, STREAM_NAME, SnapserverPorts.free()).also { snapserverProcess = it }
+    private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(
+        this,
+        STREAM_NAME,
+        SnapserverPorts.free(),
+        // Per-app abstract control socket so QC + another capullo app can broadcast at once.
+        controlSocketName = SnapserverProcess.controlSocketName(this),
+    ).also { snapserverProcess = it }
 
     // --- Snapcast control-plugin adapter (capullo-audio SnapcontrolPlugin) ---
     // The engine's SnapcontrolPlugin is driven by the platform contract: a StateFlow<NowPlaying>
@@ -1111,6 +1117,8 @@ class PlaybackService : Service() {
             state = snapNowPlaying,
             controller = snapController,
             parentJob = serviceJob,
+            // Bind the SAME per-app name the snapserver told libsnapcontrol.so to connect to.
+            socketName = snapserver.controlSocketName,
         ).apply {
             isStreamLocked = _state.value.isStreamLocked
             start()

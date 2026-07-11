@@ -14,3 +14,6 @@ run-qc-spotless.cmd
 run-qc-onC.cmd
 app-qc-fresh.apk
 device-verify.apk
+qc-socketfix.apk
+tc-socketfix.apk
+*-socketfix.apk
