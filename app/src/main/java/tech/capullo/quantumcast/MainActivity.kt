@@ -368,6 +368,7 @@ private fun RadioApp(
                         onSetShazamIntervalSeconds = { vm.updateSetting { setShazamIntervalSeconds(it) } },
                         onSetSleepTimerMinutes = { vm.updateSetting { setSleepTimerMinutes(it) } },
                         onSetThemeMode = { vm.updateSetting { setThemeMode(it) } },
+                        onSetBalance = { vm.updateSetting { setBalance(it) } },
                         onSetShareService = vm::setShareService,
                         onSetCustomServerName = vm::setCustomServerName,
                         onSetAutoEntangleOnLaunch = { vm.updateSetting { setAutoEntangleOnLaunch(it) } },

@@ -41,6 +41,7 @@ fun SettingsScreen(
     onSetShazamIntervalSeconds: (Int) -> Unit,
     onSetSleepTimerMinutes: (Int) -> Unit,
     onSetThemeMode: (ThemeMode) -> Unit = {},
+    onSetBalance: (Float) -> Unit = {},
     onSetShareService: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit = {},
     onSetCustomServerName: (String) -> Unit = {},
     onSetAutoEntangleOnLaunch: (Boolean) -> Unit = {},
@@ -112,6 +113,7 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 8.dp),
         ) {
+            // --- Shared block: kept in the SAME order as Telecloud's Settings ---
             item { SectionHeader("Device") }
 
             item {
@@ -125,24 +127,6 @@ fun SettingsScreen(
                 )
             }
 
-            item {
-                ToggleRow(
-                    label = "Web player autostart",
-                    description = "Web clients start listening automatically on page load instead of waiting for the headphones button. Browsers may still require one tap the first time. Applies on the web page's next reload.",
-                    checked = settings.webAutoplay,
-                    onToggle = onSetWebAutoplay,
-                )
-            }
-
-            item {
-                ToggleRow(
-                    label = "Web player debug panel",
-                    description = "Show the audio debug bar at the bottom of the web player. Applies on the web page's next reload.",
-                    checked = settings.webDebugPanel,
-                    onToggle = onSetWebDebugPanel,
-                )
-            }
-
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("Appearance") }
 
@@ -151,11 +135,48 @@ fun SettingsScreen(
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-            item { SectionHeader("Share Service") }
+            item { SectionHeader("Audio") }
+
             item {
-                ShareServiceRow(current = settings.shareService, onSelect = onSetShareService)
+                BalanceRow(value = settings.balance, onValueChange = onSetBalance)
             }
 
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Sleep Timer") }
+
+            item {
+                StepperRow(
+                    label = "Sleep timer duration",
+                    description = "Minutes before music pauses (tap moon icon in Now Playing)",
+                    value = settings.sleepTimerMinutes,
+                    range = 5..120,
+                    step = 5,
+                    onValueChange = onSetSleepTimerMinutes,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Multiroom web player") }
+
+            item {
+                ToggleRow(
+                    label = "Autostart listening",
+                    description = "Web clients start listening automatically on page load instead of waiting for the headphones button. Browsers may still require one tap the first time. Applies on the web page's next reload.",
+                    checked = settings.webAutoplay,
+                    onToggle = onSetWebAutoplay,
+                )
+            }
+
+            item {
+                ToggleRow(
+                    label = "Debug panel",
+                    description = "Show the audio debug bar at the bottom of the web player. Applies on the web page's next reload.",
+                    checked = settings.webDebugPanel,
+                    onToggle = onSetWebDebugPanel,
+                )
+            }
+
+            // --- QuantumCast-specific sections ---
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("Radio Browser API") }
 
@@ -212,20 +233,6 @@ fun SettingsScreen(
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-            item { SectionHeader("Sleep Timer") }
-
-            item {
-                StepperRow(
-                    label = "Sleep timer duration",
-                    description = "Minutes before music pauses (tap moon icon in Now Playing)",
-                    value = settings.sleepTimerMinutes,
-                    range = 5..120,
-                    step = 5,
-                    onValueChange = onSetSleepTimerMinutes,
-                )
-            }
-
-            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("Reckon") }
 
             item {
@@ -248,6 +255,12 @@ fun SettingsScreen(
                     step = 10,
                     onValueChange = onSetMaxHistorySongs,
                 )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Share Service") }
+            item {
+                ShareServiceRow(current = settings.shareService, onSelect = onSetShareService)
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
@@ -406,6 +419,49 @@ private fun ServerPickerRow(current: String, onSelect: (String) -> Unit) {
                     },
                 )
             }
+        }
+    }
+}
+
+// Stereo balance slider (parity with Telecloud's Balance setting). Applied to the
+// broadcast mix in PlaybackService via a BalanceAudioProcessor in the FIFO sink chain.
+@Composable
+private fun BalanceRow(value: Float, onValueChange: (Float) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            "Left/right channel volume for the broadcast mix",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("L", style = MaterialTheme.typography.labelMedium)
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = -1f..1f,
+                modifier = Modifier.weight(1f),
+            )
+            Text("R", style = MaterialTheme.typography.labelMedium)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                when {
+                    value < -0.01f -> "Left ${(value * -100).toInt()}%"
+                    value > 0.01f -> "Right ${(value * 100).toInt()}%"
+                    else -> "Centered"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = { onValueChange(0f) }, enabled = value != 0f) { Text("Center") }
         }
     }
 }

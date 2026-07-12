@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
@@ -21,11 +22,18 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
+import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.metadata.icy.IcyInfo
@@ -47,8 +55,8 @@ import kotlinx.coroutines.withContext
 import tech.capullo.audio.contracts.NowPlaying
 import tech.capullo.audio.contracts.PlaybackController
 import tech.capullo.audio.player.AudioFocusController
+import tech.capullo.audio.player.BalanceAudioProcessor
 import tech.capullo.audio.player.FifoAudioBufferSink
-import tech.capullo.audio.player.FifoRenderersFactory
 import tech.capullo.audio.snapcast.SnapclientProcess
 import tech.capullo.audio.snapcast.SnapcontrolPlugin
 import tech.capullo.audio.snapcast.SnapserverPorts
@@ -153,6 +161,12 @@ class PlaybackService : Service() {
     private var engineUrl = "" // URL actually handed to ExoPlayer (post-resolution)
     private var engineFifoPath = ""
     private var engineCachingMs = 1500
+
+    // Stereo balance applied to the broadcast mix (before the FIFO tee, so every listener -
+    // local snapclient, LAN clients, web players - hears the same image). Persistent across
+    // station changes; the per-station renderers factory references this same instance, and
+    // an onCreate observer keeps its @Volatile balance in sync with Settings live.
+    private val balanceProcessor = BalanceAudioProcessor()
 
     @Volatile private var triedPlaylistFallback = false
 
@@ -306,7 +320,12 @@ class PlaybackService : Service() {
             val saved = settingsRepository.settings.first()
             savedVol = saved.snapclientVolume
             savedLat = saved.snapclientLatency
+            balanceProcessor.balance = saved.balance
             _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
+        }
+        // Keep the broadcast balance in sync with Settings live (the slider is drag-live).
+        scope.launch {
+            settingsRepository.settings.collect { balanceProcessor.balance = it.balance }
         }
         // Persist own client's volume/latency on ANY change (slider, knob, remote controller).
         // GetStatus-only observation missed incremental ClientOnVolumeChanged updates, so this
@@ -751,7 +770,39 @@ class PlaybackService : Service() {
                 (engineCachingMs * 2).coerceIn(1_000, 20_000),
             )
             .build()
-        val player = ExoPlayer.Builder(this, FifoRenderersFactory(this, sink))
+        // Local renderers factory = the shared FifoRenderersFactory's chain
+        // ([mix → 2ch] → [resample → 44100] → [tee → FIFO]) with the stereo-balance
+        // processor inserted before the tee. Mirrors Telecloud; EXTENSION_RENDERER_MODE_ON
+        // keeps the FFmpeg fallback decoders for exotic codecs.
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            init {
+                setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON)
+            }
+
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink {
+                val mixer = ChannelMixingAudioProcessor().apply {
+                    putChannelMixingMatrix(ChannelMixingMatrix.create(1, 2))
+                    putChannelMixingMatrix(ChannelMixingMatrix.create(2, 2))
+                }
+                val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(44100) }
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false) // keep the chain in 16-bit PCM
+                    .setAudioProcessorChain(
+                        DefaultAudioSink.DefaultAudioProcessorChain(
+                            mixer,
+                            resampler,
+                            balanceProcessor,
+                            TeeAudioProcessor(sink),
+                        ),
+                    )
+                    .build()
+            }
+        }
+        val player = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .setWakeMode(C.WAKE_MODE_NETWORK)
