@@ -372,7 +372,7 @@ private fun ThemeModeRow(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
             Text("App color scheme", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         SingleChoiceSegmentedButtonRow {
-            listOf(ThemeMode.SYSTEM to "Auto", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark")
+            listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark")
                 .forEachIndexed { index, (mode, label) ->
                     SegmentedButton(
                         selected = current == mode,
