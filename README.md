@@ -2,6 +2,16 @@
 
 Discover radio stations from every corner of the world and let them play through your entire home - all rooms in sync, all at once.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/player.jpg" width="19%" alt="Now playing - global radio with track identification" />
+  <img src="docs/screenshots/favorites.jpg" width="19%" alt="Favorites and groups" />
+  <img src="docs/screenshots/web-player.jpg" width="19%" alt="Browser web player" />
+  <img src="docs/screenshots/multiroom.jpg" width="19%" alt="Per-room volume and latency" />
+  <img src="docs/screenshots/settings.jpg" width="19%" alt="Settings" />
+</p>
+
 ## What it does
 
 Hit shuffle and Quantumcast picks stations at random from a global database of 30,000+ broadcasts. It rotates through them automatically, like a DJ who never sleeps and never repeats a genre twice. When something catches your ear, Shazam-compatible track recognition tells you what's playing - artist, title, artwork - without lifting a finger.
