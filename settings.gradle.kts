@@ -15,6 +15,12 @@ dependencyResolutionManagement {
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
     }
+    versionCatalogs {
+        // Shared org toolchain, pinned by commit from jitpack.
+        create("libs") { from("com.github.capullo-tech:build-conventions:b07e979") }
+        // Local pins: inter-repo capullo coordinates (versioned per release) + QC's own deps.
+        create("pins") { from(files("gradle/pins.versions.toml")) }
+    }
 }
 rootProject.name = "QuantumCast"
 include(":app")

@@ -1,0 +1,33 @@
+# QuantumCast LOCAL pins catalog (`pins.*`) - the inter-repo capullo coordinates (pinned
+# independently per release, the org) + QC's own single-app deps. Everything
+# shared (toolchain, Compose BOM + Compose, lifecycle, nav3, media3, Hilt, serialization, zxing,
+# junit) comes from the shared `libs` catalog.
+[versions]
+# capullo-source-radiobrowser (Layer 3) - pinned to an immutable jitpack commit (NOT main-SNAPSHOT:
+# jitpack caches -SNAPSHOT unreliably). Composite build substitutes the sibling locally.
+capulloSourceRadiobrowser = "f3d8e0b"
+# capullo-audio (Layer 2) - immutable jitpack commit; the engine + capullo-audio-ui share it.
+capulloAudio = "76888df"
+# QC's own single-app deps (used by no other repo).
+media = "1.7.0"
+coil = "2.6.0"
+appcompat = "1.7.0"
+material = "1.12.0"
+datastore = "1.1.1"
+reorderable = "2.4.3"
+
+[libraries]
+# capullo-tech first-party libraries (composite build locally, jitpack coordinate on CI).
+capullo-source-radiobrowser = { module = "com.github.capullo-tech:capullo-source-radiobrowser", version.ref = "capulloSourceRadiobrowser" }
+# jitpack multi-module coords: capullo-audio-ui (a non-repo-name module) is ONLY at the nested group
+# com.github.capullo-tech.capullo-audio, so the engine must use the SAME nested group or Gradle sees
+# it twice (flat direct + nested transitive via -ui) and fails on duplicate classes.
+capullo-audio = { module = "com.github.capullo-tech.capullo-audio:capullo-audio", version.ref = "capulloAudio" }
+capullo-audio-ui = { module = "com.github.capullo-tech.capullo-audio:capullo-audio-ui", version.ref = "capulloAudio" }
+# QC single-app deps.
+androidx-media = { module = "androidx.media:media", version.ref = "media" }
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+android-material = { module = "com.google.android.material:material", version.ref = "material" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }

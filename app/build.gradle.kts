@@ -101,7 +101,7 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
 
     // Media session (lock screen controls, notification) - replaces Media3 MediaSessionService
-    implementation(libs.androidx.media)
+    implementation(pins.androidx.media)
 
     // Media3/ExoPlayer - decodes radio streams; a TeeAudioProcessor in a custom
     // DefaultAudioSink chain writes 44100:16:2 PCM into the Snapcast FIFO
@@ -121,7 +121,7 @@ dependencies {
     // source of truth). Its Retrofit/Gson/OkHttp/Room/NewPipe deps are internal to the lib (implementation
     // scope) and present at runtime transitively; QC's own now-redundant direct declarations of those are
     // left in place for this isolated commit and pruned in a later cleanup.
-    implementation(libs.capullo.source.radiobrowser)
+    implementation(pins.capullo.source.radiobrowser)
 
     // capullo-audio (Layer 2) - the delivery engine's public transport classes: SnapserverProcess,
     // SnapclientProcess, SnapcastControlClient + JSON-RPC types, SnapcontrolPlugin (StateFlow<NowPlaying>
@@ -131,8 +131,8 @@ dependencies {
     // CapulloAudioEngine facade is intentionally not used). Also the sole (transitive) provider of the
     // snapcast + ffmpeg native .so and of ktor (its SnapcastControlClient websocket) - QC references
     // none of those at compile time anymore, so their former direct declarations were dropped here.
-    implementation(libs.capullo.audio)
-    implementation(libs.capullo.audio.ui) // shared control sheet + QR dialog
+    implementation(pins.capullo.audio)
+    implementation(pins.capullo.audio.ui) // shared control sheet + QR dialog
 
     // Serialization runtime - Navigation3 `@Serializable data object … : NavKey` route keys.
     implementation(libs.kotlinx.serialization.json)
@@ -142,16 +142,16 @@ dependencies {
     ksp(libs.hilt.android.compiler)
 
     // Images
-    implementation(libs.coil.compose)
+    implementation(pins.coil.compose)
 
-    implementation(libs.androidx.appcompat)
-    implementation(libs.android.material)
+    implementation(pins.androidx.appcompat)
+    implementation(pins.android.material)
 
     // Settings persistence
-    implementation(libs.androidx.datastore.preferences)
+    implementation(pins.androidx.datastore.preferences)
 
     // Drag-to-reorder for LazyColumn
-    implementation(libs.reorderable)
+    implementation(pins.reorderable)
 
     // QR code generation (share listening address in Qcast tab)
     implementation(libs.zxing.core)
