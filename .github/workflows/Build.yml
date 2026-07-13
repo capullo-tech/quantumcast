@@ -26,12 +26,26 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Check spotless
         run: ./gradlew spotlessCheck --no-configuration-cache
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          fi
       # ubuntu-latest ships the Android SDK. No submodules: the FFmpeg decoder aar
       # is committed (app/libs/) and lib-snapcast-android resolves from jitpack.
+      # Release build is signed with the release keystore (from secrets) and unminified
+      # (see app/build.gradle.kts). Without the secrets it still builds, just unsigned.
       - name: Build APK
-        run: ./gradlew :app:assembleProdDebug
+        env:
+          RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleProdRelease
       - name: Upload build outputs (APK)
         uses: actions/upload-artifact@v4
         with:
           name: quantumcast-${{ github.sha }}
-          path: '**/build/outputs/apk/prod/debug/*.apk'
+          path: '**/build/outputs/apk/prod/release/*.apk'

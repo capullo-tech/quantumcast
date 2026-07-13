@@ -43,10 +43,32 @@ android {
     // BaseVariantOutputImpl API - gone in AGP 9 - and only reproduced the default output name
     // `app-<flavor>-<buildtype>.apk`, which AGP already emits for a flavored build.)
 
+    // Release signing. Keystore + passwords come from env vars (CI secrets wired in Build.yml;
+    // exported vars for a local release build on the Windows host). If the keystore isn't present (e.g. a
+    // fork PR without secrets) the release build is left unsigned rather than failing, so CI still
+    // validates the build.
+    val releaseKeystore = System.getenv("RELEASE_KEYSTORE_FILE")
+        ?.let(::file)
+        ?.takeIf { it.exists() && it.length() > 0L }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            // Minify OFF for the 1.0.0 cut: keeps the release APK code-identical to the debug build
+            // already device-verified. R8/shrinking is a separate, later hardening task (the
+            // reflectively-loaded FFmpeg decoder needs keep-rules + a device check first).
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
