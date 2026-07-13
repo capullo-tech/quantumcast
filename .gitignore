@@ -17,3 +17,4 @@ device-verify.apk
 qc-socketfix.apk
 tc-socketfix.apk
 *-socketfix.apk
+run-qc-solo.cmd
