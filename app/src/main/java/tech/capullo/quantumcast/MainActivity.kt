@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -92,6 +93,9 @@ class MainActivity : ComponentActivity() {
     // ADB test: adb shell am start -n tech.capullo.quantumcast/.MainActivity --es dbg shuffle
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Debug-only test hooks. MainActivity is the exported launcher, so gate these to
+        // debuggable builds - a release build must expose no playback-control surface to other apps.
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
         when (intent.getStringExtra("dbg")) {
             "shuffle" -> vm.startShuffleRotation()
             "skip" -> vm.skipStation()
@@ -169,7 +173,7 @@ private fun RadioApp(
             onSkipPrev = vm::skipPrevStation,
             onToggleTimerPause = vm::toggleTimerPause,
             onToggleRotationOrder = vm::toggleRotationOrder,
-            onToggleRotationRepeat = vm::toggleRotationRepeat,
+            onCycleRepeat = vm::cycleRepeatMode,
             onStopRotation = vm::stopRotation,
             onToggleFavorite = vm::toggleFavorite,
             onRemoveFromQueue = vm::removeFromRotationQueue,

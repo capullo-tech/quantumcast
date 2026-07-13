@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SurroundSound
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -83,6 +84,7 @@ import tech.capullo.audio.ui.SnapcastControlSheet
 import tech.capullo.quantumcast.R
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
+import tech.capullo.quantumcast.viewmodel.RepeatMode
 import tech.capullo.quantumcast.viewmodel.RotationMode
 import tech.capullo.quantumcast.viewmodel.RotationOrder
 import tech.capullo.quantumcast.viewmodel.RotationState
@@ -114,7 +116,7 @@ fun TrackDetailScreen(
     onSkipPrev: () -> Unit = {},
     onToggleTimerPause: () -> Unit = {},
     onToggleRotationOrder: () -> Unit = {},
-    onToggleRotationRepeat: () -> Unit = {},
+    onCycleRepeat: () -> Unit = {},
     onStopRotation: () -> Unit = {},
     onToggleFavorite: (Station) -> Unit = {},
     onRemoveFromQueue: (Int) -> Unit = {},
@@ -375,7 +377,7 @@ fun TrackDetailScreen(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true }, onToggleOrder = onToggleRotationOrder, onToggleRepeat = onToggleRotationRepeat)
+                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true }, onToggleOrder = onToggleRotationOrder, onCycleRepeat = onCycleRepeat)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -444,7 +446,7 @@ private fun HearingButton(
         targetValue = 1.04f,
         animationSpec = infiniteRepeatable(
             animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
         ),
         label = "breathe",
     )
@@ -1255,7 +1257,7 @@ private fun NowPlayingControls(
     onOpenSnapcast: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
     onToggleOrder: () -> Unit = {},
-    onToggleRepeat: () -> Unit = {},
+    onCycleRepeat: () -> Unit = {},
 ) {
     val lockedInClient = isSnapclientMode && isStreamLocked
     val rotationActive = rotationState.isActive && !isSnapclientMode
@@ -1268,7 +1270,7 @@ private fun NowPlayingControls(
         label = "blink",
         animationSpec = infiniteRepeatable(
             animation = tween(500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
         ),
     )
     val blinkAlpha = if (rotationState.timerPaused) blinkAnimAlpha else 1f
@@ -1380,14 +1382,19 @@ private fun NowPlayingControls(
                         }
                     }
                 }
-                // Repeat on/off - finite rotation only (moot for endless RANDOM)
+                // Repeat cycle OFF -> LOOP -> DISCOVER - finite rotation only (moot for endless RANDOM).
                 if (rotationActive && rotationState.mode != RotationMode.RANDOM) {
-                    IconButton(onClick = onToggleRepeat) {
+                    val (repeatIcon, repeatTint, repeatDesc) = when (rotationState.repeatMode) {
+                        RepeatMode.OFF -> Triple(Icons.Default.Repeat, MaterialTheme.colorScheme.onSurfaceVariant, "Repeat off")
+                        RepeatMode.LOOP -> Triple(Icons.Default.Repeat, MaterialTheme.colorScheme.primary, "Repeat queue")
+                        RepeatMode.DISCOVER -> Triple(Icons.Default.TravelExplore, MaterialTheme.colorScheme.primary, "Discovery (fresh stations each loop)")
+                    }
+                    IconButton(onClick = onCycleRepeat) {
                         Icon(
-                            Icons.Default.Repeat,
-                            contentDescription = if (rotationState.repeat) "Repeat on" else "Repeat off",
+                            repeatIcon,
+                            contentDescription = repeatDesc,
                             modifier = Modifier.size(26.dp),
-                            tint = if (rotationState.repeat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = repeatTint,
                         )
                     }
                 }

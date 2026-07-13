@@ -52,6 +52,13 @@ enum class RotationMode { RANDOM, FAVORITES, CUSTOM }
 // SHUFFLED = the upcoming stations reshuffled. RANDOM/FAVORITES don't carry a user order.
 enum class RotationOrder { SEQUENTIAL, SHUFFLED }
 
+// End-of-queue behaviour for a finite rotation (moot for endless RANDOM). Cycled by the
+// repeat button OFF -> LOOP -> DISCOVER -> OFF.
+//  OFF      = stop after the last station (leave it playing, deactivate the rotation).
+//  LOOP     = replay the same queue (reshuffle a SHUFFLED custom queue each cycle).
+//  DISCOVER = pull a fresh random batch and keep going as a custom rotation - endless.
+enum class RepeatMode { OFF, LOOP, DISCOVER }
+
 data class RotationState(
     val isActive: Boolean = false,
     val mode: RotationMode = RotationMode.RANDOM,
@@ -61,9 +68,9 @@ data class RotationState(
     val totalStations: Int = 0,
     val timerPaused: Boolean = false,
     val order: RotationOrder = RotationOrder.SEQUENTIAL,
-    // repeat=true (default) loops the queue at the end; false stops after the last station
-    // (finite CUSTOM/FAVORITES only - RANDOM is inherently endless).
-    val repeat: Boolean = true,
+    // How a finite rotation behaves when it reaches the last station (see RepeatMode).
+    // LOOP is the default; RANDOM ignores it (inherently endless).
+    val repeatMode: RepeatMode = RepeatMode.LOOP,
 ) {
     val progress: Float get() = if (totalSeconds > 0) 1f - secondsRemaining.toFloat() / totalSeconds else 0f
 }
@@ -197,6 +204,14 @@ class RadioViewModel @Inject constructor(
     // --- Service binding (replaces Media3 MediaController) ---
 
     private var playbackService: PlaybackService? = null
+
+    // Set from PlaybackService's audio-focus callbacks (SEPARATE from the user-driven
+    // timerPaused): pauses the rotation countdown while another app owns this phone's
+    // audio, so a focus-lost QC never advances the station and steals focus back.
+    // Kept distinct from timerPaused so regaining focus never un-pauses a station the
+    // USER paused.
+    @Volatile private var focusPaused = false
+
     private var serviceStateJob: Job? = null
     private var rotationSkipJob: Job? = null
     private var customNameJob: Job? = null
@@ -225,6 +240,7 @@ class RadioViewModel @Inject constructor(
             svc.onSkipNextRequested = { viewModelScope.launch { skipStation() } }
             svc.onSkipPrevRequested = { viewModelScope.launch { skipPrevStation() } }
             svc.onPlayPauseRequested = { viewModelScope.launch { togglePlayPause() } }
+            svc.onFocusPausedChanged = { focusPaused = it }
             svc.onStationError = { viewModelScope.launch { handleStationError() } }
             svc.onStationPlaying = {
                 consecutiveErrors = 0
@@ -329,8 +345,10 @@ class RadioViewModel @Inject constructor(
             playbackService?.onSkipNextRequested = null
             playbackService?.onSkipPrevRequested = null
             playbackService?.onPlayPauseRequested = null
+            playbackService?.onFocusPausedChanged = null
             playbackService?.onStationError = null
             playbackService = null
+            focusPaused = false
             serviceStateJob?.cancel()
             rotationSkipJob?.cancel()
             customNameJob?.cancel()
@@ -502,10 +520,12 @@ class RadioViewModel @Inject constructor(
         _liveMinutes.value = minutes.coerceIn(1, 60)
     }
 
-    private fun startRotation(mode: RotationMode, openDetailOnFirstPlay: Boolean = true) {
+    private fun startRotation(startMode: RotationMode, openDetailOnFirstPlay: Boolean = true) {
         rotationJob?.cancel()
         reachabilityCache.clear()
         rotationJob = viewModelScope.launch {
+            // Mutable: DISCOVER repeat switches a finished rotation to CUSTOM (fresh random batch).
+            var mode = startMode
             _liveMinutes.value = settings.value.rotationMinutes
             _rotationState.value = RotationState(isActive = true, mode = mode)
             var currentIndex = 0
@@ -532,11 +552,35 @@ class RadioViewModel @Inject constructor(
                         return@launch
                     }
                     if (currentIndex >= liveStations.size) {
-                        // Reached the end of a finite queue. With repeat off, stop advancing but
-                        // leave the last station playing (rotation deactivates → single-station UI).
-                        if (mode != RotationMode.RANDOM && !_rotationState.value.repeat) {
-                            _rotationState.value = RotationState()
-                            return@launch
+                        // Reached the end of a finite queue - behaviour depends on repeatMode
+                        // (RANDOM is endless and always wraps to a fresh batch below).
+                        if (mode != RotationMode.RANDOM) {
+                            when (_rotationState.value.repeatMode) {
+                                RepeatMode.OFF -> {
+                                    // Stop advancing but leave the last station playing
+                                    // (rotation deactivates → single-station UI).
+                                    _rotationState.value = RotationState()
+                                    return@launch
+                                }
+                                RepeatMode.LOOP -> {
+                                    // Replay the same queue; reshuffle a SHUFFLED custom queue each
+                                    // cycle (FAVORITES already reshuffles in the outer loop). Leave
+                                    // rotationBaseQueue intact so shuffle⇄sequential still restores order.
+                                    if (mode == RotationMode.CUSTOM && _rotationState.value.order == RotationOrder.SHUFFLED) {
+                                        _rotationQueue.value = _rotationQueue.value.shuffled()
+                                    }
+                                }
+                                RepeatMode.DISCOVER -> {
+                                    // Endless discovery: pull a fresh random batch and continue as a
+                                    // CUSTOM rotation. Keep the current queue if the fetch fails.
+                                    val fresh = runCatching { repo.getRandomStations(settings.value.randomBatchSize) }.getOrElse { emptyList() }
+                                    if (fresh.isNotEmpty()) {
+                                        _rotationQueue.value = fresh
+                                        rotationBaseQueue = fresh
+                                        mode = RotationMode.CUSTOM
+                                    }
+                                }
+                            }
                         }
                         currentIndex = 0
                         break@inner
@@ -601,7 +645,9 @@ class RadioViewModel @Inject constructor(
             if (remainingSec <= 0) return CountdownResult.Next
             val signal = withTimeoutOrNull(tickMs) { skipChannel.receive() }
             if (signal != null) return signal
-            if (!_rotationState.value.timerPaused) elapsed += tickMs
+            // Advance the countdown only when neither the user (timerPaused) nor an
+            // audio-focus loss (focusPaused) has stopped it.
+            if (!_rotationState.value.timerPaused && !focusPaused) elapsed += tickMs
         }
         return CountdownResult.Next
     }
@@ -722,10 +768,18 @@ class RadioViewModel @Inject constructor(
         _rotationState.update { it.copy(order = newOrder) }
     }
 
-    // Loop the queue at the end (default) vs. stop after the last station. Honoured by the
+    // Cycle the end-of-queue behaviour OFF -> LOOP -> DISCOVER -> OFF. Honoured by the
     // rotation loop's wrap check; moot for endless RANDOM.
-    fun toggleRotationRepeat() {
-        _rotationState.update { it.copy(repeat = !it.repeat) }
+    fun cycleRepeatMode() {
+        _rotationState.update {
+            it.copy(
+                repeatMode = when (it.repeatMode) {
+                    RepeatMode.OFF -> RepeatMode.LOOP
+                    RepeatMode.LOOP -> RepeatMode.DISCOVER
+                    RepeatMode.DISCOVER -> RepeatMode.OFF
+                },
+            )
+        }
     }
     fun stopRotation() {
         rotationJob?.cancel()

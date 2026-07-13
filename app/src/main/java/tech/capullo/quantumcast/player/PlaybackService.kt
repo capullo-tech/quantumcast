@@ -266,6 +266,12 @@ class PlaybackService : Service() {
     var onStationError: (() -> Unit)? = null
     var onStationPlaying: (() -> Unit)? = null
 
+    // Notifies the VM that audio focus was lost (true) / regained (false) so the rotation
+    // countdown can pause while another app owns this phone's speaker - otherwise a
+    // backgrounded, focus-lost QC advances the station on the timer and re-grabs focus,
+    // stealing audio from the foreground app.
+    var onFocusPausedChanged: ((Boolean) -> Unit)? = null
+
     private var errorAudioJob: Job? = null
 
     private var bufferingTimeoutJob: Job? = null
@@ -291,7 +297,17 @@ class PlaybackService : Service() {
     // The shared controller owns the permanent/transient distinction + isMusicActive quiet-watcher
     // recovery; QuantumCast supplies only the local-snapclient stop/start callbacks.
     private val audioFocus by lazy {
-        AudioFocusController(this, onPause = ::stopLocalSnapclient, onResume = ::startLocalSnapclient)
+        AudioFocusController(
+            this,
+            onPause = {
+                stopLocalSnapclient()
+                onFocusPausedChanged?.invoke(true)
+            },
+            onResume = {
+                startLocalSnapclient()
+                onFocusPausedChanged?.invoke(false)
+            },
+        )
     }
 
     companion object {

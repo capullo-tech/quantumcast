@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -107,7 +106,9 @@ fun SettingsScreen(
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.background,
             ),
-            windowInsets = WindowInsets(0),
+            // Use the default top status-bar inset (like HomeScreen) so the title clears the
+            // OS clock - the outer Scaffold zeroes its top inset, so each screen's own TopAppBar
+            // applies it exactly once.
         )
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -156,7 +157,7 @@ fun SettingsScreen(
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-            item { SectionHeader("Multiroom web player") }
+            item { SectionHeader("Web player") }
 
             item {
                 ToggleRow(
@@ -203,8 +204,8 @@ fun SettingsScreen(
 
             item {
                 ToggleRow(
-                    label = "Entangle on launch",
-                    description = "Start Entangled Discovery automatically when the app opens (unless already playing)",
+                    label = "Discovery on launch",
+                    description = "Start Discovery automatically when the app opens (unless already playing)",
                     checked = settings.autoEntangleOnLaunch,
                     onToggle = onSetAutoEntangleOnLaunch,
                 )
@@ -322,11 +323,10 @@ fun SettingsScreen(
 
 @Composable
 private fun SectionHeader(title: String) {
+    // Canonical Settings section-header style, matching Telecloud (plain titleMedium).
     Text(
         text = title,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
     )
 }
