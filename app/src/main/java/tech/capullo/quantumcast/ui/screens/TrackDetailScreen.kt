@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -133,6 +134,7 @@ fun TrackDetailScreen(
     onChangeClientChannel: (clientId: String, channel: String) -> Unit = { _, _ -> },
     isSnapclientMode: Boolean = false,
     snapclientHost: String = "",
+    onDisconnect: () -> Unit = {},
     streamCanGoNext: Boolean = false,
     streamCanGoPrevious: Boolean = false,
     isStreamLocked: Boolean = false,
@@ -209,6 +211,16 @@ fun TrackDetailScreen(
                         onClick = if (isShazamRunning) onCancelIdentify else onIdentifyNow,
                         onLongPress = { showHistorySheet = true },
                     )
+                } else {
+                    // Listening in to a remote broadcast - leave it (closes this detail; the
+                    // volume/latency/channel controls live in the snapcast sheet below).
+                    IconButton(onClick = onDisconnect) {
+                        Icon(
+                            Icons.Default.LinkOff,
+                            contentDescription = "Disconnect",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
                 // Snapcast clients (o) and the rotation queue moved OUT of the top bar into the
                 // transport-controls row (snapcast left of prev, queue right of next).

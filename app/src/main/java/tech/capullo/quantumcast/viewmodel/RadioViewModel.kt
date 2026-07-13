@@ -160,7 +160,7 @@ class RadioViewModel @Inject constructor(
     private val _snapclientHost = MutableStateFlow("")
     val snapclientHost: StateFlow<String> = _snapclientHost
 
-    // This broadcaster's resolved HTTP (web player) port, for the web/QR URL shown in SnapcastScreen.
+    // This broadcaster's resolved HTTP (web player) port, for the web/QR URL shown in the snapcast sheet.
     private val _broadcastHttpPort = MutableStateFlow(1680)
     val broadcastHttpPort: StateFlow<Int> = _broadcastHttpPort
 

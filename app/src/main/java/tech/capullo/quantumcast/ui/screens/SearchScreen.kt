@@ -1,8 +1,6 @@
 package tech.capullo.quantumcast.ui.screens
 
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,12 +20,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.quantumcast.viewmodel.UiState
@@ -35,29 +30,24 @@ import tech.capullo.source.radiobrowser.data.model.Station
 
 private enum class SortBy { KBPS, VOTES, CLICKS }
 private enum class SortDir { ASC, DESC }
-private enum class SearchPhase { SEARCH, FILTER }
 
+// Search RESULTS screen - pushed from the home after a query is submitted there. Shows the results
+// with an in-results filter field, sort menu, multi-select, and the "Auto" (custom rotation) button.
+// The query input and Discovery button live on the home ("Select a station").
 @Composable
 fun SearchScreen(
     uiState: UiState<List<Station>>,
     playerState: PlayerState,
     favoriteUuids: Set<String>,
-    onSearch: (String) -> Unit,
-    onResetSearch: () -> Unit = {},
-    onShuffleRotation: () -> Unit = {},
-    isShuffleLoading: Boolean = false,
-    shuffleConnected: Boolean = false,
-    onStartCustomRotation: (List<Station>) -> Unit = {},
     onPlay: (Station) -> Unit,
     onToggleFavorite: (Station) -> Unit,
+    onStartCustomRotation: (List<Station>) -> Unit = {},
     vm: RadioViewModel? = null,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
 
-    // Single-field state - persisted in VM if available
-    var phase by remember { mutableStateOf(if (uiState is UiState.Idle) SearchPhase.SEARCH else SearchPhase.FILTER) }
-    var fieldText by remember { mutableStateOf("") }
+    var filterText by remember { mutableStateOf("") }
 
     // Sort state - from VM for persistence
     var sortBy by remember { mutableStateOf(vm?.searchSortBy?.let { runCatching { SortBy.valueOf(it) }.getOrNull() }) }
@@ -65,28 +55,6 @@ fun SearchScreen(
 
     var inSelectMode by remember { mutableStateOf(false) }
     var selectedUuids by remember { mutableStateOf(setOf<String>()) }
-
-    // Sync phase with uiState from outside (e.g. initial load)
-    LaunchedEffect(uiState) {
-        if (uiState is UiState.Idle && phase == SearchPhase.FILTER) {
-            phase = SearchPhase.SEARCH
-            fieldText = ""
-        }
-    }
-
-    fun doSearch(q: String) {
-        if (q.isBlank()) return
-        onSearch(q)
-        phase = SearchPhase.FILTER
-        fieldText = ""
-        focusManager.clearFocus()
-    }
-
-    fun resetToSearch() {
-        fieldText = ""
-        phase = SearchPhase.SEARCH
-        onResetSearch()
-    }
 
     fun saveSortToVm() {
         vm?.searchSortBy = sortBy?.name
@@ -115,76 +83,15 @@ fun SearchScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // Single search/filter field
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = fieldText,
-                onValueChange = { fieldText = it },
-                placeholder = {
-                    Text(if (phase == SearchPhase.SEARCH) "Search stations..." else "Filter results...")
-                },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = {
-                    if (fieldText.isNotEmpty() || phase == SearchPhase.FILTER) {
-                        IconButton(onClick = {
-                            if (phase == SearchPhase.FILTER) {
-                                resetToSearch()
-                            } else {
-                                fieldText = ""
-                            }
-                        }) {
-                            Icon(
-                                if (phase == SearchPhase.FILTER) Icons.Default.Close else Icons.Default.Clear,
-                                if (phase == SearchPhase.FILTER) "New search" else "Clear",
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = if (phase == SearchPhase.SEARCH) ImeAction.Search else ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onSearch = { if (phase == SearchPhase.SEARCH) doSearch(fieldText) else focusManager.clearFocus() },
-                    onDone = { focusManager.clearFocus() },
-                ),
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.weight(1f),
-            )
-        }
-
         when (uiState) {
             is UiState.Idle -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                    Text(
+                        "Search for stations from the home screen",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 48.dp),
-                    ) {
-                        // Animation only appears once discovery starts - no idle icon
-                        if (isShuffleLoading) {
-                            QuantumEntangleIcon(
-                                connected = shuffleConnected,
-                                modifier = Modifier.size(96.dp),
-                            )
-                        }
-                        FilledTonalButton(
-                            onClick = { if (!isShuffleLoading) onShuffleRotation() },
-                            enabled = !isShuffleLoading,
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                        ) {
-                            Text("Discovery", style = MaterialTheme.typography.titleMedium)
-                        }
-                        Text(
-                            "or search for stations above",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    )
                 }
             }
             is UiState.Loading -> {
@@ -203,8 +110,35 @@ fun SearchScreen(
                         Text("No stations found", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    val visibleStations = remember(uiState.data, sortBy, sortDir, fieldText) {
-                        computeVisibleStations(uiState.data, sortBy, sortDir, fieldText)
+                    // In-results filter field
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = filterText,
+                            onValueChange = { filterText = it },
+                            placeholder = { Text("Filter results...") },
+                            leadingIcon = { Icon(Icons.Default.Search, null) },
+                            trailingIcon = {
+                                if (filterText.isNotEmpty()) {
+                                    IconButton(onClick = { filterText = "" }) {
+                                        Icon(Icons.Default.Clear, "Clear")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                            shape = RoundedCornerShape(28.dp),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
+                    val visibleStations = remember(uiState.data, sortBy, sortDir, filterText) {
+                        computeVisibleStations(uiState.data, sortBy, sortDir, filterText)
                     }
 
                     var showSortMenu by remember { mutableStateOf(false) }
@@ -282,21 +216,7 @@ fun SearchScreen(
                             }
                         }
 
-                        // Discovery - same quantum icon as the discovery animation;
-                        // orbits while loading, all dots lit when idle/connected
-                        FilledTonalIconButton(
-                            onClick = { if (!isShuffleLoading) onShuffleRotation() },
-                            enabled = !isShuffleLoading,
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            QuantumEntangleIcon(
-                                connected = if (isShuffleLoading) shuffleConnected else true,
-                                color = LocalContentColor.current,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-
-                        // Auto button
+                        // Auto button - custom rotation of the visible (or selected) stations
                         val autoStations = if (inSelectMode) {
                             visibleStations.filter { it.uuid in selectedUuids }.ifEmpty { visibleStations }
                         } else {
@@ -368,45 +288,5 @@ private fun computeVisibleStations(
         SortBy.VOTES -> if (asc) list.sortedBy { it.votes } else list.sortedByDescending { it.votes }
         SortBy.CLICKS -> if (asc) list.sortedBy { it.clickCount } else list.sortedByDescending { it.clickCount }
         null -> list
-    }
-}
-
-// Quantum entangle icon - same geometry and choreography as the web player's
-// connection status icon (center node + 5 pentagon dots, lines always drawn).
-// Connecting: one bright dot travels the ring in hard 200ms steps (1s cycle).
-// Connected: all dots fade fully lit - held briefly before now-playing opens.
-@Composable
-fun QuantumEntangleIcon(
-    connected: Boolean,
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
-) {
-    var lit by remember { mutableIntStateOf(0) }
-    LaunchedEffect(connected) {
-        while (!connected) {
-            delay(200)
-            lit = (lit + 1) % 5
-        }
-    }
-    val dotAlphas = List(5) { i ->
-        animateFloatAsState(
-            targetValue = if (connected || i == lit) 1f else 0.15f,
-            animationSpec = tween(if (connected) 350 else 60),
-            label = "qdot$i",
-        ).value
-    }
-    val centerAlpha by animateFloatAsState(
-        targetValue = if (connected) 1f else 0.5f,
-        animationSpec = tween(350),
-        label = "qcenter",
-    )
-    Canvas(modifier) {
-        val u = size.minDimension / 24f
-        val c = Offset(12f * u, 12f * u)
-        val pts = listOf(12f to 4.5f, 19.13f to 9.68f, 16.41f to 18.07f, 7.59f to 18.07f, 4.87f to 9.68f)
-            .map { (x, y) -> Offset(x * u, y * u) }
-        for (p in pts) drawLine(color.copy(alpha = 0.4f), c, p, strokeWidth = 1.2f * u)
-        drawCircle(color.copy(alpha = centerAlpha), 2.3f * u, c)
-        pts.forEachIndexed { i, p -> drawCircle(color.copy(alpha = dotAlphas[i]), 1.9f * u, p) }
     }
 }

@@ -15,16 +15,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SurroundSound
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -40,27 +35,18 @@ import tech.capullo.quantumcast.ui.theme.RadioTheme
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.source.radiobrowser.data.model.Station
 
-// Navigation3 tab destinations. @Serializable NavKeys (kotlinx-serialization is already applied)
-// so rememberNavBackStack can save/restore them across process death.
+// Navigation3 destinations. @Serializable NavKeys (kotlinx-serialization is already applied)
+// so rememberNavBackStack can save/restore them across process death. Home is the backstack root;
+// Favorites/Countries/Settings are pushed children with real back-nav (no bottom tab bar).
+@Serializable private data object HomeRoute : NavKey
+
 @Serializable private data object SearchRoute : NavKey
 
 @Serializable private data object FavoritesRoute : NavKey
 
-@Serializable private data object SnapcastRoute : NavKey
-
 @Serializable private data object CountriesRoute : NavKey
 
 @Serializable private data object SettingsRoute : NavKey
-
-private data class TabItem(val route: NavKey, val label: String, val icon: ImageVector)
-
-private val tabItems = listOf(
-    TabItem(SearchRoute, "Search", Icons.Default.Search),
-    TabItem(FavoritesRoute, "Favorites", Icons.Default.Favorite),
-    TabItem(SnapcastRoute, "Qcast", Icons.Default.SurroundSound),
-    TabItem(CountriesRoute, "Countries", Icons.Default.Public),
-    TabItem(SettingsRoute, "Settings", Icons.Default.Settings),
-)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -128,7 +114,7 @@ private fun RadioApp(
     discoveredServers: List<DiscoveredSnapserver>,
     discoveryManager: SnapserverDiscoveryManager,
 ) {
-    val backStack = rememberNavBackStack(SearchRoute)
+    val backStack = rememberNavBackStack(HomeRoute)
 
     val searchResults by vm.searchResults.collectAsState()
     val playerState by vm.playerState.collectAsState()
@@ -150,7 +136,6 @@ private fun RadioApp(
     val snapclientHost by vm.snapclientHost.collectAsState()
     val broadcastHttpPort by vm.broadcastHttpPort.collectAsState()
     val snapclientChannel by vm.snapclientChannel.collectAsState()
-    val snapclientState by vm.snapclientState.collectAsState()
     val snapcastGroups by vm.snapcastGroups.collectAsState()
     val streamCanGoNext by vm.streamCanGoNext.collectAsState()
     val streamCanGoPrevious by vm.streamCanGoPrevious.collectAsState()
@@ -175,8 +160,7 @@ private fun RadioApp(
             onBack = { vm.hideDetail() },
             onOpenSettings = {
                 vm.hideDetail()
-                backStack.clear()
-                backStack.add(SettingsRoute)
+                if (backStack.lastOrNull() != SettingsRoute) backStack.add(SettingsRoute)
             },
             onTogglePlayPause = vm::togglePlayPause,
             onIdentifyNow = vm::identifyNow,
@@ -205,6 +189,7 @@ private fun RadioApp(
             onChangeClientChannel = vm::changeClientChannel,
             isSnapclientMode = snapclientHost.isNotEmpty(),
             snapclientHost = snapclientHost,
+            onDisconnect = vm::disconnectSnapclient,
             streamCanGoNext = streamCanGoNext,
             streamCanGoPrevious = streamCanGoPrevious,
             isStreamLocked = isStreamLocked,
@@ -219,142 +204,149 @@ private fun RadioApp(
     }
 
     Scaffold(
+        // Each destination draws its own TopAppBar, so this outer Scaffold (which owns the
+        // persistent NowPlayingBar) must NOT also apply the top status-bar inset to content -
+        // otherwise the inset is counted twice and leaves a dead band above every title. Keep only
+        // the bottom inset so the NowPlayingBar still clears the gesture bar.
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Bottom),
         bottomBar = {
-            Column {
-                NowPlayingBar(
-                    state = playerState,
-                    // currentTrack (not history) so the bar reverts to station art
-                    // when recognition stops matching, same as the detail screen
-                    latestTrack = playerState.currentTrack,
-                    rotationState = rotationState,
-                    isSnapclientMode = snapclientHost.isNotEmpty(),
-                    streamCanGoNext = streamCanGoNext,
-                    streamCanGoPrevious = streamCanGoPrevious,
-                    isStreamLocked = isStreamLocked,
-                    onTogglePlayPause = vm::togglePlayPause,
-                    onSkipPrev = vm::skipPrevStation,
-                    onSkip = vm::skipStation,
-                    onOpenDetail = { vm.showDetail() },
-                )
-                NavigationBar {
-                    tabItems.forEach { tab ->
-                        NavigationBarItem(
-                            selected = backStack.lastOrNull() == tab.route,
-                            onClick = {
-                                if (backStack.lastOrNull() != tab.route) {
-                                    backStack.clear()
-                                    backStack.add(tab.route)
-                                }
-                            },
-                            icon = { Icon(tab.icon, tab.label) },
-                            label = { Text(tab.label) },
-                        )
-                    }
-                }
-            }
+            NowPlayingBar(
+                state = playerState,
+                // currentTrack (not history) so the bar reverts to station art
+                // when recognition stops matching, same as the detail screen
+                latestTrack = playerState.currentTrack,
+                rotationState = rotationState,
+                isSnapclientMode = snapclientHost.isNotEmpty(),
+                streamCanGoNext = streamCanGoNext,
+                streamCanGoPrevious = streamCanGoPrevious,
+                isStreamLocked = isStreamLocked,
+                onTogglePlayPause = vm::togglePlayPause,
+                onSkipPrev = vm::skipPrevStation,
+                onSkip = vm::skipStation,
+                onOpenDetail = { vm.showDetail() },
+            )
         },
     ) { padding ->
         NavDisplay(
             backStack = backStack,
-            // Tabs are flat single-element roots (no inter-tab history), so onBack is
-            // inert here; the guard just prevents ever emptying the stack.
+            // Home is the root; Favorites/Countries/Settings are pushed children, so back pops.
             onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
             entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
             entryProvider = entryProvider {
-                entry<SearchRoute> {
-                    SearchScreen(
-                        uiState = searchResults,
-                        playerState = playerState,
-                        favoriteUuids = favoriteUuids,
-                        onSearch = vm::searchStations,
-                        onResetSearch = vm::resetSearch,
-                        onShuffleRotation = { vm.startShuffleRotation() },
-                        isShuffleLoading = isShuffleLoading,
-                        shuffleConnected = shuffleConnected,
-                        onStartCustomRotation = ::startCustomRotation,
-                        onPlay = { station ->
-                            vm.cancelRotation()
-                            vm.play(station)
-                        },
-                        onToggleFavorite = vm::toggleFavorite,
-                        vm = vm,
-                        modifier = Modifier.padding(padding),
-                    )
-                }
-                entry<FavoritesRoute> {
-                    FavoritesScreen(
-                        favorites = favorites,
-                        groups = groups,
-                        expandedGroupIds = expandedGroupIds,
-                        playerState = playerState,
-                        onPlay = { fav ->
-                            vm.cancelRotation()
-                            vm.playFromFavorite(fav)
-                        },
-                        onRemove = vm::toggleFavorite,
-                        onStartRotation = vm::startFavRotation,
-                        onStartCustomRotation = ::startCustomRotation,
-                        onToggleGroupExpanded = vm::toggleGroupExpanded,
-                        onCreateGroup = vm::createGroup,
-                        onRenameGroup = vm::renameGroup,
-                        onDeleteGroup = vm::deleteGroup,
-                        onAssignToGroup = vm::assignToGroup,
-                        onUnassignFromGroup = vm::unassignFromGroup,
-                        onReorderFavorite = vm::reorderFavoriteInGroup,
-                        onReorderGroup = vm::reorderGroup,
-                        vm = vm,
-                        modifier = Modifier.padding(padding),
-                    )
-                }
-                entry<SnapcastRoute> {
-                    SnapcastScreen(
+                entry<HomeRoute> {
+                    HomeScreen(
                         discoveredServers = discoveredServers,
                         connectedHost = snapclientHost,
-                        snapclientState = snapclientState,
-                        httpPort = broadcastHttpPort,
                         lastManualHost = settings.lastManualHost,
                         onStartDiscovery = { discoveryManager.startDiscovery() },
                         onConnectToServer = { server ->
                             vm.connectToSnapserver(server.hostAddress, server.port, server.httpPort)
                         },
-                        onConnectManually = { host, port ->
-                            vm.connectToSnapserver(host, port)
+                        onConnectManually = { host, port, httpPort ->
+                            vm.connectToSnapserver(host, port, httpPort)
                         },
                         onClearLastManualHost = { vm.updateSetting { setLastManualHost("") } },
-                        onDisconnect = vm::disconnectSnapclient,
+                        onSearch = { query ->
+                            vm.searchStations(query)
+                            if (backStack.lastOrNull() != SearchRoute) backStack.add(SearchRoute)
+                        },
+                        onShuffleRotation = { vm.startShuffleRotation() },
+                        isShuffleLoading = isShuffleLoading,
+                        shuffleConnected = shuffleConnected,
+                        onOpenSettings = {
+                            if (backStack.lastOrNull() != SettingsRoute) backStack.add(SettingsRoute)
+                        },
+                        onOpenFavorites = {
+                            if (backStack.lastOrNull() != FavoritesRoute) backStack.add(FavoritesRoute)
+                        },
+                        onOpenCountries = {
+                            if (backStack.lastOrNull() != CountriesRoute) backStack.add(CountriesRoute)
+                        },
                         modifier = Modifier.padding(padding),
                     )
+                }
+                entry<SearchRoute> {
+                    BackHandler { backStack.removeLastOrNull() }
+                    Column(modifier = Modifier.padding(padding)) {
+                        ChildTopBar("Search") { backStack.removeLastOrNull() }
+                        SearchScreen(
+                            uiState = searchResults,
+                            playerState = playerState,
+                            favoriteUuids = favoriteUuids,
+                            onPlay = { station ->
+                                vm.cancelRotation()
+                                vm.play(station)
+                            },
+                            onToggleFavorite = vm::toggleFavorite,
+                            onStartCustomRotation = ::startCustomRotation,
+                            vm = vm,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                entry<FavoritesRoute> {
+                    BackHandler { backStack.removeLastOrNull() }
+                    Column(modifier = Modifier.padding(padding)) {
+                        ChildTopBar("Favorites") { backStack.removeLastOrNull() }
+                        FavoritesScreen(
+                            favorites = favorites,
+                            groups = groups,
+                            expandedGroupIds = expandedGroupIds,
+                            playerState = playerState,
+                            onPlay = { fav ->
+                                vm.cancelRotation()
+                                vm.playFromFavorite(fav)
+                            },
+                            onRemove = vm::toggleFavorite,
+                            onStartRotation = vm::startFavRotation,
+                            onStartCustomRotation = ::startCustomRotation,
+                            onToggleGroupExpanded = vm::toggleGroupExpanded,
+                            onCreateGroup = vm::createGroup,
+                            onRenameGroup = vm::renameGroup,
+                            onDeleteGroup = vm::deleteGroup,
+                            onAssignToGroup = vm::assignToGroup,
+                            onUnassignFromGroup = vm::unassignFromGroup,
+                            onReorderFavorite = vm::reorderFavoriteInGroup,
+                            onReorderGroup = vm::reorderGroup,
+                            vm = vm,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
                 entry<CountriesRoute> {
-                    CountryScreen(
-                        countryList = countryList,
-                        countryStations = countryStations,
-                        selectedCountry = selectedCountry,
-                        playerState = playerState,
-                        favoriteUuids = favoriteUuids,
-                        onLoadCountries = vm::loadCountries,
-                        onSelectCountry = vm::selectCountry,
-                        onBack = vm::clearCountrySelection,
-                        onPlay = { station ->
-                            vm.cancelRotation()
-                            vm.play(station)
-                        },
-                        onToggleFavorite = vm::toggleFavorite,
-                        onStartCustomRotation = ::startCustomRotation,
-                        vm = vm,
-                        modifier = Modifier.padding(padding),
-                    )
+                    // Country-list level pops home; the stations sub-view keeps its own back
+                    // (CountryScreen's BackHandler(enabled = selectedCountry != null) → clearCountrySelection).
+                    BackHandler(enabled = selectedCountry == null) { backStack.removeLastOrNull() }
+                    Column(modifier = Modifier.padding(padding)) {
+                        if (selectedCountry == null) {
+                            ChildTopBar("Countries") { backStack.removeLastOrNull() }
+                        }
+                        CountryScreen(
+                            countryList = countryList,
+                            countryStations = countryStations,
+                            selectedCountry = selectedCountry,
+                            playerState = playerState,
+                            favoriteUuids = favoriteUuids,
+                            onLoadCountries = vm::loadCountries,
+                            onSelectCountry = vm::selectCountry,
+                            onBack = vm::clearCountrySelection,
+                            onPlay = { station ->
+                                vm.cancelRotation()
+                                vm.play(station)
+                            },
+                            onToggleFavorite = vm::toggleFavorite,
+                            onStartCustomRotation = ::startCustomRotation,
+                            vm = vm,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
                 entry<SettingsRoute> {
+                    BackHandler { backStack.removeLastOrNull() }
                     val settingsBack: () -> Unit = {
-                        if (playerState.station != null) {
-                            vm.showDetail()
-                        } else {
-                            backStack.clear()
-                            backStack.add(SearchRoute)
-                        }
+                        backStack.removeLastOrNull()
+                        Unit
                     }
-                    BackHandler(onBack = settingsBack)
                     SettingsScreen(
                         settings = settings,
                         onSetApiServer = { vm.updateSetting { setApiServer(it) } },
@@ -384,4 +376,19 @@ private fun RadioApp(
             },
         )
     }
+}
+
+// Slim top bar for pushed child screens (Favorites/Countries) that lack their own - just a
+// title and a back arrow that pops the backstack. Settings brings its own bar, so it's not wrapped.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChildTopBar(title: String, onBack: () -> Unit) {
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        },
+    )
 }
