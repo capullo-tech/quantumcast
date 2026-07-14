@@ -1,6 +1,12 @@
 # Quantumcast
 
-Discover radio stations from every corner of the world and let them play through your entire home - all rooms in sync, all at once.
+An Android internet-radio player: search a global directory of 30,000+ stations
+([radio-browser.info](https://www.radio-browser.info)) by name, country, or
+genre, shuffle through them on a timer, and see what's playing with track
+identification. Broadcasts the audio in sync to any number of
+[Snapcast](https://github.com/badaix/snapcast) devices - with a built-in web
+player for browser clients, plus per-device volume, latency offset, and
+left/right/stereo channel assignment.
 
 ## Screenshots
 
@@ -8,79 +14,32 @@ Discover radio stations from every corner of the world and let them play through
   <img src="docs/screenshots/player.jpg" width="19%" alt="Now playing - global radio with track identification" />
   <img src="docs/screenshots/favorites.jpg" width="19%" alt="Favorites and groups" />
   <img src="docs/screenshots/web-player.jpg" width="19%" alt="Browser web player" />
-  <img src="docs/screenshots/multiroom.jpg" width="19%" alt="Per-room volume and latency" />
+  <img src="docs/screenshots/multidevice.jpg" width="19%" alt="Per-device volume and latency" />
   <img src="docs/screenshots/settings.jpg" width="19%" alt="Settings" />
 </p>
 
-## What it does
+Part of the **capullo-tech** audio platform. Quantumcast is the internet-radio
+front-end, being recomposed onto the platform's shared libraries:
 
-Hit shuffle and Quantumcast picks stations at random from a global database of 30,000+ broadcasts. It rotates through them automatically, like a DJ who never sleeps and never repeats a genre twice. When something catches your ear, Shazam-compatible track recognition tells you what's playing - artist, title, artwork - without lifting a finger.
+- **[capullo-audio](https://github.com/capullo-tech/capullo-audio)** - the
+  delivery engine (ExoPlayer → FIFO → Snapcast server/client) and multi-device
+  control.
+- **[capullo-source-radiobrowser](https://github.com/capullo-tech/capullo-source-radiobrowser)**
+  - the Radio Browser source (station search + stream resolution) behind the
+  `capullo-audio-contracts` SPI.
 
-Multiroom playback runs on [Snapcast](https://github.com/badaix/snapcast) under the hood: every room hears the same audio, sample-perfect. Each listener gets their own volume control on the same screen. If you're using a Bluetooth speaker with noticeable delay, dial in its latency offset with a dedicated knob so it lands in sync with the rest of the house. And if you're building a spatial audio setup - placing phones or speakers around a room - you can assign each client its own channel - left, right, or full stereo - making it easy to construct a stereo field from independent devices placed around a room.
+## Building
 
-## Features
-
-- **Global radio discovery** - search 30,000+ stations by name, country, genre, or tags via the [radio-browser.info](https://www.radio-browser.info) community database
-- **DJ shuffle rotation** - Quantumcast picks random stations from around the world and rotates through them on a timer, hands-free
-- **Track identification** - automatic Shazam-compatible song recognition: artist, title, and album art appear while the music plays
-- **Multiroom sync** - broadcast to any number of devices on your local network with sample-accurate synchronization
-- **Per-room volume** - control each room's volume independently from a single screen while the music keeps playing
-- **Bluetooth latency compensation** - per-client latency offset knob to bring wireless speakers into sync with wired ones
-- **Spatial channel assignment** - assign Left, Right, or Stereo to each client independently, so you can build a true stereo field from ordinary phones and speakers placed around a room
-- **Favorites & groups** - organize stations into custom groups with drag-to-reorder
-- **Sleep timer** - fade out after a set duration
-- **Dark/light theme**
-
-## Architecture
-
-```
-Internet radio stream
-    → ExoPlayer / Media3 (audio decode, FFmpeg fallback)
-    → Snapserver (multiroom broadcast)
-    → Snapclient (synchronized playback on each device)
+```sh
+./gradlew :app:assembleProdDebug
 ```
 
-The app runs a full Snapcast server and client stack natively on Android using [lib-snapcast-android](https://github.com/capullo-tech/lib-snapcast-android). Any Snapcast-compatible client on your network can join.
-
-## Requirements
-
-- Android 8.0 (API 26) or later
-- Local Wi-Fi network for multiroom playback
-- Other devices for multiroom: any Snapcast client (Android, Raspberry Pi, desktop, etc.)
-
-## Getting started
-
-1. Install Quantumcast on your primary device (the broadcaster)
-2. Play any station - it immediately starts broadcasting on your local network
-3. On other devices, open the **Qcast** tab and tap your broadcaster to connect and listen in sync
-4. Use the speakers icon (⊙) on the Now Playing screen to control per-room volume and latency
-
-## Building from source
-
-Requires Android Studio and the Android NDK (for the native Snapcast libraries).
-
-```bash
-git clone https://github.com/capullo-tech/quantumcast
-cd quantumcast
-./gradlew assembleProdDebug
-```
-
-APK will be at `app/build/outputs/apk/prod/debug/app-prod-debug.apk`.
-
-## Credits
-
-Quantumcast is built on the shoulders of:
-
-- **[RadioCapullo](https://github.com/capullo-tech/RadioCapullo)** - the Snapcast Android integration, multiroom architecture, and stream control protocol that made this possible
-- **[lib-snapcast-android](https://github.com/capullo-tech/lib-snapcast-android)** - native Snapcast server/client libraries packaged for Android
-- **[Snapcast](https://github.com/badaix/snapcast)** by badaix - the synchronous multiroom audio system at the heart of this project
-- **[Media3 / ExoPlayer](https://github.com/androidx/media)** - audio decoding and network stream handling, with an [FFmpeg decoder extension](https://github.com/capullo-tech/lib-media3-ffmpeg-android) for codecs the device's MediaCodec lacks
-- **[radio-browser.info](https://www.radio-browser.info)** - the open community radio station database
+The Snapcast native libraries come from
+[`lib-snapcast-android`](https://github.com/capullo-tech/lib-snapcast-android)
+via jitpack and the
+[FFmpeg decoder](https://github.com/capullo-tech/lib-media3-ffmpeg-android) is
+bundled - no submodules, nothing to populate.
 
 ## License
 
-Copyright 2026 capullo-tech
-
-Quantumcast is free software, released under the [GNU General Public License v3.0](LICENSE). You may use, study, modify, and distribute it under the terms of that license.
-
-This project incorporates [lib-snapcast-android](https://github.com/capullo-tech/lib-snapcast-android) which bundles Snapcast (GPL v3). The GPL v3 license covers the combined work.
+GPLv3 - see [LICENSE](LICENSE) and [NOTICE](NOTICE).
