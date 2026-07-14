@@ -53,4 +53,6 @@ jobs:
           fi
 
           apk_file=$(find ./artifacts -name "*.apk" | head -1)
-          gh release upload "$tag" "$apk_file#quantumcast-$tag.apk"
+          # Rename the file itself (gh's `#label` only sets a display label, not the asset name).
+          cp "$apk_file" "quantumcast-$tag.apk"
+          gh release upload "$tag" "quantumcast-$tag.apk" --clobber
