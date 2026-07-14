@@ -900,19 +900,30 @@ class RadioViewModel @Inject constructor(
     // the hidden random stream port. Resolve the real stream port from it via the broadcaster's
     // listen.json; if that fails (stock/legacy server, or the typed port really was a stream port),
     // fall back to treating the typed port as a direct stream port with the default control port.
+    // Navigate / show the "connecting" UI IMMEDIATELY - the listen.json fetch is a network round-trip
+    // (up to a few seconds on an unreachable host); making the user stare at an unchanged Home until it
+    // returns reads as a frozen tap. So show the connecting screen synchronously, then dial once resolved.
     fun connectManually(host: String, typedPort: Int?) {
+        showConnectingTo(host)
         viewModelScope.launch {
             val httpGuess = typedPort ?: 1680
             val ports = tech.capullo.audio.snapcast.SnapserverListenInfo.fetch(host, httpGuess)
             if (ports != null) {
-                connectToSnapserver(host, ports.streamPort, httpGuess)
+                playbackService?.connectAsSnapclient(host, ports.streamPort, httpGuess)
             } else {
-                connectToSnapserver(host, typedPort ?: 1604, 1680)
+                playbackService?.connectAsSnapclient(host, typedPort ?: 1604, 1680)
             }
         }
     }
 
     fun connectToSnapserver(host: String, port: Int = 1604, httpPort: Int = 1680) {
+        showConnectingTo(host)
+        playbackService?.connectAsSnapclient(host, port, httpPort)
+    }
+
+    // The UI/state transition into listener mode: swap to a synthetic station for [host] and navigate to
+    // the now-playing screen. No network work, so it can run synchronously ahead of the actual dial.
+    private fun showConnectingTo(host: String) {
         // Stop any active rotation and Shazam - we're switching to listener mode
         cancelRotation()
         shazamJob?.cancel()
@@ -931,7 +942,6 @@ class RadioViewModel @Inject constructor(
         _streamStats.value = null
         _showDetailScreen.value = true
         viewModelScope.launch { settingsRepo.setLastManualHost(host) }
-        playbackService?.connectAsSnapclient(host, port, httpPort)
     }
 
     fun disconnectSnapclient() {
