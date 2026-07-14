@@ -246,8 +246,8 @@ private fun RadioApp(
                         onConnectToServer = { server ->
                             vm.connectToSnapserver(server.hostAddress, server.port, server.httpPort)
                         },
-                        onConnectManually = { host, port, httpPort ->
-                            vm.connectToSnapserver(host, port, httpPort)
+                        onConnectManually = { host, typedPort ->
+                            vm.connectManually(host, typedPort)
                         },
                         onClearLastManualHost = { vm.updateSetting { setLastManualHost("") } },
                         onSearch = { query ->

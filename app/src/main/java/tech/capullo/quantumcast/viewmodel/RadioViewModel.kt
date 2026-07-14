@@ -896,6 +896,22 @@ class RadioViewModel @Inject constructor(
 
     // --- Snapclient (QuantumCast tab) ---
 
+    // Manual listen-in: the user types the port they KNOW - the HTTP port from the web-player URL, not
+    // the hidden random stream port. Resolve the real stream port from it via the broadcaster's
+    // listen.json; if that fails (stock/legacy server, or the typed port really was a stream port),
+    // fall back to treating the typed port as a direct stream port with the default control port.
+    fun connectManually(host: String, typedPort: Int?) {
+        viewModelScope.launch {
+            val httpGuess = typedPort ?: 1680
+            val ports = tech.capullo.audio.snapcast.SnapserverListenInfo.fetch(host, httpGuess)
+            if (ports != null) {
+                connectToSnapserver(host, ports.streamPort, httpGuess)
+            } else {
+                connectToSnapserver(host, typedPort ?: 1604, 1680)
+            }
+        }
+    }
+
     fun connectToSnapserver(host: String, port: Int = 1604, httpPort: Int = 1680) {
         // Stop any active rotation and Shazam - we're switching to listener mode
         cancelRotation()

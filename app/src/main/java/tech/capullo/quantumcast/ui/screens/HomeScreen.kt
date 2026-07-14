@@ -45,7 +45,7 @@ fun HomeScreen(
     lastManualHost: String = "",
     onStartDiscovery: () -> Unit = {},
     onConnectToServer: (DiscoveredSnapserver) -> Unit = {},
-    onConnectManually: (host: String, port: Int, httpPort: Int) -> Unit = { _, _, _ -> },
+    onConnectManually: (host: String, typedPort: Int?) -> Unit = { _, _ -> },
     onClearLastManualHost: () -> Unit = {},
     // Search: submitting a query runs the search and opens the results screen
     onSearch: (String) -> Unit = {},
@@ -85,14 +85,12 @@ fun HomeScreen(
         LazyColumn(modifier = Modifier.weight(1f)) {
             // 1. Radar / local broadcasts (discover + join)
             item {
-                // Shared radar/scanning section (tech.capullo.audio.ui). Ports are dynamic, so the
-                // 1604/1680 fallbacks only apply to a bare manual host with no ":port" typed.
+                // Shared radar/scanning section (tech.capullo.audio.ui). Ports are dynamic; manual
+                // entry passes the typed port through and the VM resolves the stream port (listen.json).
                 LocalRadiosSection(
                     servers = discoveredServers.filter { it.hostAddress != connectedHost },
                     onJoinServer = onConnectToServer,
                     onJoinManual = onConnectManually,
-                    fallbackStreamPort = 1604,
-                    fallbackHttpPort = 1680,
                     initialManualHost = lastManualHost,
                     onClearManualHost = onClearLastManualHost,
                 )
