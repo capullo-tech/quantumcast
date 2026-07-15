@@ -97,6 +97,10 @@ fun NowPlayingBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onOpenDetail)
+                    // Pad the CONTENT above the system nav bar (the Surface bg still fills
+                    // edge-to-edge behind it) so the transport controls don't collide with
+                    // the 3-button nav bar under enableEdgeToEdge().
+                    .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

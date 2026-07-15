@@ -257,94 +257,101 @@ fun TrackDetailScreen(
             ),
         )
 
-        // Portrait layout - art fills screen width edge-to-edge, controls anchored below
+        // Portrait layout - fit-to-space art with the transport pinned below (never squeezed).
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(8.dp))
-
             val canSwipeArt = rotationState.isActive || (isSnapclientMode && (streamCanGoNext || streamCanGoPrevious))
             var artSwipeDx by remember { mutableFloatStateOf(0f) }
             val artScope = rememberCoroutineScope()
+            val isFavorite = station?.uuid?.let { it in favoriteUuids } == true
 
-            // Art area: fixed square (full width). A fixed size means an art reload or a
-            // metadata change never resizes it or shifts anything below it (TC parity).
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .pointerInput(canSwipeArt, onSkip, onSkipPrev) {
-                        if (!canSwipeArt) return@pointerInput
-                        detectHorizontalDragGestures(
-                            onDragStart = { artSwipeDx = 0f },
-                            onDragEnd = {
-                                val dx = artSwipeDx
-                                when {
-                                    dx < -80f -> {
-                                        onSkip()
-                                        artSwipeDx = 0f
+            Spacer(Modifier.height(8.dp))
+            // Fit-to-space art: the art is the SOLE weight holder, so the layout hands it exactly
+            // the space left after the (fixed-sibling) info + transport - at any font scale or
+            // metadata density, with no magic reserve constant. It's a square capped at the screen
+            // width: full-width when it fits, shrinking only when the screen genuinely can't fit
+            // full art + info + transport. It can never overlap or squeeze them. BottomCenter keeps
+            // the art hugging the info below; any slack on a tall screen sits above the art.
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                val artSide = minOf(maxWidth, maxHeight)
+                Box(
+                    modifier = Modifier
+                        .size(artSide)
+                        .pointerInput(canSwipeArt, onSkip, onSkipPrev) {
+                            if (!canSwipeArt) return@pointerInput
+                            detectHorizontalDragGestures(
+                                onDragStart = { artSwipeDx = 0f },
+                                onDragEnd = {
+                                    val dx = artSwipeDx
+                                    when {
+                                        dx < -80f -> {
+                                            onSkip()
+                                            artSwipeDx = 0f
+                                        }
+                                        dx > 80f -> {
+                                            onSkipPrev()
+                                            artSwipeDx = 0f
+                                        }
+                                        else -> artScope.launch {
+                                            Animatable(dx).animateTo(
+                                                0f,
+                                                spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
+                                            ) { artSwipeDx = value }
+                                        }
                                     }
-                                    dx > 80f -> {
-                                        onSkipPrev()
-                                        artSwipeDx = 0f
-                                    }
-                                    else -> artScope.launch {
+                                },
+                                onDragCancel = {
+                                    val dx = artSwipeDx
+                                    artScope.launch {
                                         Animatable(dx).animateTo(
                                             0f,
                                             spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
                                         ) { artSwipeDx = value }
                                     }
-                                }
-                            },
-                            onDragCancel = {
-                                val dx = artSwipeDx
-                                artScope.launch {
-                                    Animatable(dx).animateTo(
-                                        0f,
-                                        spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
-                                    ) { artSwipeDx = value }
-                                }
-                            },
-                            onHorizontalDrag = { _, delta -> artSwipeDx += delta },
-                        )
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            translationX = artSwipeDx
-                            alpha = (1f - kotlin.math.abs(artSwipeDx) / 600f).coerceAtLeast(0.5f)
+                                },
+                                onHorizontalDrag = { _, delta -> artSwipeDx += delta },
+                            )
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (stableArtUrl != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context).data(stableArtUrl).crossfade(300).build(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                            onError = { stableArtUrl = null },
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(80.dp),
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = artSwipeDx
+                                alpha = (1f - kotlin.math.abs(artSwipeDx) / 600f).coerceAtLeast(0.5f)
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (stableArtUrl != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context).data(stableArtUrl).crossfade(300).build(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit,
+                                onError = { stableArtUrl = null },
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(80.dp),
+                            )
+                        }
                     }
                 }
             }
-
             Spacer(Modifier.height(12.dp))
-            val isFavorite = station?.uuid?.let { it in favoriteUuids } == true
-            // Track info sits directly under the (fixed) art and grows DOWNWARD into the
-            // flexible spacer below - more/fewer metadata lines never move the art or transport.
+            // Track info - a fixed sibling (not inside the weighted art box), so the art above can
+            // never overlap it and it can never be squeezed.
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -369,9 +376,6 @@ fun TrackDetailScreen(
                     )
                 }
             }
-            // Flexible gap absorbs all art/metadata height variation so the transport below
-            // holds a fixed position - the buttons never jump when the art or metadata changes.
-            Spacer(Modifier.weight(1f))
             // Transport pinned to the bottom.
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp),
@@ -380,6 +384,9 @@ fun TrackDetailScreen(
                 NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true }, onToggleOrder = onToggleRotationOrder, onCycleRepeat = onCycleRepeat)
             }
             Spacer(Modifier.height(24.dp))
+            // This screen draws edge-to-edge OUTSIDE the app Scaffold, so it gets no automatic
+            // bottom inset - reserve the system nav-bar height so the transport clears it.
+            Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
     }
 
