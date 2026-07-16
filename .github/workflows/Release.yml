@@ -36,8 +36,11 @@ jobs:
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             tag="${{ github.ref_name }}"
-            gh release create "$tag" \
-              --generate-notes
+            # Idempotent: on a RE-CUT the tag is force-moved and this workflow re-runs while the
+            # GitHub Release from the prior cut still exists - a bare `gh release create` would fail
+            # with HTTP 422 "already exists". Create only if absent; the upload below is --clobber,
+            # so the whole job is safely re-runnable without the manual `gh release delete` dance.
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
           else
             commit_hash=$(git rev-parse --short HEAD)
             tag="preview"

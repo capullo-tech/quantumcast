@@ -406,8 +406,13 @@ class PlaybackService : Service() {
             // libsnapcontrol.so is still owned by the running Snapserver causes a native crash
             // (SIGPIPE on the dead controlscript pipe).
             startExoToFifo(url, snapserverProcess!!.pipeFilepath, vlcNetworkCachingMs)
-            // Starting a station is an explicit "make sound" action - recover a
-            // focus-paused local snapclient too (no-op when not focus-paused).
+            // Starting a station is an explicit "make sound" action: request()
+            // unconditionally (re)acquires focus so a co-broadcasting app's local
+            // snapclient is evicted, then refocus() recovers ours if a prior focus
+            // loss had stopped it (no-op otherwise). Bare refocus() alone no-ops
+            // when we're audible-without-focus (initial request failed), so it
+            // would never force the other app to yield the speaker.
+            audioFocus.request()
             audioFocus.refocus()
         } else {
             // First play or after a full stop - build the Snapcast stack from scratch.
@@ -437,8 +442,12 @@ class PlaybackService : Service() {
     fun play() = runOnMain {
         exoPlayer?.play()
         _state.update { it.copy(isPlaying = true) }
-        // Explicit "make sound" action doubles as last-resort recovery of a
-        // focus-paused local snapclient (no-op when not focus-paused).
+        // Explicit "make sound" action: request() unconditionally (re)acquires
+        // focus so a co-broadcasting app yields the speaker, then refocus()
+        // recovers a focus-paused local snapclient (no-op when not focus-paused).
+        // Bare refocus() alone no-ops when audible-without-focus, so request()
+        // is what forces the other app off the speaker.
+        audioFocus.request()
         audioFocus.refocus()
         updateNotification()
         updateMediaSession()
