@@ -1,13 +1,13 @@
 # QuantumCast LOCAL pins catalog (`pins.*`) - the inter-repo capullo coordinates (pinned
-# independently per release, the org) + QC's own single-app deps. Everything
+# independently per release) + QC's own single-app deps. Everything
 # shared (toolchain, Compose BOM + Compose, lifecycle, nav3, media3, Hilt, serialization, zxing,
 # junit) comes from the shared `libs` catalog.
 [versions]
-# capullo-source-radiobrowser (Layer 3) - pinned to an immutable jitpack commit (NOT main-SNAPSHOT:
+# capullo-source-radiobrowser - pinned to an immutable jitpack commit (NOT main-SNAPSHOT:
 # jitpack caches -SNAPSHOT unreliably). Composite build substitutes the sibling locally.
-capulloSourceRadiobrowser = "61ecc83"
-# capullo-audio (Layer 2) - immutable jitpack commit; the engine + capullo-audio-ui share it.
-capulloAudio = "1f5e908"
+capulloSourceRadiobrowser = "a5ca899e4b8674fda2a2baf793d2bf2845ef1dc7"
+# capullo-audio - immutable jitpack commit; the engine + capullo-audio-ui share it.
+capulloAudio = "a4c4673b40eae5913e72334905af77495c3177f3"
 # QC's own single-app deps (used by no other repo).
 media = "1.7.0"
 coil = "2.6.0"
