@@ -813,7 +813,11 @@ class PlaybackService : Service() {
                     putChannelMixingMatrix(ChannelMixingMatrix.create(1, 2))
                     putChannelMixingMatrix(ChannelMixingMatrix.create(2, 2))
                 }
-                val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(44100) }
+                // LOCKSTEP with capullo-audio SnapserverProcess.SAMPLE_FORMAT (48000): the FIFO the
+                // tee writes is read by snapserver at that rate, so this resampler must output the
+                // same. Mismatch (this was 44100 vs a 48000 FIFO) made the server read the PCM ~9%
+                // fast and hard-resync constantly - the stutter.
+                val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(48000) }
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false) // keep the chain in 16-bit PCM
                     .setAudioProcessorChain(
