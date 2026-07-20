@@ -24,8 +24,8 @@ front-end, being recomposed onto the platform's shared libraries:
 - **[capullo-audio](https://github.com/capullo-tech/capullo-audio)** - the
   delivery engine (ExoPlayer → FIFO → Snapcast server/client) and multi-device
   control.
-- **[capullo-source-radiobrowser](https://github.com/capullo-tech/capullo-source-radiobrowser)**
-  - the Radio Browser source (station search + stream resolution) behind the
+- **[capullo-source-radiobrowser](https://github.com/capullo-tech/capullo-source-radiobrowser)** - the
+  Radio Browser source (station search + stream resolution) behind the
   `capullo-audio-contracts` SPI.
 
 The engine and the source are siblings - both implement/consume the SPI and
