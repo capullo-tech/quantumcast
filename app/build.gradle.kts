@@ -137,7 +137,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
 
-    // capullo-source-radiobrowser (Layer 3) - the radio ingress: Radio Browser API, favorites Room DB,
+    // capullo-source-radiobrowser - the radio source: Radio Browser API, favorites Room DB,
     // Station/Country/TrackLookup models, PlaylistResolver, Shazam identification. The library recompose replaced QC's
     // local data/{api,model,db,repository} + shazam/* + PlaylistResolver copies with this library (single
     // source of truth). Its Retrofit/Gson/OkHttp/Room/NewPipe deps are internal to the lib (implementation
@@ -145,7 +145,7 @@ dependencies {
     // left in place for this isolated commit and pruned in a later cleanup.
     implementation(pins.capullo.source.radiobrowser)
 
-    // capullo-audio (Layer 2) - the delivery engine's public transport classes: SnapserverProcess,
+    // capullo-audio - the delivery engine's public transport classes: SnapserverProcess,
     // SnapclientProcess, SnapcastControlClient + JSON-RPC types, SnapcontrolPlugin (StateFlow<NowPlaying>
     // + PlaybackController), Nsd/Discovery, and the ExoPlayer→FIFO sink. The library recompose replaced QC's local
     // snapcast/* + player/FifoAudioSink copies with this library. QC keeps its own PlaybackService

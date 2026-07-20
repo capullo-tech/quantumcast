@@ -28,6 +28,11 @@ front-end, being recomposed onto the platform's shared libraries:
   - the Radio Browser source (station search + stream resolution) behind the
   `capullo-audio-contracts` SPI.
 
+The engine and the source are siblings - both implement/consume the SPI and
+neither depends on the other; this app is what wires them together. See
+[Platform shape](https://github.com/capullo-tech/capullo-audio-contracts#platform-shape)
+for the full dependency graph.
+
 ## Building
 
 ```sh
