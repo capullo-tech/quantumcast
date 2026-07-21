@@ -1,5 +1,4 @@
-import java.text.SimpleDateFormat
-import java.util.Date
+import com.android.build.api.artifact.SingleArtifact
 
 plugins {
     alias(libs.plugins.android.application)
@@ -9,8 +8,6 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
-
-val buildTime: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
 
 android {
     namespace = "tech.capullo.quantumcast"
@@ -23,25 +20,6 @@ android {
         versionCode = 5
         versionName = "1.0"
     }
-
-    flavorDimensions += "variant"
-    productFlavors {
-        create("prod") {
-            dimension = "variant"
-            applicationId = "tech.capullo.quantumcast"
-            resValue("string", "app_name", "Quantumcast")
-        }
-        create("snap") {
-            dimension = "variant"
-            applicationId = "tech.capullo.quantumcast.clone"
-            resValue("string", "app_name", "QCClone")
-            versionNameSuffix = "-clone"
-        }
-    }
-
-    // (Removed the legacy applicationVariants.all{} APK-rename block: it used AGP's internal
-    // BaseVariantOutputImpl API - gone in AGP 9 - and only reproduced the default output name
-    // `app-<flavor>-<buildtype>.apk`, which AGP already emits for a flavored build.)
 
     // Release signing. Keystore + passwords come from env vars (CI secrets wired in Build.yml;
     // exported vars for a local release build on the Windows host). If the keystore isn't present (e.g. a
@@ -89,8 +67,6 @@ android {
 
     buildFeatures {
         compose = true
-        // AGP 9 disables resValues by default; the prod/snap flavors set resValue("string","app_name",…).
-        resValues = true
     }
 
     packaging {
@@ -100,6 +76,26 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+    }
+}
+
+// Self-identifying APK copies: quantumcast-v<versionName>-vc<versionCode>-<variant>.apk under
+// build/outputs/apk-named/<variant>/, produced automatically after each assemble. Uses only the
+// public artifacts API (SingleArtifact.APK) - no internal AGP classes - so it survives AGP upgrades.
+// The standard app-<variant>.apk stays in place for installDebug and friends.
+androidComponents {
+    onVariants { variant ->
+        val vn = android.defaultConfig.versionName
+        val vc = android.defaultConfig.versionCode
+        val cap = variant.name.replaceFirstChar { it.uppercase() }
+        val copyNamedApk = tasks.register<Copy>("copyNamedApk$cap") {
+            from(variant.artifacts.get(SingleArtifact.APK)) {
+                include("*.apk")
+                rename { "quantumcast-v$vn-vc$vc-${variant.name}.apk" }
+            }
+            into(layout.buildDirectory.dir("outputs/apk-named/${variant.name}"))
+        }
+        afterEvaluate { tasks.named("assemble$cap").configure { finalizedBy(copyNamedApk) } }
     }
 }
 

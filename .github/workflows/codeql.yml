@@ -46,7 +46,7 @@ jobs:
       # compile so CodeQL traces it even if the Gradle cache is warm.
       - if: matrix.build-mode == 'manual'
         shell: bash
-        run: ./gradlew :app:assembleProdDebug --no-daemon --rerun-tasks
+        run: ./gradlew :app:assembleDebug --no-daemon --rerun-tasks
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

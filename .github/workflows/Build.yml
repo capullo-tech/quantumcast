@@ -43,9 +43,9 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleProdRelease
+        run: ./gradlew :app:assembleRelease
       - name: Upload build outputs (APK)
         uses: actions/upload-artifact@v4
         with:
           name: quantumcast-${{ github.sha }}
-          path: '**/build/outputs/apk/prod/release/*.apk'
+          path: '**/build/outputs/apk-named/release/*.apk'

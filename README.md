@@ -36,7 +36,7 @@ for the full dependency graph.
 ## Building
 
 ```sh
-./gradlew :app:assembleProdDebug
+./gradlew :app:assembleDebug
 ```
 
 The Snapcast native libraries come from
