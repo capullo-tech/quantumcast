@@ -1125,7 +1125,9 @@ class PlaybackService : Service() {
     // snapcontrolPlugin?.notifyPropertiesChanged() call sites (no-op until a session connects).
     private fun publishNowPlaying() {
         refreshSnapArt()
-        snapNowPlaying.value = buildSnapNowPlaying()
+        val next = buildSnapNowPlaying()
+        if (next == snapNowPlaying.value) return
+        snapNowPlaying.value = next
         snapcontrolPlugin?.notifyPropertiesChanged()
     }
 
