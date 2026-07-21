@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Acoustic sync calibration: records the room to cross-correlate against the broadcast PCM -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- WiFi/NSD for Snapcast server discovery -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />

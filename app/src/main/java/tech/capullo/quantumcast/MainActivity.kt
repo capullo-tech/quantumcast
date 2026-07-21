@@ -120,6 +120,11 @@ private fun RadioApp(
 ) {
     val backStack = rememberNavBackStack(HomeRoute)
 
+    val activityContext = androidx.compose.ui.platform.LocalContext.current
+    val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) vm.startSyncCalibration() }
+
     val searchResults by vm.searchResults.collectAsState()
     val playerState by vm.playerState.collectAsState()
     val rotationState by vm.rotationState.collectAsState()
@@ -200,6 +205,19 @@ private fun RadioApp(
             onToggleStreamLock = vm::toggleStreamLock,
             onResetSelf = vm::resetSelf,
             onResetAll = vm::resetAll,
+            onCalibrateSync = {
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                    activityContext, android.Manifest.permission.RECORD_AUDIO,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (granted) vm.startSyncCalibration() else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+            },
+            calibrationRunning = vm.calibrationState is tech.capullo.audio.calibration.SyncCalibrator.State.Running,
+            calibrationStatus = when (val cs = vm.calibrationState) {
+                is tech.capullo.audio.calibration.SyncCalibrator.State.Idle -> ""
+                is tech.capullo.audio.calibration.SyncCalibrator.State.Running -> cs.message
+                is tech.capullo.audio.calibration.SyncCalibrator.State.Done -> "Calibrated: ${cs.summary}"
+                is tech.capullo.audio.calibration.SyncCalibrator.State.Failed -> "Calibration failed: ${cs.reason}"
+            },
             shareService = settings.shareService,
             onSetShareService = vm::setShareService,
             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = detailAlpha.value },

@@ -172,6 +172,72 @@ class PlaybackService : Service() {
 
     @Volatile private var customServerName: String = ""
 
+    // --- Acoustic sync calibration (mic vs broadcast-PCM cross-correlation) ---
+    private val _calibrationState =
+        MutableStateFlow<tech.capullo.audio.calibration.SyncCalibrator.State>(
+            tech.capullo.audio.calibration.SyncCalibrator.State.Idle,
+        )
+    val calibrationState: StateFlow<tech.capullo.audio.calibration.SyncCalibrator.State> =
+        _calibrationState.asStateFlow()
+    private var calibrationJob: Job? = null
+
+    // Armed ring for the running calibration. Held here (not by the calibrator) so an
+    // engine restart mid-run re-arms the NEW sink in startEngine and the tap survives.
+    @Volatile private var calibrationTap: tech.capullo.audio.calibration.ReferencePcmRing? = null
+
+    /** Requires RECORD_AUDIO already granted (Settings UI requests it before calling). */
+    fun startSyncCalibration() {
+        if (calibrationJob?.isActive == true) return
+        fun fail(reason: String) {
+            _calibrationState.value =
+                tech.capullo.audio.calibration.SyncCalibrator.State.Failed(reason)
+        }
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return fail("microphone permission not granted")
+        if (fifoSink == null) return fail("broadcast engine not running")
+        val control = snapcastControl ?: return fail("no server control connection")
+        val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() }
+            ?: return fail("local snapclient id unknown")
+        val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
+        // Reference = this device's own snapclient: its sink is co-located with the mic.
+        val self = connected.firstOrNull { it.id == localId || it.id.contains(localId) }
+            ?: return fail("local snapclient not connected")
+        val ordered = listOf(self) + connected.filter { it.id != self.id }
+        if (ordered.size < 2) return fail("need a second connected client to calibrate against")
+        val calClients = ordered.map {
+            tech.capullo.audio.calibration.SyncCalibrator.CalClient(
+                id = it.id,
+                name = it.config.name,
+                latencyMs = it.config.latency,
+                volumePercent = it.config.volume.percent,
+                muted = it.config.volume.muted,
+            )
+        }
+        val calibrator = tech.capullo.audio.calibration.SyncCalibrator(
+            tapArm = { ring ->
+                calibrationTap = ring
+                fifoSink?.pcmTap = ring
+            },
+            mic = tech.capullo.audio.calibration.MicCapture(this),
+            control = control,
+        )
+        calibrationJob = scope.launch {
+            val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
+            // ColorOS signals a focus loss when this app's own recorder opens, which would
+            // stop the local snapclient (the reference speaker) mid-measurement.
+            audioFocus.suppressLosses = true
+            try {
+                calibrator.calibrate(calClients)
+                snapcastControl?.sendGetStatus() // refresh latencies shown in UI
+            } finally {
+                audioFocus.suppressLosses = false
+                calibrationTap = null
+                mirror.cancel()
+            }
+        }
+    }
+
     fun updateCustomServerName(name: String) {
         if (name.trim() == customServerName) return
         customServerName = name.trim()
@@ -772,6 +838,9 @@ class PlaybackService : Service() {
         // VLC's sout, which held the write end open from sout start onward.
         val sink = FifoAudioBufferSink(engineFifoPath).also {
             fifoSink = it
+            // A calibration may be mid-run across an engine restart: the fresh sink must
+            // inherit the armed reference tap or the measurement ring silently starves.
+            it.pcmTap = calibrationTap
             it.open()
         }
 

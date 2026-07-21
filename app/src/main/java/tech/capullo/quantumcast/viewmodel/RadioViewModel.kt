@@ -216,6 +216,21 @@ class RadioViewModel @Inject constructor(
     private var rotationSkipJob: Job? = null
     private var customNameJob: Job? = null
     private var webCfgJob: Job? = null
+    private var calibrationJob: Job? = null
+
+    // Mirrors PlaybackService.calibrationState for the Settings UI.
+    var calibrationState by mutableStateOf<tech.capullo.audio.calibration.SyncCalibrator.State>(
+        tech.capullo.audio.calibration.SyncCalibrator.State.Idle,
+    )
+        private set
+
+    fun startSyncCalibration() {
+        playbackService?.startSyncCalibration() ?: run {
+            calibrationState = tech.capullo.audio.calibration.SyncCalibrator.State.Failed(
+                "playback service not bound",
+            )
+        }
+    }
     private var sleepTimerJob: Job? = null
     private var rotationJob: Job? = null
     private var shazamJob: Job? = null
@@ -249,6 +264,10 @@ class RadioViewModel @Inject constructor(
             // Collect (not one-shot): at bind time DataStore may not have emitted the
             // persisted settings yet, so a single read sees the "" default and the
             // server falls back to Build.MODEL until the user re-applies the name.
+            calibrationJob?.cancel()
+            calibrationJob = viewModelScope.launch {
+                svc.calibrationState.collect { calibrationState = it }
+            }
             customNameJob?.cancel()
             customNameJob = viewModelScope.launch {
                 settings.map { it.customServerName }.distinctUntilChanged()
