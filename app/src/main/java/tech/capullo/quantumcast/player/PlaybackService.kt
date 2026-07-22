@@ -187,6 +187,8 @@ class PlaybackService : Service() {
 
     // Crash journal for calibration: restored on control connect (undoes a killed run).
     private val calibrationJournal by lazy { FileCalibrationJournal(this) }
+    // Append-only log of verified corrections (data for a future per-sink damping policy).
+    private val calibrationHistory by lazy { FileCalibrationHistory(this) }
 
     /** Requires RECORD_AUDIO already granted (Settings UI requests it before calling). */
     fun startSyncCalibration() {
@@ -232,6 +234,7 @@ class PlaybackService : Service() {
                     .associate { it.id to it.config.latency }
             },
             journal = calibrationJournal,
+            history = calibrationHistory,
         )
         calibrationJob = scope.launch {
             val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
