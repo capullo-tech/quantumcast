@@ -185,6 +185,9 @@ class PlaybackService : Service() {
     // engine restart mid-run re-arms the NEW sink in startEngine and the tap survives.
     @Volatile private var calibrationTap: tech.capullo.audio.calibration.ReferencePcmRing? = null
 
+    // Crash journal for calibration: restored on control connect (undoes a killed run).
+    private val calibrationJournal by lazy { FileCalibrationJournal(this) }
+
     /** Requires RECORD_AUDIO already granted (Settings UI requests it before calling). */
     fun startSyncCalibration() {
         if (calibrationJob?.isActive == true) return
@@ -228,6 +231,7 @@ class PlaybackService : Service() {
                 _state.value.snapcastGroups.flatMap { it.clients }
                     .associate { it.id to it.config.latency }
             },
+            journal = calibrationJournal,
         )
         calibrationJob = scope.launch {
             val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
@@ -1300,6 +1304,11 @@ class PlaybackService : Service() {
             .also { snapcastControl = it }
         snapcastControlJob = scope.launch {
             client.initialize()
+            // Undo any calibration run a process death interrupted: restore the journaled
+            // pre-run latencies before anything else touches them. No-op when clean.
+            tech.capullo.audio.calibration.SyncCalibrator.recover(calibrationJournal) { id, latency ->
+                client.sendSetLatency(id, latency)
+            }
             client.notifications.collect { notif ->
                 when (notif) {
                     is tech.capullo.audio.snapcast.ServerGetStatusResponse -> {
