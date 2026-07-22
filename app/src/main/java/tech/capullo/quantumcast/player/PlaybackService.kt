@@ -221,6 +221,13 @@ class PlaybackService : Service() {
             },
             mic = tech.capullo.audio.calibration.MicCapture(this),
             control = control,
+            // Read-back source: the live status this service keeps updated from
+            // ServerGetStatusResponse. The calibrator calls sendGetStatus() then reads
+            // this to confirm each latency write actually landed.
+            readLatencies = {
+                _state.value.snapcastGroups.flatMap { it.clients }
+                    .associate { it.id to it.config.latency }
+            },
         )
         calibrationJob = scope.launch {
             val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
