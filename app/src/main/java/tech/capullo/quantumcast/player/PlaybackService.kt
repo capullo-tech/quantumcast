@@ -3,6 +3,9 @@ package tech.capullo.quantumcast.player
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -1174,10 +1177,28 @@ class PlaybackService : Service() {
     private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(
         this,
         STREAM_NAME,
-        snapserverFixedPort.takeIf { it > 0 }?.let { SnapserverPorts.fixed(it) } ?: SnapserverPorts.free(),
+        resolveSnapserverPorts(),
         // Per-app abstract control socket so QC + another capullo app can broadcast at once.
         controlSocketName = SnapserverProcess.controlSocketName(this),
     ).also { snapserverProcess = it }
+
+    /** Fixed base if set AND its trio is actually free; otherwise OS-assigned. A busy fixed
+     *  port falls back to random with a Toast so the broadcast never silently dies on a
+     *  collision (user-editable base can clash with another app or a stale server). */
+    private fun resolveSnapserverPorts(): SnapserverPorts {
+        val base = snapserverFixedPort
+        if (base <= 0) return SnapserverPorts.free()
+        SnapserverPorts.fixedIfFree(base)?.let { return it }
+        Log.w(TAG, "fixed snapserver port $base unavailable — falling back to OS-assigned")
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(
+                this,
+                "Fixed port $base is in use — broadcasting on a random port this session",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        return SnapserverPorts.free()
+    }
 
     // --- Snapcast control-plugin adapter (capullo-audio SnapcontrolPlugin) ---
     // The engine's SnapcontrolPlugin is driven by the platform contract: a StateFlow<NowPlaying>
