@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
             "skip" -> vm.skipStation()
             "stop" -> vm.stopRotation()
             "snaptest" -> vm.startSnapTest()
+            "calibrate" -> vm.startSyncCalibration() // rig testing: am start ... --es dbg calibrate
         }
     }
 
