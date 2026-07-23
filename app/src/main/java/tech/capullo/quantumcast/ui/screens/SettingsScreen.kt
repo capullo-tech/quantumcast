@@ -43,6 +43,7 @@ fun SettingsScreen(
     onSetBalance: (Float) -> Unit = {},
     onSetShareService: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit = {},
     onSetCustomServerName: (String) -> Unit = {},
+    onSetSnapserverFixedPort: (Int) -> Unit = {},
     onSetAutoEntangleOnLaunch: (Boolean) -> Unit = {},
     onSetWebDebugPanel: (Boolean) -> Unit = {},
     onSetWebAutoplay: (Boolean) -> Unit = {},
@@ -126,6 +127,33 @@ fun SettingsScreen(
                     onValueChange = onSetCustomServerName,
                     keyboardType = KeyboardType.Text,
                 )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Network") }
+
+            item {
+                ToggleRow(
+                    label = "Fixed server port",
+                    description = "Pin the broadcast to a fixed port (base, base+1, base+2) so " +
+                        "clients reconnect and the web player keeps its identity across restarts. " +
+                        "Off = OS-assigned (default). Applies on the next broadcast.",
+                    checked = settings.snapserverFixedPort > 0,
+                    onToggle = { on -> onSetSnapserverFixedPort(if (on) -1 else 0) },
+                )
+            }
+
+            if (settings.snapserverFixedPort > 0) {
+                item {
+                    TextInputRow(
+                        label = "Base port",
+                        description = "Uses this port and the next two (base+1, base+2). 1024-65531.",
+                        value = settings.snapserverFixedPort.toString(),
+                        placeholder = "34000",
+                        onValueChange = { s -> onSetSnapserverFixedPort(s.toIntOrNull() ?: 0) },
+                        keyboardType = KeyboardType.Number,
+                    )
+                }
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }

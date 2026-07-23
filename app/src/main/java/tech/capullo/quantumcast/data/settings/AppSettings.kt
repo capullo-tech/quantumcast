@@ -42,6 +42,9 @@ data class AppSettings(
     val snapclientChannel: String = "stereo",
     val snapclientVolume: Int = 100,
     val snapclientLatency: Int = 0,
+    // Snapserver base port: 0 = OS-assigned/random (default). >0 pins the trio to
+    // base/base+1/base+2 so the server address survives broadcast restarts.
+    val snapserverFixedPort: Int = 0,
 )
 
 enum class RadioServer(val label: String, val url: String) {
@@ -73,6 +76,7 @@ class SettingsRepository(private val context: Context) {
         val SNAPCLIENT_CHANNEL = stringPreferencesKey("snapclient_channel")
         val SNAPCLIENT_VOLUME = intPreferencesKey("snapclient_volume")
         val SNAPCLIENT_LATENCY = intPreferencesKey("snapclient_latency")
+        val SNAPSERVER_FIXED_PORT = intPreferencesKey("snapserver_fixed_port")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data
@@ -102,6 +106,7 @@ class SettingsRepository(private val context: Context) {
                 snapclientChannel = prefs[Keys.SNAPCLIENT_CHANNEL] ?: "stereo",
                 snapclientVolume = prefs[Keys.SNAPCLIENT_VOLUME] ?: 100,
                 snapclientLatency = prefs[Keys.SNAPCLIENT_LATENCY] ?: 0,
+                snapserverFixedPort = prefs[Keys.SNAPSERVER_FIXED_PORT] ?: 0,
             )
         }
 
@@ -128,4 +133,9 @@ class SettingsRepository(private val context: Context) {
     suspend fun setSnapclientChannel(v: String) = update { it[Keys.SNAPCLIENT_CHANNEL] = v }
     suspend fun setSnapclientVolume(v: Int) = update { it[Keys.SNAPCLIENT_VOLUME] = v.coerceIn(0, 100) }
     suspend fun setSnapclientLatency(v: Int) = update { it[Keys.SNAPCLIENT_LATENCY] = v }
+
+    /** 0 = OS-assigned/random; otherwise the base port (clamped to a safe range). */
+    suspend fun setSnapserverFixedPort(v: Int) = update {
+        it[Keys.SNAPSERVER_FIXED_PORT] = if (v <= 0) 0 else v.coerceIn(1024, 65531)
+    }
 }

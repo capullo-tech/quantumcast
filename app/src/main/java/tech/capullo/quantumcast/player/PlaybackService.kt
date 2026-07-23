@@ -172,6 +172,10 @@ class PlaybackService : Service() {
 
     @Volatile private var customServerName: String = ""
 
+    // Snapserver base port (0 = OS-assigned/random). Cached from Settings so ensureSnapserver
+    // can read it synchronously; applied on the next broadcast start.
+    @Volatile private var snapserverFixedPort: Int = 0
+
     // --- Acoustic sync calibration (mic vs broadcast-PCM cross-correlation) ---
     private val _calibrationState =
         MutableStateFlow<tech.capullo.audio.calibration.SyncCalibrator.State>(
@@ -417,11 +421,15 @@ class PlaybackService : Service() {
             savedVol = saved.snapclientVolume
             savedLat = saved.snapclientLatency
             balanceProcessor.balance = saved.balance
+            snapserverFixedPort = saved.snapserverFixedPort
             _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
         }
-        // Keep the broadcast balance in sync with Settings live (the slider is drag-live).
+        // Keep the broadcast balance + fixed-port choice in sync with Settings live.
         scope.launch {
-            settingsRepository.settings.collect { balanceProcessor.balance = it.balance }
+            settingsRepository.settings.collect {
+                balanceProcessor.balance = it.balance
+                snapserverFixedPort = it.snapserverFixedPort
+            }
         }
         // Persist own client's volume/latency on ANY change (slider, knob, remote controller).
         // GetStatus-only observation missed incremental ClientOnVolumeChanged updates, so this
@@ -1159,12 +1167,14 @@ class PlaybackService : Service() {
 
     // --- Snapcast ---
 
-    // OS-assigned ports so multiple capullo apps coexist and the ports aren't a fixed guess; the
-    // resolved trio is read back off snapserver.ports to wire the snapclient / NSD / control / web URL.
+    // OS-assigned ports (default) so multiple capullo apps coexist and the ports aren't a fixed
+    // guess; the resolved trio is read back off snapserver.ports to wire the snapclient / NSD /
+    // control / web URL. A fixed base port (Settings) instead pins the trio so the server address
+    // survives broadcast restarts (snapclients reconnect without rediscovery; web origin stable).
     private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(
         this,
         STREAM_NAME,
-        SnapserverPorts.free(),
+        snapserverFixedPort.takeIf { it > 0 }?.let { SnapserverPorts.fixed(it) } ?: SnapserverPorts.free(),
         // Per-app abstract control socket so QC + another capullo app can broadcast at once.
         controlSocketName = SnapserverProcess.controlSocketName(this),
     ).also { snapserverProcess = it }

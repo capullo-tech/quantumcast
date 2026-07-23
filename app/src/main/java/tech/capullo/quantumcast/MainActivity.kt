@@ -102,6 +102,17 @@ class MainActivity : ComponentActivity() {
             "stop" -> vm.stopRotation()
             "snaptest" -> vm.startSnapTest()
             "calibrate" -> vm.startSyncCalibration() // rig testing: am start ... --es dbg calibrate
+            // Fix the snapserver base port (--ei port N; omit or -1 to auto-pick, 0 to disable).
+            // Applies on the next broadcast start. am start ... --es dbg fixport --ei port 34000
+            "fixport" -> vm.setSnapserverFixedPort(intent.getIntExtra("port", -1))
+            // Connect this device as a snapclient to host:base (control on base+2). Rig testing:
+            // am start ... --es dbg connect --es host 192.168.x.y --ei port 34000
+            "connect" -> {
+                val host = intent.getStringExtra("host")
+                val base = intent.getIntExtra("port", 0)
+                if (host != null && base > 0) vm.connectToSnapserver(host, base, base + 2)
+            }
+            "disconnect" -> vm.disconnectSnapclient()
         }
     }
 
@@ -386,6 +397,7 @@ private fun RadioApp(
                         onSetBalance = { vm.updateSetting { setBalance(it) } },
                         onSetShareService = vm::setShareService,
                         onSetCustomServerName = vm::setCustomServerName,
+                        onSetSnapserverFixedPort = vm::setSnapserverFixedPort,
                         onSetAutoEntangleOnLaunch = { vm.updateSetting { setAutoEntangleOnLaunch(it) } },
                         onSetWebDebugPanel = { vm.updateSetting { setWebDebugPanel(it) } },
                         onSetWebAutoplay = { vm.updateSetting { setWebAutoplay(it) } },
