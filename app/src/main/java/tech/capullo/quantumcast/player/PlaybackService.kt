@@ -197,6 +197,19 @@ class PlaybackService : Service() {
     // Append-only log of verified corrections (data for a future per-sink damping policy).
     private val calibrationHistory by lazy { FileCalibrationHistory(this) }
 
+    /** This device's OS media-volume boost, the knob with real headroom when a client is too quiet
+     *  to attribute (the snapclient SW gain is already 100% by default). Leased: the calibrating
+     *  server refreshes it while it works, and it restores itself if that stops — see
+     *  [tech.capullo.audio.calibration.OsVolumeBoost] and SPEC-os-volume-boost.md. */
+    private val osVolumeBoost by lazy {
+        tech.capullo.audio.calibration.OsVolumeBoost(AndroidOsVolume(this), FileOsVolumeJournal(this))
+    }
+    private var calBoostTicker: Job? = null
+
+    /** The boost lease this device is currently broadcasting as the calibrating server, or null.
+     *  Rides [buildSnapNowPlaying]'s extras out to every client. */
+    @Volatile private var calBoostLease: String? = null
+
     /** Requires RECORD_AUDIO already granted (Settings UI requests it before calling). */
     fun startSyncCalibration() {
         if (calibrationJob?.isActive == true) return
@@ -242,6 +255,9 @@ class PlaybackService : Service() {
             },
             journal = calibrationJournal,
             history = calibrationHistory,
+            // The OS-volume knob for targets whose SW gain is already maxed: broadcast a lease the
+            // addressed client applies to its own device volume (and restores itself if we die).
+            publishOsBoost = { targets, leaseMs -> publishCalBoost(targets, leaseMs) },
         )
         calibrationJob = scope.launch {
             val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
@@ -255,6 +271,45 @@ class PlaybackService : Service() {
                 audioFocus.suppressLosses = false
                 calibrationTap = null
                 mirror.cancel()
+            }
+        }
+    }
+
+    /**
+     * Debug rig tool (non-mutating): one mic capture, correlate against the live broadcast
+     * reference, and log every peak's lag/z plus the capture's overall level in dBFS. No
+     * SetLatency/SetVolume — so a volume sweep can read z-vs-volume AND level-vs-volume without
+     * perturbing sync. Intended use: mute all but one distant speaker, set its volume to each
+     * step, fire this, read the one `micz:` logcat line. Answers the kill-test (does boosting
+     * a quiet speaker move its z across the z=9 attribution floor) and the leveling question
+     * (does level-at-mic respond predictably to SetVolume).
+     */
+    fun measureOnce() {
+        if (calibrationJob?.isActive == true) return
+        val sink = fifoSink ?: run { Log.w("SyncCalibrator", "micz: broadcast engine not running"); return }
+        calibrationJob = scope.launch {
+            val ring = tech.capullo.audio.calibration.ReferencePcmRing()
+            val mic = tech.capullo.audio.calibration.MicCapture(this@PlaybackService)
+            audioFocus.suppressLosses = true
+            calibrationTap = ring
+            sink.pcmTap = ring
+            try {
+                delay(16_000L) // prime the ring past one full capture before measuring
+                val cap = mic.record(12_000) ?: run { Log.w("SyncCalibrator", "micz: capture failed"); return@launch }
+                val peaks = tech.capullo.audio.calibration.DelayMeasurement
+                    .estimateSpeakerDelays(ring.snapshot(), cap, 16)
+                var sumSq = 0.0
+                for (s in cap.pcm) sumSq += s.toDouble() * s
+                val dbfs = 20.0 * kotlin.math.log10(kotlin.math.sqrt(sumSq / cap.pcm.size) + 1e-12)
+                Log.i(
+                    "SyncCalibrator",
+                    "micz: level=%.1f dBFS  peaks=".format(dbfs) +
+                        peaks.joinToString { "%.1fms(z=%.1f)".format(it.lagMs, it.z) },
+                )
+            } finally {
+                calibrationTap = null
+                sink.pcmTap = null
+                audioFocus.suppressLosses = false
             }
         }
     }
@@ -405,6 +460,14 @@ class PlaybackService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val TAG = "QCPlaybackService"
 
+        /** How often a boosted client re-checks its lease. Short relative to the lease so the
+         *  volume comes back promptly when a calibrating server stops renewing. */
+        private const val CAL_BOOST_TICK_MS = 2_000L
+
+        /** Hard ceiling on a lease this device will honour, whatever expiry the server sends.
+         *  Comfortably above the server's own lease so a healthy run is never truncated. */
+        private const val MAX_CLIENT_LEASE_MS = 240_000L
+
         // Snapcast stream identity (the snapserver `name=`), shown in web players / to snapclients.
         // capullo-audio's SnapserverProcess defaults to "Capullo"; QuantumCast keeps its own name so
         // multiple capullo apps stay distinguishable on a LAN (was hardcoded in QC's SnapserverProcess).
@@ -416,6 +479,10 @@ class PlaybackService : Service() {
         createNotificationChannel()
         setupMediaSession()
         startForegroundNotification()
+        // Undo an OS-volume detectability boost a process death interrupted, before anything else
+        // touches the volume. The server's calibration journal cannot cover this one: OS volume is
+        // not server state, so the boosted device owns its own recovery. No-op when clean.
+        if (osVolumeBoost.recover()) Log.w(TAG, "restored OS media volume from an interrupted boost")
         // Restore this device's persisted spatial role so it applies on the next broadcast/connect
         // (maybeSetInitialChannelTag reads _state.snapclientChannel). Seeded before the client
         // connects, so no observe race - the initial tag is the saved value, not the default.
@@ -643,7 +710,70 @@ class PlaybackService : Service() {
             )
         }
         // Do NOT call notifyPropertiesChanged() here - echoes back in QUANTUMCAST mode
+        applyCalBoost(meta?.calBoost, metadataPresent = meta != null)
         updateMediaSession()
+    }
+
+    /**
+     * Apply (or drop) a calibration detectability-boost lease addressed to THIS device.
+     *
+     * The calibrating server broadcasts `calBoost = "<clientId>:<osPercent>:<expiryEpochMs>"` in the
+     * stream metadata; every client sees it and self-filters by id. Presence renews the lease,
+     * absence releases it, and if neither ever arrives again the lease simply lapses (see
+     * [tech.capullo.audio.calibration.OsVolumeBoost]) - so a server that crashes mid-run cannot
+     * leave this phone loud.
+     *
+     * [metadataPresent] guards the release: a transport-only properties event (play/pause) carries
+     * no metadata block and therefore says nothing about the boost, so it must not be read as
+     * "released" mid-measurement.
+     */
+    private fun applyCalBoost(raw: String?, metadataPresent: Boolean) {
+        if (!metadataPresent) return
+        if (raw.isNullOrEmpty()) return releaseCalBoost()
+        val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() } ?: return
+        // The payload lists every currently boosted speaker (`id:percent:expiry;…`) because the
+        // no-mute batch boosts several at once. Find ours; a lease naming only other speakers means
+        // we are not boosted, so it releases.
+        // Parse the two numeric fields from the RIGHT: a client id is not guaranteed colon-free
+        // (stock snapclients identify by MAC address), so splitting left-to-right would mis-parse
+        // and the server would believe it had boosted a speaker that never heard the lease.
+        val mine = raw.split(';').firstOrNull { entry ->
+            val id = entry.substringBeforeLast(':').substringBeforeLast(':')
+            id.isNotEmpty() &&
+                // Same matching the status path uses: the server's client id may embed the host id.
+                (id == localId || id.contains(localId))
+        } ?: return releaseCalBoost()
+        val expiryMs = mine.substringAfterLast(':').toLongOrNull() ?: return
+        val percent = mine.substringBeforeLast(':').substringAfterLast(':').toIntOrNull() ?: return
+        val now = System.currentTimeMillis()
+        if (expiryMs <= now) return // already stale (clock skew or a late-delivered lease)
+        // Clamp against the SERVER's clock being behind ours: the expiry is absolute epoch ms, so a
+        // skewed peer could otherwise hand us a lease lasting hours and the failsafe would stop
+        // being a bound at all. A bound that depends on a stranger's clock is not a bound.
+        val leaseMs = minOf(expiryMs - now, MAX_CLIENT_LEASE_MS)
+        if (osVolumeBoost.apply(percent, now, leaseMs)) startCalBoostTicker()
+    }
+
+    private fun releaseCalBoost() {
+        if (osVolumeBoost.isBoosted) {
+            osVolumeBoost.release()
+            Log.i(TAG, "OS volume boost released")
+        }
+        calBoostTicker?.cancel()
+        calBoostTicker = null
+    }
+
+    /** Drives the lease failsafe: restores the volume if the server stops renewing. */
+    private fun startCalBoostTicker() {
+        if (calBoostTicker?.isActive == true) return
+        calBoostTicker = scope.launch {
+            while (osVolumeBoost.isBoosted) {
+                delay(CAL_BOOST_TICK_MS)
+                if (osVolumeBoost.expireIfLapsed(System.currentTimeMillis())) {
+                    Log.w(TAG, "OS volume boost lease lapsed - volume restored")
+                }
+            }
+        }
     }
 
     private fun maybeSetInitialChannelTag(groups: List<tech.capullo.audio.snapcast.Group>) {
@@ -1272,8 +1402,29 @@ class PlaybackService : Service() {
                 if (st.stationUuid.isNotEmpty()) put("uuid", st.stationUuid)
                 snapArtUrl?.takeIf { it.isNotEmpty() }?.let { put("artUrl", it) }
                 snapArtExtension?.let { put("artExtension", it) }
+                calBoostLease?.let { put("calBoost", it) }
             },
         )
+    }
+
+    /**
+     * Broadcast a calibration OS-volume boost lease to the addressed client (or clear it with a
+     * null [clientId]). Rides the stream metadata, which snapserver rebroadcasts to every control
+     * connection; the addressed client self-filters and applies it, and the lease expiry means a
+     * crash here cannot leave that phone loud.
+     *
+     * Deliberately NOT renewed on a short ticker: every extras change invalidates the metadata
+     * serialization cache, which re-escapes the (~300 KB) embedded art blob and can starve the
+     * real-time FIFO writer. So the lease is issued generously once per round instead. If a round
+     * outlives it the boost simply drops and that target reads as unmeasurable, which is a safe fail.
+     */
+    private fun publishCalBoost(targets: Map<String, Int>, leaseMs: Long) {
+        val expiry = System.currentTimeMillis() + leaseMs
+        // Several speakers can be boosted at once (the no-mute batch), so the payload is a list of
+        // `id:percent:expiry` entries; each client picks out its own and ignores the rest.
+        calBoostLease = targets.takeIf { it.isNotEmpty() }
+            ?.entries?.joinToString(";") { "${it.key}:${it.value}:$expiry" }
+        publishNowPlaying()
     }
 
     // Download the effective art URL to base64 for the artData embed; re-publish when it lands.
@@ -1339,10 +1490,13 @@ class PlaybackService : Service() {
         snapcastControlJob = scope.launch {
             client.initialize()
             // Undo any calibration run a process death interrupted: restore the journaled
-            // pre-run latencies before anything else touches them. No-op when clean.
-            tech.capullo.audio.calibration.SyncCalibrator.recover(calibrationJournal) { id, latency ->
-                client.sendSetLatency(id, latency)
-            }
+            // pre-run latencies AND volumes before anything else touches them (a killed pair
+            // round could have left an "other" client muted). No-op when clean.
+            tech.capullo.audio.calibration.SyncCalibrator.recover(
+                calibrationJournal,
+                { id, latency -> client.sendSetLatency(id, latency) },
+                { id, muted, percent -> client.sendSetVolume(id, muted, percent) },
+            )
             client.notifications.collect { notif ->
                 when (notif) {
                     is tech.capullo.audio.snapcast.ServerGetStatusResponse -> {

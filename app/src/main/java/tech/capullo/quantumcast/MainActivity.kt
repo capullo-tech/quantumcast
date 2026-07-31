@@ -102,6 +102,9 @@ class MainActivity : ComponentActivity() {
             "stop" -> vm.stopRotation()
             "snaptest" -> vm.startSnapTest()
             "calibrate" -> vm.startSyncCalibration() // rig testing: am start ... --es dbg calibrate
+            // Non-mutating single measurement; logs peak z + level (dBFS) for a volume sweep.
+            // am start ... --es dbg micz
+            "micz" -> vm.measureOnce()
             // Fix the snapserver base port (--ei port N; omit or -1 to auto-pick, 0 to disable).
             // Applies on the next broadcast start. am start ... --es dbg fixport --ei port 34000
             "fixport" -> vm.setSnapserverFixedPort(intent.getIntExtra("port", -1))

@@ -231,6 +231,9 @@ class RadioViewModel @Inject constructor(
             )
         }
     }
+
+    /** Debug rig tool: one non-mutating mic measurement, logs peak z + level (dBFS). */
+    fun measureOnce() = playbackService?.measureOnce()
     private var sleepTimerJob: Job? = null
     private var rotationJob: Job? = null
     private var shazamJob: Job? = null
