@@ -100,7 +100,9 @@ class MainActivity : ComponentActivity() {
             "shuffle" -> vm.startShuffleRotation()
             "skip" -> vm.skipStation()
             "stop" -> vm.stopRotation()
-            "snaptest" -> vm.startSnapTest()
+            // Optional --es url / --es name pin the program material, which materially changes how
+            // sharply the calibration correlates. am start ... --es dbg snaptest --es url <stream>
+            "snaptest" -> vm.startSnapTest(intent.getStringExtra("url"), intent.getStringExtra("name"))
             "calibrate" -> vm.startSyncCalibration() // rig testing: am start ... --es dbg calibrate
             // Non-mutating single measurement; logs peak z + level (dBFS) for a volume sweep.
             // am start ... --es dbg micz

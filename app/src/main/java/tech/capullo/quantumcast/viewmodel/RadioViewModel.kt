@@ -1144,14 +1144,25 @@ class RadioViewModel @Inject constructor(
     // --- ADB self-test ---
     // Trigger: adb shell am start -n tech.capullo.quantumcast/.MainActivity --es dbg snaptest
     // Monitors: adb logcat | grep -E "SnapTest|QCPlaybackService|SnapserverProcess|SnapclientProcess"
-    fun startSnapTest() {
+    fun startSnapTest() = startSnapTest(null, null)
+
+    /**
+     * Rig broadcast starter. [url]/[name] override the default station so a test can control the
+     * PROGRAM MATERIAL, which is a first-class variable for calibration: the mic capture is
+     * cross-correlated against this audio, so sustained/loopy/tonal material self-correlates and
+     * smears the peak (rig-observed: the reference speaker became undetectable on ambient tracks at
+     * a level where it had measured z=13), while percussive broadband material gives a sharp one.
+     */
+    fun startSnapTest(url: String?, name: String?) {
+        val station = url ?: "https://ice2.somafm.com/groovesalad-256-mp3"
+        val title = name ?: "SnapTest: Groove Salad"
         Log.i("SnapTest", "=== SNAP TEST START ===")
-        Log.i("SnapTest", "Mode: QUANTUMCAST | Station: SomaFM Groove Salad")
+        Log.i("SnapTest", "Mode: QUANTUMCAST | Station: $title | $station")
         _showDetailScreen.value = true
         // Call playStation directly with QUANTUMCAST - bypasses DataStore so mode is guaranteed
         playbackService?.playStation(
-            url = "https://ice2.somafm.com/groovesalad-256-mp3",
-            title = "SnapTest: Groove Salad",
+            url = station,
+            title = title,
             artist = "SomaFM",
             uuid = "snaptest-001",
             favicon = "",

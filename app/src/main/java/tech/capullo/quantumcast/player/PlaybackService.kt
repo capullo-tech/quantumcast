@@ -212,8 +212,17 @@ class PlaybackService : Service() {
 
     /** Requires RECORD_AUDIO already granted (Settings UI requests it before calling). */
     fun startSyncCalibration() {
-        if (calibrationJob?.isActive == true) return
+        if (calibrationJob?.isActive == true) {
+            // Worth logging: an already-running (or wedged) job makes every later trigger a silent
+            // no-op, which looks identical to "nothing happened" from outside.
+            Log.w("SyncCalibrator", "calibrate ignored: a run is already in progress")
+            return
+        }
         fun fail(reason: String) {
+            // Log as well as surfacing to the UI. These guards fire BEFORE the calibrator exists, so
+            // a silent return here produces a run with no log output at all - indistinguishable from
+            // a lost intent, and it cost real debugging time on the rig.
+            Log.w("SyncCalibrator", "calibrate refused: $reason")
             _calibrationState.value =
                 tech.capullo.audio.calibration.SyncCalibrator.State.Failed(reason)
         }
@@ -261,6 +270,23 @@ class PlaybackService : Service() {
         )
         calibrationJob = scope.launch {
             val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
+            // Log what is PLAYING throughout the run. The correlation is a matched filter against
+            // the broadcast PCM, so program material is a real variable: loopy, sustained, tonal
+            // music self-correlates and throws sidelobe "ghosts" at fixed lags, while percussive
+            // broadband material gives one sharp peak. Without a track timeline, run-to-run spread
+            // cannot be separated into "the room" versus "the song that happened to be playing".
+            val trackLog = launch {
+                var last = ""
+                while (true) {
+                    val st = _state.value
+                    val now = "${st.stationName} | ${st.icyTitle.ifEmpty { st.snapcastTrackName }}"
+                    if (now != last) {
+                        Log.i("SyncCalibrator", "track: $now")
+                        last = now
+                    }
+                    delay(5_000)
+                }
+            }
             // ColorOS signals a focus loss when this app's own recorder opens, which would
             // stop the local snapclient (the reference speaker) mid-measurement.
             audioFocus.suppressLosses = true
@@ -271,6 +297,7 @@ class PlaybackService : Service() {
                 audioFocus.suppressLosses = false
                 calibrationTap = null
                 mirror.cancel()
+                trackLog.cancel()
             }
         }
     }
