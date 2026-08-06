@@ -234,6 +234,18 @@ class RadioViewModel @Inject constructor(
 
     /** Debug rig tool: one non-mutating mic measurement, logs peak z + level (dBFS). */
     fun measureOnce() = playbackService?.measureOnce()
+
+    /** GO/NO-GO sensitivity sweep for the volume balance: probes one client apart and dumps every
+     *  arrival's lag/z/level for offline analysis. Writes no volumes — the operator sets the gains. */
+    fun measureLevelSweep(target: String?) = playbackService?.measureLevelSweep(target)
+
+    /** Dump one capture's decimated reference+mic PCM to external files, for offline estimator work. */
+    fun dumpCapturePcm(target: String?, probe: Boolean) = playbackService?.dumpCapturePcm(target, probe)
+
+    /** Revert the volumes the last calibration balance overwrote. */
+    fun undoBalancedVolumes() = playbackService?.undoBalancedVolumes()
+
+    fun canUndoBalancedVolumes(): Boolean = playbackService?.canUndoBalancedVolumes() == true
     private var sleepTimerJob: Job? = null
     private var rotationJob: Job? = null
     private var shazamJob: Job? = null

@@ -44,6 +44,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -196,6 +197,8 @@ class PlaybackService : Service() {
     private val calibrationJournal by lazy { FileCalibrationJournal(this) }
     // Append-only log of verified corrections (data for a future per-sink damping policy).
     private val calibrationHistory by lazy { FileCalibrationHistory(this) }
+    // Pre-balance volumes, so the balance's persistent writes are one action away from reverted.
+    private val calibrationVolumeUndo by lazy { FileVolumeUndo(this) }
 
     /** This device's OS media-volume boost, the knob with real headroom when a client is too quiet
      *  to attribute (the snapclient SW gain is already 100% by default). Leased: the calibrating
@@ -264,6 +267,7 @@ class PlaybackService : Service() {
             },
             journal = calibrationJournal,
             history = calibrationHistory,
+            volumeUndo = calibrationVolumeUndo,
             // The OS-volume knob for targets whose SW gain is already maxed: broadcast a lease the
             // addressed client applies to its own device volume (and restores itself if we die).
             publishOsBoost = { targets, leaseMs -> publishCalBoost(targets, leaseMs) },
@@ -323,20 +327,334 @@ class PlaybackService : Service() {
             try {
                 delay(16_000L) // prime the ring past one full capture before measuring
                 val cap = mic.record(12_000) ?: run { Log.w("SyncCalibrator", "micz: capture failed"); return@launch }
+                val snap = ring.snapshot()
                 val peaks = tech.capullo.audio.calibration.DelayMeasurement
-                    .estimateSpeakerDelays(ring.snapshot(), cap, 16)
-                var sumSq = 0.0
-                for (s in cap.pcm) sumSq += s.toDouble() * s
-                val dbfs = 20.0 * kotlin.math.log10(kotlin.math.sqrt(sumSq / cap.pcm.size) + 1e-12)
+                    .estimateSpeakerDelays(snap, cap, 16)
+                fun rmsDb(x: FloatArray): Double {
+                    var s = 0.0
+                    for (v in x) s += v.toDouble() * v
+                    return 20.0 * kotlin.math.log10(kotlin.math.sqrt(s / x.size.coerceAtLeast(1)) + 1e-12)
+                }
+                // The REFERENCE level as well as the mic's. A volume sweep compares captures taken
+                // minutes apart, and the program material moves the mic RMS by more than the gain
+                // step does — a quiet passage is indistinguishable from an attenuated speaker.
+                // mic−ref divides the program out, and it is the only one of the three figures that
+                // can legitimately be compared across captures.
+                val micDb = rmsDb(cap.pcm)
+                val refDb = rmsDb(snap.pcm)
                 Log.i(
                     "SyncCalibrator",
-                    "micz: level=%.1f dBFS  peaks=".format(dbfs) +
+                    "micz: mic=%.1f ref=%.1f mic-ref=%.1f dBFS  peaks=".format(micDb, refDb, micDb - refDb) +
                         peaks.joinToString { "%.1fms(z=%.1f)".format(it.lagMs, it.z) },
                 )
             } finally {
                 calibrationTap = null
                 sink.pcmTap = null
                 audioFocus.suppressLosses = false
+            }
+        }
+    }
+
+    /**
+     * Debug rig tool: dump one capture's PCM to disk so estimator questions stop costing rig time.
+     *
+     * Writes the two DECIMATED arrays the correlation actually consumes — `refD` (broadcast
+     * reference) and `micD` (microphone) — as raw little-endian float32, plus a sidecar text file
+     * with the sample rate and the `pre` offset needed to turn a correlation index into a delay.
+     *
+     * Decimated and windowed rather than raw, deliberately. The alternative is dumping the full
+     * 30 s ring and re-implementing `DelayMeasurement`'s alignment offline, which risks answering a
+     * subtly different question than the one the calibrator asks — precisely the failure mode this
+     * whole effort has been unwinding. These are the exact arrays the estimator sees.
+     *
+     * The question it exists to answer first: the deconvolution assumes the room is LINEAR and
+     * TIME-INVARIANT across the full 12 s capture, and nothing has ever checked that. Deconvolve four
+     * 3 s sub-blocks separately and see whether the arrival's lag or amplitude moves. Plain
+     * correlation degrades gracefully when time-invariance breaks; deconvolution does not, and the
+     * OnePlus sink is already known to wander 25-40 ms BETWEEN captures.
+     *
+     * [probe] optionally offsets one client's latency first, so the dump can capture the SEPARATED
+     * geometry the balance actually harvests from rather than the overlapped baseline.
+     */
+    fun dumpCapturePcm(targetName: String?, probe: Boolean) {
+        if (calibrationJob?.isActive == true) return
+        val sink = fifoSink ?: run { Log.w(TAG_CAL, "pcmdump: broadcast engine not running"); return }
+        val control = snapcastControl
+        val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
+        val localId = snapclientProcess?.storedHostId.orEmpty()
+        val target = connected.firstOrNull { targetName != null && it.config.name == targetName }
+            ?: connected.firstOrNull { localId.isEmpty() || !it.id.contains(localId) }
+        calibrationJob = scope.launch {
+            val ring = tech.capullo.audio.calibration.ReferencePcmRing()
+            val mic = tech.capullo.audio.calibration.MicCapture(this@PlaybackService)
+            val baseLatency = target?.config?.latency ?: 0
+            val probing = probe && target != null && control != null
+            audioFocus.suppressLosses = true
+            calibrationTap = ring
+            sink.pcmTap = ring
+            try {
+                delay(16_000L) // prime the ring past one full capture
+                if (probing) {
+                    // Journalled for the same reason levelsweep journals: SetLatency is
+                    // server-persisted, so a process kill here would strand the client de-synced.
+                    if (!calibrationJournal.save(
+                            mapOf(
+                                target!!.id to tech.capullo.audio.calibration.ClientSnapshot(
+                                    baseLatency, target.config.volume.percent, target.config.volume.muted,
+                                ),
+                            ),
+                        )
+                    ) {
+                        Log.w(TAG_CAL, "pcmdump: could not journal — dumping unprobed to stay recoverable")
+                    } else {
+                        control!!.sendSetLatency(target.id, baseLatency - SWEEP_PROBE_MS)
+                        delay(7_000L)
+                    }
+                }
+                val cap = mic.record(12_000)
+                    ?: run { Log.w(TAG_CAL, "pcmdump: capture failed"); return@launch }
+                val snap = ring.snapshot()
+                val p = tech.capullo.audio.calibration.DelayMeasurement.prepare(snap, cap)
+                    ?: run { Log.w(TAG_CAL, "pcmdump: ring did not cover the capture"); return@launch }
+
+                val dir = getExternalFilesDir(null)
+                    ?: run { Log.w(TAG_CAL, "pcmdump: no external files dir"); return@launch }
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                    .format(java.util.Date())
+                fun writeFloats(name: String, data: FloatArray): java.io.File {
+                    val f = java.io.File(dir, name)
+                    val bb = java.nio.ByteBuffer.allocate(data.size * 4)
+                        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                    for (v in data) bb.putFloat(v)
+                    f.writeBytes(bb.array())
+                    return f
+                }
+                val refF = writeFloats("pcm-$stamp-ref.f32", p.refD)
+                val micF = writeFloats("pcm-$stamp-mic.f32", p.micD)
+                val meta = java.io.File(dir, "pcm-$stamp-meta.txt")
+                meta.writeText(
+                    buildString {
+                        appendLine("fs=${p.fs}")
+                        appendLine("pre=${p.pre}")
+                        appendLine("refSamples=${p.refD.size}")
+                        appendLine("micSamples=${p.micD.size}")
+                        appendLine("format=float32-le-mono")
+                        // delay(ms) of correlation index j = (j - pre) * 1000 / fs
+                        appendLine("lagFormula=(index-pre)*1000/fs")
+                        appendLine("probed=$probing")
+                        appendLine("probeMs=${if (probing) SWEEP_PROBE_MS else 0}")
+                        appendLine("probeTarget=${if (probing) target?.config?.name else ""}")
+                        appendLine(
+                            "gains=" + connected.joinToString(",") {
+                                "${it.config.name}=${it.config.volume.percent}${if (it.config.volume.muted) ":MUTED" else ""}"
+                            },
+                        )
+                        appendLine("track=${_state.value.icyTitle.ifEmpty { _state.value.snapcastTrackName }}")
+                    },
+                )
+                Log.i(
+                    TAG_CAL,
+                    "pcmdump: wrote ${refF.name} (${refF.length()}B) ${micF.name} (${micF.length()}B) " +
+                        "${meta.name} in ${dir.absolutePath}",
+                )
+            } finally {
+                if (probing && control != null && target != null) {
+                    withContext(NonCancellable) {
+                        control.sendSetLatency(target.id, baseLatency)
+                        control.sendGetStatus()
+                        calibrationJournal.clear()
+                    }
+                }
+                calibrationTap = null
+                sink.pcmTap = null
+                audioFocus.suppressLosses = false
+            }
+        }
+    }
+
+    /** True when the last run balanced volumes and they can still be put back. */
+    fun canUndoBalancedVolumes(): Boolean = calibrationVolumeUndo.load() != null
+
+    /**
+     * Put the pre-balance volumes back. Cheap to offer and cheap to get wrong, which is the point:
+     * the balance writes server-persisted volumes off an estimator that is bounded rather than proven,
+     * so the cost of a bad correction has to be one action rather than re-levelling the room by hand.
+     */
+    fun undoBalancedVolumes() {
+        val control = snapcastControl ?: run { Log.w(TAG_CAL, "undo: no server control"); return }
+        scope.launch {
+            val restored = tech.capullo.audio.calibration.SyncCalibrator(
+                tapArm = {},
+                control = control,
+                volumeUndo = calibrationVolumeUndo,
+            ).undoBalance()
+            if (restored.isEmpty()) {
+                Log.i(TAG_CAL, "undo: nothing to undo")
+            } else {
+                control.sendGetStatus() // refresh the volumes shown in the UI
+                Log.i(TAG_CAL, "undo: restored ${restored.size} client(s)")
+            }
+        }
+    }
+
+    /**
+     * Debug rig tool: the GO/NO-GO measurement for the mic-referenced volume balance.
+     *
+     * Answers one question and nothing else — **does the reported level ratio track a commanded gain
+     * change?** Every rig number so far was taken at EQUAL gains, where an asymmetric reading is the
+     * CORRECT answer (the mic sits beside one speaker and across the room from the other), so there
+     * has never been any sensitivity data at all and "not achievable" was never supportable. Run this
+     * at 0/−6/−12 dB on one client: if the ratio moves by the commanded amount within 3 dB the
+     * estimator works and the remaining problem is labelling; if it does not, the feature dies here
+     * with evidence behind it.
+     *
+     * Three deliberate design choices, each avoiding a way the previous attempts fooled themselves:
+     *
+     *  - **It DUMPS, it does not DECIDE.** Every peak of both captures is logged with its lag, its z
+     *    and its un-whitened level. Nothing goes through [tech.capullo.audio.calibration.PeakAttribution],
+     *    because attribution is the prime suspect — routing the diagnostic through the component under
+     *    suspicion is exactly the mistake that let three fixes be declared on evidence that could not
+     *    see the next defect down. Labelling happens offline, by hand, against the sweep itself: the
+     *    arrival whose level tracks the command IS the client whose gain was changed.
+     *  - **It probes.** The level estimator needs ~30 ms of arrival separation, and in a baseline
+     *    capture two speakers can sit a millisecond apart. One client's latency is offset by
+     *    [SWEEP_PROBE_MS] to force the separation, then restored in a finally.
+     *  - **It writes no volumes.** The experimenter sets the gains; the tool never moves them. That
+     *    keeps the commanded value the ground truth instead of something the run also edits.
+     */
+    fun measureLevelSweep(targetName: String?) {
+        if (calibrationJob?.isActive == true) return
+        val sink = fifoSink ?: run { Log.w(TAG_CAL, "levelsweep: broadcast engine not running"); return }
+        val control = snapcastControl ?: run { Log.w(TAG_CAL, "levelsweep: no server control"); return }
+        val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
+        // Probe the REMOTE client by default: the reference is this device's own snapclient, sitting
+        // beside the mic, and it is the one whose latency must stay put.
+        val localId = snapclientProcess?.storedHostId.orEmpty()
+        val target = connected.firstOrNull { targetName != null && it.config.name == targetName }
+            ?: connected.firstOrNull { localId.isEmpty() || !it.id.contains(localId) }
+            ?: run { Log.w(TAG_CAL, "levelsweep: no target client"); return }
+        if (connected.size < 2) {
+            Log.w(TAG_CAL, "levelsweep: need 2 connected clients, got ${connected.size}")
+            return
+        }
+        calibrationJob = scope.launch {
+            val ring = tech.capullo.audio.calibration.ReferencePcmRing()
+            val mic = tech.capullo.audio.calibration.MicCapture(this@PlaybackService)
+            val baseLatency = target.config.latency
+            audioFocus.suppressLosses = true
+            calibrationTap = ring
+            sink.pcmTap = ring
+            // Log the commanded gains FIRST. This line is the ground truth the whole measurement is
+            // scored against, and reading it out of the run rather than trusting the operator's notes
+            // is what makes the result auditable afterwards.
+            Log.i(
+                TAG_CAL,
+                "levelsweep: gains " + connected.joinToString {
+                    "${it.config.name}=${it.config.volume.percent}%${if (it.config.volume.muted) " MUTED" else ""}"
+                } + " | probing ${target.config.name} by ${SWEEP_PROBE_MS}ms",
+            )
+            try {
+                delay(16_000L) // prime the ring past one full capture
+                // Window the level grid is dumped over, fixed from the BASELINE's strongest arrival
+                // and then reused for the probed capture so the two are directly comparable.
+                var gridStartMs = -1.0
+                suspend fun dump(tag: String) {
+                    // ORDER MATTERS AND IS NOT COSMETIC: record FIRST, snapshot the ring SECOND.
+                    // DelayMeasurement aligns the two by `ring.lastSampleNanos − mic.firstSampleNanos`,
+                    // so a ring snapshot taken BEFORE the capture is one whose newest sample predates
+                    // the mic's first — the search window then lands on audio that played before the
+                    // capture and every peak is noise. Kotlin evaluates arguments left to right, so
+                    // writing measure(ring.snapshot(), mic.record(...)) silently does exactly that.
+                    val cap = mic.record(12_000)
+                        ?: run { Log.w(TAG_CAL, "levelsweep: $tag capture failed"); return }
+                    val snap = ring.snapshot()
+                    val m = tech.capullo.audio.calibration.DelayMeasurement.measure(snap, cap, 6)
+                        ?: run { Log.w(TAG_CAL, "levelsweep: $tag ring did not cover the capture"); return }
+                    fun rmsDb(x: FloatArray): Double {
+                        var s = 0.0
+                        for (v in x) s += v.toDouble() * v
+                        return 20.0 * kotlin.math.log10(kotlin.math.sqrt(s / x.size.coerceAtLeast(1)) + 1e-12)
+                    }
+                    // BOTH RMS figures, because the mic's alone is not a level. Program material
+                    // changes the mic RMS by more than the gain step being measured does — a quiet
+                    // passage looks exactly like an attenuated speaker — so mic dBFS on its own cannot
+                    // be swept across captures minutes apart. The difference mic−ref divides the
+                    // program out and is the figure to compare between steps.
+                    val micDb = rmsDb(cap.pcm)
+                    val refDb = rmsDb(snap.pcm)
+                    Log.i(
+                        TAG_CAL,
+                        "levelsweep $tag: mic=%.1f ref=%.1f mic-ref=%.1f dBFS | ".format(
+                            micDb, refDb, micDb - refDb,
+                        ) + m.peaks.joinToString {
+                            "%.1fms(z=%.1f,lvl=%.3e)".format(it.lagMs, it.z, m.levelAt(it.lagMs))
+                        },
+                    )
+                    // A LEVEL GRID OVER A FIXED WINDOW, and this is the part that makes the sweep
+                    // work at all. Reading levels only at the PHAT peak lags above would silently
+                    // restrict the measurement to whatever was loud enough to make the top-N peak
+                    // list — and the quiet speaker, the one whose level is most in question, is
+                    // exactly what drops out of that list. Its level would then simply be absent from
+                    // the very experiment meant to measure it.
+                    //
+                    // The window is anchored to the baseline's strongest arrival and reused
+                    // unchanged for the probed capture, so a level at a given grid offset means the
+                    // same thing in both. It spans the probe offset plus margin on each side, which
+                    // covers both arrivals wherever the probe moved them and the OnePlus sink's
+                    // 25-40ms wander.
+                    if (gridStartMs < 0) {
+                        gridStartMs = ((m.peaks.firstOrNull()?.lagMs ?: 1250.0) - GRID_MARGIN_MS)
+                            .coerceAtLeast(0.0)
+                    }
+                    val steps = ((SWEEP_PROBE_MS + 2 * GRID_MARGIN_MS) / GRID_STEP_MS).toInt()
+                    val sb = StringBuilder(
+                        "levelsweep $tag grid: start=%.1fms step=%.1fms n=$steps |".format(
+                            gridStartMs, GRID_STEP_MS,
+                        ),
+                    )
+                    for (i in 0 until steps) {
+                        sb.append(" %.2e".format(m.levelAt(gridStartMs + i * GRID_STEP_MS)))
+                    }
+                    Log.i(TAG_CAL, sb.toString())
+                }
+                // Baseline first: it is what identifies which arrival MOVED, and its own peak list is
+                // the cross-check that the probed capture's extra arrival is the probe and not a
+                // music self-similarity ghost.
+                dump("baseline")
+                // JOURNAL BEFORE THE WRITE. SetLatency is server-persisted, so if ColorOS kills the
+                // app during the probe window (it does exactly this when our own mic opens) the
+                // client is stranded at latency−180ms permanently, with no record of the original.
+                // The finally below cannot run in that case; the journal is what makes it recoverable
+                // on the next start. A diagnostic that can leave the room audibly de-synced forever
+                // is not non-mutating in any useful sense.
+                if (!calibrationJournal.save(
+                        mapOf(
+                            target.id to tech.capullo.audio.calibration.ClientSnapshot(
+                                latencyMs = baseLatency,
+                                volumePercent = target.config.volume.percent,
+                                volumeMuted = target.config.volume.muted,
+                            ),
+                        ),
+                    )
+                ) {
+                    Log.w(TAG_CAL, "levelsweep: could not journal — skipping the probe to stay recoverable")
+                    return@launch
+                }
+                control.sendSetLatency(target.id, baseLatency - SWEEP_PROBE_MS)
+                delay(7_000L) // settle: the sink has to actually take the new latency
+                dump("probed")
+            } finally {
+                // Restore unconditionally, with a read-back attempt: a stranded probe offset is an
+                // audible de-sync that outlives the diagnostic.
+                withContext(NonCancellable) {
+                    control.sendSetLatency(target.id, baseLatency)
+                    control.sendGetStatus()
+                    calibrationJournal.clear()
+                }
+                calibrationTap = null
+                sink.pcmTap = null
+                audioFocus.suppressLosses = false
+                Log.i(TAG_CAL, "levelsweep: done, ${target.config.name} latency restored to ${baseLatency}ms")
             }
         }
     }
@@ -486,6 +804,33 @@ class PlaybackService : Service() {
         private const val CHANNEL_ID = "quantumcast_playback"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "QCPlaybackService"
+
+        /** Calibration logs go under the LIBRARY's tag, not this service's, so one
+         *  `logcat -s SyncCalibrator` shows a run and its diagnostics together. */
+        private const val TAG_CAL = "SyncCalibrator"
+
+        /** Arrival separation forced by the level sweep. The level estimator needs about 30 ms to be
+         *  accurate (a true 0.25 ratio reads 0.42 at 10 ms, 0.26 from 30 ms), and in a baseline
+         *  capture two speakers can sit a millisecond apart. 180 ms is the calibrator's own second
+         *  probe offset, comfortably past the requirement and past the OnePlus sink's 25-40 ms
+         *  between-capture wander, while staying well inside the search span. */
+        private const val SWEEP_PROBE_MS = 180
+
+        /** Level-grid resolution. Matches [tech.capullo.audio.calibration.Dsp.levelAt]'s own ±3 ms
+         *  read window, so consecutive grid points overlap slightly and an arrival cannot fall between
+         *  two of them. */
+        private const val GRID_STEP_MS = 5.0
+
+        /** Margin the level grid extends on each side of the probe span.
+         *
+         *  220 ms, sized from the rig rather than guessed. The two natural arrivals sit about 130 ms
+         *  apart (HK Neo ~1200 ms, Guer ~1330 ms), so the probe has to push the LATER one further out
+         *  to separate them — probing the earlier one just slides it onto the other. That puts the
+         *  probed arrival near 1510 ms while the grid is anchored 120 ms before the baseline's
+         *  strongest peak at ~1200 ms, and at the old 120 ms margin the window ended at 1500 ms with
+         *  the probed arrival just outside it. The measurement would have missed the very speaker it
+         *  moved. */
+        private const val GRID_MARGIN_MS = 220.0
 
         /** How often a boosted client re-checks its lease. Short relative to the lease so the
          *  volume comes back promptly when a calibrating server stops renewing. */

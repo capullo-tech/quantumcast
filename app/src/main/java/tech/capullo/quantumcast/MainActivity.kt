@@ -107,6 +107,21 @@ class MainActivity : ComponentActivity() {
             // Non-mutating single measurement; logs peak z + level (dBFS) for a volume sweep.
             // am start ... --es dbg micz
             "micz" -> vm.measureOnce()
+            // GO/NO-GO sensitivity sweep for the volume balance. Probes one client 180ms apart and
+            // dumps every arrival's lag/z/level; writes no volumes, so the commanded gain stays the
+            // ground truth. Optional --es target <client name> picks which client is probed.
+            // am start ... --es dbg levelsweep
+            "levelsweep" -> vm.measureLevelSweep(intent.getStringExtra("target"))
+            // Revert the volumes the last balance wrote. am start ... --es dbg undobalance
+            "undobalance" -> vm.undoBalancedVolumes()
+            // Dump one capture's decimated ref+mic PCM (float32-le) + metadata to
+            // /sdcard/Android/data/<pkg>/files/, so estimator questions can be answered offline
+            // instead of costing a rig session. --ez probe true separates the arrivals first.
+            // am start ... --es dbg pcmdump [--ez probe true] [--es target <client name>]
+            "pcmdump" -> vm.dumpCapturePcm(
+                intent.getStringExtra("target"),
+                intent.getBooleanExtra("probe", true),
+            )
             // Fix the snapserver base port (--ei port N; omit or -1 to auto-pick, 0 to disable).
             // Applies on the next broadcast start. am start ... --es dbg fixport --ei port 34000
             "fixport" -> vm.setSnapserverFixedPort(intent.getIntExtra("port", -1))
