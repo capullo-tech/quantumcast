@@ -640,8 +640,21 @@ class PlaybackService : Service() {
                     Log.w(TAG_CAL, "levelsweep: could not journal — skipping the probe to stay recoverable")
                     return@launch
                 }
-                control.sendSetLatency(target.id, baseLatency - SWEEP_PROBE_MS)
-                delay(7_000L) // settle: the sink has to actually take the new latency
+                val want = baseLatency - SWEEP_PROBE_MS
+                control.sendSetLatency(target.id, want)
+                control.sendGetStatus()
+                delay(7_000L) // settle: the sink has to take the latency, and the status reply to land
+                // READ THE PROBE BACK. At 380 ms this asks for a large negative latency (-479 ms on a
+                // client already at -99), and a snapclient that clamped it would hand back a capture
+                // whose arrivals never separated — which looks exactly like a measurement failure
+                // unless the value that actually landed is logged beside the one requested.
+                val got = _state.value.snapcastGroups.flatMap { it.clients }
+                    .firstOrNull { it.id == target.id }?.config?.latency
+                if (got != want) {
+                    Log.w(TAG_CAL, "levelsweep: probe requested ${want}ms but read back ${got}ms — CLAMPED")
+                } else {
+                    Log.i(TAG_CAL, "levelsweep: probe ${want}ms confirmed")
+                }
                 dump("probed")
             } finally {
                 // Restore unconditionally, with a read-back attempt: a stranded probe offset is an
@@ -809,12 +822,30 @@ class PlaybackService : Service() {
          *  `logcat -s SyncCalibrator` shows a run and its diagnostics together. */
         private const val TAG_CAL = "SyncCalibrator"
 
-        /** Arrival separation forced by the level sweep. The level estimator needs about 30 ms to be
-         *  accurate (a true 0.25 ratio reads 0.42 at 10 ms, 0.26 from 30 ms), and in a baseline
-         *  capture two speakers can sit a millisecond apart. 180 ms is the calibrator's own second
-         *  probe offset, comfortably past the requirement and past the OnePlus sink's 25-40 ms
-         *  between-capture wander, while staying well inside the search span. */
-        private const val SWEEP_PROBE_MS = 180
+        /** Arrival separation forced by the level sweep.
+         *
+         *  The level estimator needs about 30 ms to be accurate (a true 0.25 ratio reads 0.42 at
+         *  10 ms, 0.26 from 30 ms), and in a baseline capture two speakers can sit a millisecond
+         *  apart. That requirement is what set the old value of 180 ms, and it is not the binding
+         *  constraint.
+         *
+         *  THE BINDING CONSTRAINT IS THE LOUDER SPEAKER'S REVERBERANT TAIL. Separation in time does
+         *  not separate a quiet speaker's direct sound from a loud speaker's tail arriving at the
+         *  same lag. Measured on this rig at 180 ms of probe (250-290 ms of arrival separation), the
+         *  tail is 60-75% of the quiet arrival's own peak — only 2.5-4.4 dB below it — so the level
+         *  read there is mostly the other speaker, and the two-speaker sweeps did not track a
+         *  commanded gain at all (FINDINGS 15-19).
+         *
+         *  The tail decays 5.4 dB per 100 ms, measured by fitting the region between the arrivals
+         *  across 11 captures (9 of 11 in 4.0-6.7). 380 ms buys 10.9 dB over the old value and should
+         *  put the quiet arrival 13-15 dB above the tail instead of 2.5-4.4.
+         *
+         *  Costs to keep in view. The grid widens with it automatically ([GRID_MARGIN_MS] on each
+         *  side of the probe span), so nothing else needs changing. But the probe is written as
+         *  `latency - probe`, so on a client already at -99 ms this asks for -479 ms, and a
+         *  snapclient that clamps that would look like a measurement failure rather than a write
+         *  failure — the write is read back for exactly this reason. */
+        private const val SWEEP_PROBE_MS = 380
 
         /** Level-grid resolution. Matches [tech.capullo.audio.calibration.Dsp.levelAt]'s own ±3 ms
          *  read window, so consecutive grid points overlap slightly and an arrival cannot fall between
