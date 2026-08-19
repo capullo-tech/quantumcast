@@ -232,7 +232,24 @@ class PlaybackService : Service() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED
         ) return fail("microphone permission not granted")
-        if (fifoSink == null) return fail("broadcast engine not running")
+        // A REFERENCE, from whichever source this device has. The calibration correlates the mic
+        // against the exact PCM being played, and there are two ways to hold that PCM:
+        //
+        //  - BROADCASTER: fifoSink already mirrors every buffer on its way into the snapserver
+        //    FIFO, so the reference is free.
+        //  - CLIENT: no such tee exists (snapclient hands PCM straight to oboe), so a second,
+        //    silent snapclient is started with --player file: and its pipe feeds the ring.
+        //
+        // The old guard was `fifoSink == null` = "broadcast engine not running", which made this
+        // broadcaster-only. That is the wrong test: it asks WHAT THIS DEVICE IS rather than
+        // WHETHER IT CAN GET A REFERENCE, and it locks the measurement to the server phone —
+        // whose microphone is wherever that phone was left, not where anyone listens.
+        val client = _state.value
+        val useTap = fifoSink == null
+        if (useTap && client.broadcastMode != BroadcastMode.SNAPCLIENT) {
+            return fail("neither broadcasting nor connected as a client — nothing to calibrate")
+        }
+        if (useTap && client.snapclientHost.isEmpty()) return fail("snapclient host unknown")
         val control = snapcastControl ?: return fail("no server control connection")
         val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() }
             ?: return fail("local snapclient id unknown")
@@ -251,10 +268,31 @@ class PlaybackService : Service() {
                 muted = it.config.volume.muted,
             )
         }
+        // The tap process, created only when this device has no FIFO of its own. Started and
+        // stopped by tapArm below, so its lifetime is exactly the calibrator's armed window and a
+        // run that aborts anywhere still takes it down (tapArm(null) runs in the calibrator's
+        // finally).
+        val refTap = if (useTap) {
+            tech.capullo.audio.snapcast.ReferenceTapProcess(this)
+        } else {
+            null
+        }
+        var refTapJob: kotlinx.coroutines.Job? = null
         val calibrator = tech.capullo.audio.calibration.SyncCalibrator(
             tapArm = { ring ->
                 calibrationTap = ring
                 fifoSink?.pcmTap = ring
+                if (refTap != null) {
+                    refTapJob?.cancel()
+                    refTapJob = if (ring != null) {
+                        scope.launch {
+                            refTap.start(client.snapclientHost, client.snapclientPort, ring)
+                        }
+                    } else {
+                        refTap.stop()
+                        null
+                    }
+                }
             },
             mic = tech.capullo.audio.calibration.MicCapture(this),
             control = control,
@@ -300,6 +338,11 @@ class PlaybackService : Service() {
             } finally {
                 audioFocus.suppressLosses = false
                 calibrationTap = null
+                // Belt and braces: tapArm(null) already stopped it, but a crash between arming and
+                // the calibrator's own finally would otherwise leave a phantom client connected to
+                // the server for the lifetime of the process.
+                refTapJob?.cancel()
+                refTap?.stop()
                 mirror.cancel()
                 trackLog.cancel()
             }
@@ -315,15 +358,58 @@ class PlaybackService : Service() {
      * a quiet speaker move its z across the z=9 attribution floor) and the leveling question
      * (does level-at-mic respond predictably to SetVolume).
      */
+
+    /**
+     * Arm a reference PCM source for [ring] and return the disarm action, or null when this device
+     * has no way to obtain one.
+     *
+     * The two sources are the two roles: a BROADCASTER mirrors the buffers already going into the
+     * snapserver FIFO, a CLIENT starts a silent second snapclient (`--player file:`) because its
+     * own snapclient hands PCM straight to oboe with nothing to tap. Both end up feeding the same
+     * ring, which is why every caller can be indifferent to which one it got.
+     *
+     * Extracted because the three diagnostics (micz, pcmdump, levelsweep) each opened with
+     * `fifoSink ?: return`, which is the question "am I the broadcaster?" wearing the clothes of
+     * "can I measure?". They kept answering no on a client long after the calibration itself had
+     * stopped caring, so a client could run the feature but not the tools used to debug it.
+     */
+    private fun armReference(
+        ring: tech.capullo.audio.calibration.ReferencePcmRing,
+        tag: String,
+    ): (() -> Unit)? {
+        fifoSink?.let { sink ->
+            calibrationTap = ring
+            sink.pcmTap = ring
+            return {
+                sink.pcmTap = null
+                calibrationTap = null
+            }
+        }
+        val st = _state.value
+        if (st.broadcastMode != BroadcastMode.SNAPCLIENT || st.snapclientHost.isEmpty()) {
+            Log.w(
+                "SyncCalibrator",
+                "$tag: no reference source — neither broadcasting nor connected as a client",
+            )
+            return null
+        }
+        val tap = tech.capullo.audio.snapcast.ReferenceTapProcess(this)
+        val job = scope.launch { tap.start(st.snapclientHost, st.snapclientPort, ring) }
+        calibrationTap = ring
+        return {
+            job.cancel()
+            tap.stop()
+            calibrationTap = null
+        }
+    }
+
     fun measureOnce() {
         if (calibrationJob?.isActive == true) return
-        val sink = fifoSink ?: run { Log.w("SyncCalibrator", "micz: broadcast engine not running"); return }
         calibrationJob = scope.launch {
             val ring = tech.capullo.audio.calibration.ReferencePcmRing()
             val mic = tech.capullo.audio.calibration.MicCapture(this@PlaybackService)
+            val disarm = armReference(ring, "micz") ?: return@launch
             audioFocus.suppressLosses = true
-            calibrationTap = ring
-            sink.pcmTap = ring
             try {
                 delay(16_000L) // prime the ring past one full capture before measuring
                 val cap = mic.record(12_000) ?: run { Log.w("SyncCalibrator", "micz: capture failed"); return@launch }
@@ -348,8 +434,7 @@ class PlaybackService : Service() {
                         peaks.joinToString { "%.1fms(z=%.1f)".format(it.lagMs, it.z) },
                 )
             } finally {
-                calibrationTap = null
-                sink.pcmTap = null
+                disarm()
                 audioFocus.suppressLosses = false
             }
         }
@@ -378,7 +463,6 @@ class PlaybackService : Service() {
      */
     fun dumpCapturePcm(targetName: String?, probe: Boolean) {
         if (calibrationJob?.isActive == true) return
-        val sink = fifoSink ?: run { Log.w(TAG_CAL, "pcmdump: broadcast engine not running"); return }
         val control = snapcastControl
         val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
         val localId = snapclientProcess?.storedHostId.orEmpty()
@@ -389,9 +473,8 @@ class PlaybackService : Service() {
             val mic = tech.capullo.audio.calibration.MicCapture(this@PlaybackService)
             val baseLatency = target?.config?.latency ?: 0
             val probing = probe && target != null && control != null
+            val disarm = armReference(ring, "pcmdump") ?: return@launch
             audioFocus.suppressLosses = true
-            calibrationTap = ring
-            sink.pcmTap = ring
             try {
                 delay(16_000L) // prime the ring past one full capture
                 if (probing) {
@@ -465,8 +548,7 @@ class PlaybackService : Service() {
                         calibrationJournal.clear()
                     }
                 }
-                calibrationTap = null
-                sink.pcmTap = null
+                disarm()
                 audioFocus.suppressLosses = false
             }
         }
@@ -524,7 +606,6 @@ class PlaybackService : Service() {
      */
     fun measureLevelSweep(targetName: String?) {
         if (calibrationJob?.isActive == true) return
-        val sink = fifoSink ?: run { Log.w(TAG_CAL, "levelsweep: broadcast engine not running"); return }
         val control = snapcastControl ?: run { Log.w(TAG_CAL, "levelsweep: no server control"); return }
         val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
         // Probe the REMOTE client by default: the reference is this device's own snapclient, sitting
@@ -541,9 +622,8 @@ class PlaybackService : Service() {
             val ring = tech.capullo.audio.calibration.ReferencePcmRing()
             val mic = tech.capullo.audio.calibration.MicCapture(this@PlaybackService)
             val baseLatency = target.config.latency
+            val disarm = armReference(ring, "levelsweep") ?: return@launch
             audioFocus.suppressLosses = true
-            calibrationTap = ring
-            sink.pcmTap = ring
             // Log the commanded gains FIRST. This line is the ground truth the whole measurement is
             // scored against, and reading it out of the run rather than trusting the operator's notes
             // is what makes the result auditable afterwards.
@@ -664,8 +744,7 @@ class PlaybackService : Service() {
                     control.sendGetStatus()
                     calibrationJournal.clear()
                 }
-                calibrationTap = null
-                sink.pcmTap = null
+                disarm()
                 audioFocus.suppressLosses = false
                 Log.i(TAG_CAL, "levelsweep: done, ${target.config.name} latency restored to ${baseLatency}ms")
             }
