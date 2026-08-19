@@ -181,12 +181,59 @@ class PlaybackService : Service() {
     @Volatile private var snapserverFixedPort: Int = 0
 
     // --- Acoustic sync calibration (mic vs broadcast-PCM cross-correlation) ---
-    private val _calibrationState =
-        MutableStateFlow<tech.capullo.audio.calibration.SyncCalibrator.State>(
-            tech.capullo.audio.calibration.SyncCalibrator.State.Idle,
+    /**
+     * The calibration, assembled once instead of at every call site.
+     *
+     * Everything here that looks app-specific is app-specific: where the journal files live, how a
+     * boost lease is published, and which clients this service currently sees. The rest — building
+     * the calibrator, ordering the client list, focus suppression, state mirroring, undo, crash
+     * recovery — is identical in every app on the platform and lives in the library.
+     */
+    private val calHost by lazy {
+        tech.capullo.audio.calibration.CalibrationHost(
+            context = this,
+            control = { snapcastControl },
+            connectedClients = {
+                _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }.map {
+                    tech.capullo.audio.calibration.SyncCalibrator.CalClient(
+                        id = it.id,
+                        name = it.config.name,
+                        latencyMs = it.config.latency,
+                        volumePercent = it.config.volume.percent,
+                        muted = it.config.volume.muted,
+                    )
+                }
+            },
+            // ALL clients, connected or not — see the parameter's own note. Matches what this
+            // service passed before the extraction.
+            clientLatencies = {
+                _state.value.snapcastGroups.flatMap { it.clients }
+                    .associate { it.id to it.config.latency }
+            },
+            localClientId = { snapclientProcess?.storedHostId.orEmpty() },
+            reference = { ring -> armReference(ring, "calibrate") },
+            publishOsBoost = { targets, leaseMs -> publishCalBoost(targets, leaseMs) },
+            // ColorOS signals a focus loss when this app's own recorder opens, which would stop the
+            // local snapclient — the reference speaker — mid measurement.
+            suppressAudioFocusLosses = { audioFocus.suppressLosses = it },
+            nowPlaying = {
+                val st = _state.value
+                "${st.stationName} | ${st.icyTitle.ifEmpty { st.snapcastTrackName }}"
+            },
+            refreshStatus = { snapcastControl?.sendGetStatus() },
+            journal = calibrationJournal,
+            history = calibrationHistory,
+            volumeUndo = calibrationVolumeUndo,
         )
-    val calibrationState: StateFlow<tech.capullo.audio.calibration.SyncCalibrator.State> =
-        _calibrationState.asStateFlow()
+    }
+
+    /** The running calibration, straight from the host. Refusals decided here are published on the
+     *  same flow via [CalibrationHost.refuse], so the UI has one source of truth. */
+    val calibrationState: StateFlow<tech.capullo.audio.calibration.SyncCalibrator.State>
+        get() = calHost.state
+
+    /** Mutex for the DIAGNOSTICS (micz, pcmdump, levelsweep). The calibration keeps its own job
+     *  inside the host; [calibrationBusy] checks both. */
     private var calibrationJob: Job? = null
 
     // Armed ring for the running calibration. Held here (not by the calibrator) so an
@@ -215,122 +262,36 @@ class PlaybackService : Service() {
 
     /** Requires RECORD_AUDIO already granted (Settings UI requests it before calling). */
     fun startSyncCalibration() {
-        if (calibrationJob?.isActive == true) {
-            // Worth logging: an already-running (or wedged) job makes every later trigger a silent
-            // no-op, which looks identical to "nothing happened" from outside.
+        // BUSY covers the diagnostics too. micz, pcmdump and levelsweep share calibrationJob as a
+        // mutex, and the host keeps its own job, so checking only one of the two would let a
+        // diagnostic and a calibration record the room at the same time — two recorders, one of
+        // them writing latencies underneath the other.
+        if (calibrationBusy()) {
             Log.w("SyncCalibrator", "calibrate ignored: a run is already in progress")
             return
         }
-        fun fail(reason: String) {
-            // Log as well as surfacing to the UI. These guards fire BEFORE the calibrator exists, so
-            // a silent return here produces a run with no log output at all - indistinguishable from
-            // a lost intent, and it cost real debugging time on the rig.
-            Log.w("SyncCalibrator", "calibrate refused: $reason")
-            _calibrationState.value =
-                tech.capullo.audio.calibration.SyncCalibrator.State.Failed(reason)
-        }
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) return fail("microphone permission not granted")
-        // A REFERENCE, from whichever source this device has. The calibration correlates the mic
-        // against the exact PCM being played, and there are two ways to hold that PCM:
-        //
-        //  - BROADCASTER: fifoSink already mirrors every buffer on its way into the snapserver
-        //    FIFO, so the reference is free.
-        //  - CLIENT: no such tee exists (snapclient hands PCM straight to oboe), so a second,
-        //    silent snapclient is started with --player file: and its pipe feeds the ring.
-        //
-        // The old guard was `fifoSink == null` = "broadcast engine not running", which made this
-        // broadcaster-only. That is the wrong test: it asks WHAT THIS DEVICE IS rather than
-        // WHETHER IT CAN GET A REFERENCE, and it locks the measurement to the server phone —
-        // whose microphone is wherever that phone was left, not where anyone listens.
-        val client = _state.value
-        val useTap = fifoSink == null
-        if (useTap && client.broadcastMode != BroadcastMode.SNAPCLIENT) {
-            return fail("neither broadcasting nor connected as a client — nothing to calibrate")
+        ) {
+            return calHost.refuse("microphone permission not granted")
         }
-        if (useTap && client.snapclientHost.isEmpty()) return fail("snapclient host unknown")
-        val control = snapcastControl ?: return fail("no server control connection")
-        val localId = snapclientProcess?.storedHostId?.takeIf { it.isNotEmpty() }
-            ?: return fail("local snapclient id unknown")
-        val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
-        // Reference = this device's own snapclient: its sink is co-located with the mic.
-        val self = connected.firstOrNull { it.id == localId || it.id.contains(localId) }
-            ?: return fail("local snapclient not connected")
-        val ordered = listOf(self) + connected.filter { it.id != self.id }
-        if (ordered.size < 2) return fail("need a second connected client to calibrate against")
-        val calClients = ordered.map {
-            tech.capullo.audio.calibration.SyncCalibrator.CalClient(
-                id = it.id,
-                name = it.config.name,
-                latencyMs = it.config.latency,
-                volumePercent = it.config.volume.percent,
-                muted = it.config.volume.muted,
-            )
-        }
-        // One arm/disarm path for the whole service. The diagnostics already go through
-        // [armReference]; the calibration used to carry its own copy of the same decision, and two
-        // copies of "where does my reference come from" would drift the moment either changed.
-        var disarmRef: (() -> Unit)? = null
-        val calibrator = tech.capullo.audio.calibration.SyncCalibrator(
-            tapArm = { ring ->
-                disarmRef?.invoke()
-                disarmRef = if (ring != null) armReference(ring, "calibrate") else null
-            },
-            mic = tech.capullo.audio.calibration.MicCapture(this),
-            control = control,
-            // Read-back source: the live status this service keeps updated from
-            // ServerGetStatusResponse. The calibrator calls sendGetStatus() then reads
-            // this to confirm each latency write actually landed.
-            readLatencies = {
-                _state.value.snapcastGroups.flatMap { it.clients }
-                    .associate { it.id to it.config.latency }
-            },
-            journal = calibrationJournal,
-            history = calibrationHistory,
-            volumeUndo = calibrationVolumeUndo,
-            // The OS-volume knob for targets whose SW gain is already maxed: broadcast a lease the
-            // addressed client applies to its own device volume (and restores itself if we die).
-            publishOsBoost = { targets, leaseMs -> publishCalBoost(targets, leaseMs) },
-        )
-        calibrationJob = scope.launch {
-            val mirror = launch { calibrator.state.collect { _calibrationState.value = it } }
-            // Log what is PLAYING throughout the run. The correlation is a matched filter against
-            // the broadcast PCM, so program material is a real variable: loopy, sustained, tonal
-            // music self-correlates and throws sidelobe "ghosts" at fixed lags, while percussive
-            // broadband material gives one sharp peak. Without a track timeline, run-to-run spread
-            // cannot be separated into "the room" versus "the song that happened to be playing".
-            val trackLog = launch {
-                var last = ""
-                while (true) {
-                    val st = _state.value
-                    val now = "${st.stationName} | ${st.icyTitle.ifEmpty { st.snapcastTrackName }}"
-                    if (now != last) {
-                        Log.i("SyncCalibrator", "track: $now")
-                        last = now
-                    }
-                    delay(5_000)
-                }
+        // WHICH ROLE THIS DEVICE IS IN is the app's knowledge, so the check stays here even though
+        // the run itself has moved to the library. A broadcaster mirrors its FIFO buffers; a client
+        // starts a silent second snapclient; anything else has no reference PCM and cannot measure.
+        if (fifoSink == null) {
+            val st = _state.value
+            if (st.broadcastMode != BroadcastMode.SNAPCLIENT) {
+                return calHost.refuse(
+                    "neither broadcasting nor connected as a client — nothing to calibrate",
+                )
             }
-            // ColorOS signals a focus loss when this app's own recorder opens, which would
-            // stop the local snapclient (the reference speaker) mid-measurement.
-            audioFocus.suppressLosses = true
-            try {
-                calibrator.calibrate(calClients)
-                snapcastControl?.sendGetStatus() // refresh latencies shown in UI
-            } finally {
-                audioFocus.suppressLosses = false
-                calibrationTap = null
-                // Belt and braces: tapArm(null) already disarmed, but a crash between arming and
-                // the calibrator's own finally would otherwise leave a phantom client connected to
-                // the server for the lifetime of the process.
-                disarmRef?.invoke()
-                disarmRef = null
-                mirror.cancel()
-                trackLog.cancel()
-            }
+            if (st.snapclientHost.isEmpty()) return calHost.refuse("snapclient host unknown")
         }
+        calHost.start(scope)
     }
+
+    /** True while a calibration OR a diagnostic is recording. */
+    private fun calibrationBusy() = calibrationJob?.isActive == true || calHost.isRunning
 
     /**
      * Debug rig tool (non-mutating): one mic capture, correlate against the live broadcast
@@ -538,7 +499,7 @@ class PlaybackService : Service() {
     }
 
     /** True when the last run balanced volumes and they can still be put back. */
-    fun canUndoBalancedVolumes(): Boolean = calibrationVolumeUndo.load() != null
+    fun canUndoBalancedVolumes(): Boolean = calHost.canUndoBalance()
 
     /**
      * Put the pre-balance volumes back. Cheap to offer and cheap to get wrong, which is the point:
@@ -546,17 +507,12 @@ class PlaybackService : Service() {
      * so the cost of a bad correction has to be one action rather than re-levelling the room by hand.
      */
     fun undoBalancedVolumes() {
-        val control = snapcastControl ?: run { Log.w(TAG_CAL, "undo: no server control"); return }
         scope.launch {
-            val restored = tech.capullo.audio.calibration.SyncCalibrator(
-                tapArm = {},
-                control = control,
-                volumeUndo = calibrationVolumeUndo,
-            ).undoBalance()
+            val restored = calHost.undoBalance()
             if (restored.isEmpty()) {
                 Log.i(TAG_CAL, "undo: nothing to undo")
             } else {
-                control.sendGetStatus() // refresh the volumes shown in the UI
+                snapcastControl?.sendGetStatus() // refresh the volumes shown in the UI
                 Log.i(TAG_CAL, "undo: restored ${restored.size} client(s)")
             }
         }
@@ -1957,11 +1913,7 @@ class PlaybackService : Service() {
             // Undo any calibration run a process death interrupted: restore the journaled
             // pre-run latencies AND volumes before anything else touches them (a killed pair
             // round could have left an "other" client muted). No-op when clean.
-            tech.capullo.audio.calibration.SyncCalibrator.recover(
-                calibrationJournal,
-                { id, latency -> client.sendSetLatency(id, latency) },
-                { id, muted, percent -> client.sendSetVolume(id, muted, percent) },
-            )
+            calHost.recoverInterrupted()
             client.notifications.collect { notif ->
                 when (notif) {
                     is tech.capullo.audio.snapcast.ServerGetStatusResponse -> {
