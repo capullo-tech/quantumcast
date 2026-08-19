@@ -268,31 +268,14 @@ class PlaybackService : Service() {
                 muted = it.config.volume.muted,
             )
         }
-        // The tap process, created only when this device has no FIFO of its own. Started and
-        // stopped by tapArm below, so its lifetime is exactly the calibrator's armed window and a
-        // run that aborts anywhere still takes it down (tapArm(null) runs in the calibrator's
-        // finally).
-        val refTap = if (useTap) {
-            tech.capullo.audio.snapcast.ReferenceTapProcess(this)
-        } else {
-            null
-        }
-        var refTapJob: kotlinx.coroutines.Job? = null
+        // One arm/disarm path for the whole service. The diagnostics already go through
+        // [armReference]; the calibration used to carry its own copy of the same decision, and two
+        // copies of "where does my reference come from" would drift the moment either changed.
+        var disarmRef: (() -> Unit)? = null
         val calibrator = tech.capullo.audio.calibration.SyncCalibrator(
             tapArm = { ring ->
-                calibrationTap = ring
-                fifoSink?.pcmTap = ring
-                if (refTap != null) {
-                    refTapJob?.cancel()
-                    refTapJob = if (ring != null) {
-                        scope.launch {
-                            refTap.start(client.snapclientHost, client.snapclientPort, ring)
-                        }
-                    } else {
-                        refTap.stop()
-                        null
-                    }
-                }
+                disarmRef?.invoke()
+                disarmRef = if (ring != null) armReference(ring, "calibrate") else null
             },
             mic = tech.capullo.audio.calibration.MicCapture(this),
             control = control,
@@ -338,11 +321,11 @@ class PlaybackService : Service() {
             } finally {
                 audioFocus.suppressLosses = false
                 calibrationTap = null
-                // Belt and braces: tapArm(null) already stopped it, but a crash between arming and
+                // Belt and braces: tapArm(null) already disarmed, but a crash between arming and
                 // the calibrator's own finally would otherwise leave a phantom client connected to
                 // the server for the lifetime of the process.
-                refTapJob?.cancel()
-                refTap?.stop()
+                disarmRef?.invoke()
+                disarmRef = null
                 mirror.cancel()
                 trackLog.cancel()
             }
