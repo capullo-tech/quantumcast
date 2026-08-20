@@ -1022,6 +1022,7 @@ class RadioViewModel @Inject constructor(
     fun setShareService(v: tech.capullo.quantumcast.data.settings.ShareService) {
         viewModelScope.launch { settingsRepo.setShareService(v) }
     }
+
     /** Set the snapserver base port (0 = random). Applied on the next broadcast start. A
      *  negative value auto-picks a random base so "fixed" can be enabled without typing one. */
     fun setSnapserverFixedPort(base: Int) {

@@ -3,9 +3,6 @@ package tech.capullo.quantumcast.player
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Handler
-import android.os.Looper
-import android.widget.Toast
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -13,11 +10,14 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.media3.common.C
@@ -181,6 +181,7 @@ class PlaybackService : Service() {
     @Volatile private var snapserverFixedPort: Int = 0
 
     // --- Acoustic sync calibration (mic vs broadcast-PCM cross-correlation) ---
+
     /**
      * The calibration, assembled once instead of at every call site.
      *
@@ -242,8 +243,10 @@ class PlaybackService : Service() {
 
     // Crash journal for calibration: restored on control connect (undoes a killed run).
     private val calibrationJournal by lazy { FileCalibrationJournal(this) }
+
     // Append-only log of verified corrections (data for a future per-sink damping policy).
     private val calibrationHistory by lazy { FileCalibrationHistory(this) }
+
     // Pre-balance volumes, so the balance's persistent writes are one action away from reverted.
     private val calibrationVolumeUndo by lazy { FileVolumeUndo(this) }
 
@@ -356,7 +359,10 @@ class PlaybackService : Service() {
             audioFocus.suppressLosses = true
             try {
                 delay(16_000L) // prime the ring past one full capture before measuring
-                val cap = mic.record(12_000) ?: run { Log.w("SyncCalibrator", "micz: capture failed"); return@launch }
+                val cap = mic.record(12_000) ?: run {
+                    Log.w("SyncCalibrator", "micz: capture failed")
+                    return@launch
+                }
                 val snap = ring.snapshot()
                 val peaks = tech.capullo.audio.calibration.DelayMeasurement
                     .estimateSpeakerDelays(snap, cap, 16)
@@ -427,7 +433,9 @@ class PlaybackService : Service() {
                     if (!calibrationJournal.save(
                             mapOf(
                                 target!!.id to tech.capullo.audio.calibration.ClientSnapshot(
-                                    baseLatency, target.config.volume.percent, target.config.volume.muted,
+                                    baseLatency,
+                                    target.config.volume.percent,
+                                    target.config.volume.muted,
                                 ),
                             ),
                         )
@@ -439,13 +447,22 @@ class PlaybackService : Service() {
                     }
                 }
                 val cap = mic.record(12_000)
-                    ?: run { Log.w(TAG_CAL, "pcmdump: capture failed"); return@launch }
+                    ?: run {
+                        Log.w(TAG_CAL, "pcmdump: capture failed")
+                        return@launch
+                    }
                 val snap = ring.snapshot()
                 val p = tech.capullo.audio.calibration.DelayMeasurement.prepare(snap, cap)
-                    ?: run { Log.w(TAG_CAL, "pcmdump: ring did not cover the capture"); return@launch }
+                    ?: run {
+                        Log.w(TAG_CAL, "pcmdump: ring did not cover the capture")
+                        return@launch
+                    }
 
                 val dir = getExternalFilesDir(null)
-                    ?: run { Log.w(TAG_CAL, "pcmdump: no external files dir"); return@launch }
+                    ?: run {
+                        Log.w(TAG_CAL, "pcmdump: no external files dir")
+                        return@launch
+                    }
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
                     .format(java.util.Date())
                 fun writeFloats(name: String, data: FloatArray): java.io.File {
@@ -545,14 +562,20 @@ class PlaybackService : Service() {
      */
     fun measureLevelSweep(targetName: String?) {
         if (calibrationJob?.isActive == true) return
-        val control = snapcastControl ?: run { Log.w(TAG_CAL, "levelsweep: no server control"); return }
+        val control = snapcastControl ?: run {
+            Log.w(TAG_CAL, "levelsweep: no server control")
+            return
+        }
         val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
         // Probe the REMOTE client by default: the reference is this device's own snapclient, sitting
         // beside the mic, and it is the one whose latency must stay put.
         val localId = snapclientProcess?.storedHostId.orEmpty()
         val target = connected.firstOrNull { targetName != null && it.config.name == targetName }
             ?: connected.firstOrNull { localId.isEmpty() || !it.id.contains(localId) }
-            ?: run { Log.w(TAG_CAL, "levelsweep: no target client"); return }
+            ?: run {
+                Log.w(TAG_CAL, "levelsweep: no target client")
+                return
+            }
         if (connected.size < 2) {
             Log.w(TAG_CAL, "levelsweep: need 2 connected clients, got ${connected.size}")
             return
@@ -585,10 +608,16 @@ class PlaybackService : Service() {
                     // capture and every peak is noise. Kotlin evaluates arguments left to right, so
                     // writing measure(ring.snapshot(), mic.record(...)) silently does exactly that.
                     val cap = mic.record(12_000)
-                        ?: run { Log.w(TAG_CAL, "levelsweep: $tag capture failed"); return }
+                        ?: run {
+                            Log.w(TAG_CAL, "levelsweep: $tag capture failed")
+                            return
+                        }
                     val snap = ring.snapshot()
                     val m = tech.capullo.audio.calibration.DelayMeasurement.measure(snap, cap, 6)
-                        ?: run { Log.w(TAG_CAL, "levelsweep: $tag ring did not cover the capture"); return }
+                        ?: run {
+                            Log.w(TAG_CAL, "levelsweep: $tag ring did not cover the capture")
+                            return
+                        }
                     fun rmsDb(x: FloatArray): Double {
                         var s = 0.0
                         for (v in x) s += v.toDouble() * v
@@ -604,7 +633,9 @@ class PlaybackService : Service() {
                     Log.i(
                         TAG_CAL,
                         "levelsweep $tag: mic=%.1f ref=%.1f mic-ref=%.1f dBFS | ".format(
-                            micDb, refDb, micDb - refDb,
+                            micDb,
+                            refDb,
+                            micDb - refDb,
                         ) + m.peaks.joinToString {
                             "%.1fms(z=%.1f,lvl=%.3e)".format(it.lagMs, it.z, m.levelAt(it.lagMs))
                         },
@@ -628,7 +659,8 @@ class PlaybackService : Service() {
                     val steps = ((SWEEP_PROBE_MS + 2 * GRID_MARGIN_MS) / GRID_STEP_MS).toInt()
                     val sb = StringBuilder(
                         "levelsweep $tag grid: start=%.1fms step=%.1fms n=$steps |".format(
-                            gridStartMs, GRID_STEP_MS,
+                            gridStartMs,
+                            GRID_STEP_MS,
                         ),
                     )
                     for (i in 0 until steps) {

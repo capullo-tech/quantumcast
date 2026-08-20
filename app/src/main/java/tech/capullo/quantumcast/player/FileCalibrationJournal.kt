@@ -18,20 +18,18 @@ class FileCalibrationJournal(context: Context) : CalibrationJournal {
 
     private val file = File(context.filesDir, "calibration_journal")
 
-    override fun save(originals: Map<String, ClientSnapshot>): Boolean {
-        return try {
-            // writeText flushes to the OS before returning, so the bytes survive an app kill
-            // (our actual threat — ColorOS terminating the process, not power loss).
-            file.writeText(
-                originals.entries.joinToString("\n") { (id, s) ->
-                    "$id=${s.latencyMs},${s.volumePercent},${s.volumeMuted}"
-                },
-            )
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "save failed: ${e.message}")
-            false
-        }
+    override fun save(originals: Map<String, ClientSnapshot>): Boolean = try {
+        // writeText flushes to the OS before returning, so the bytes survive an app kill
+        // (our actual threat — ColorOS terminating the process, not power loss).
+        file.writeText(
+            originals.entries.joinToString("\n") { (id, s) ->
+                "$id=${s.latencyMs},${s.volumePercent},${s.volumeMuted}"
+            },
+        )
+        true
+    } catch (e: Exception) {
+        Log.e(TAG, "save failed: ${e.message}")
+        false
     }
 
     override fun load(): Map<String, ClientSnapshot>? {

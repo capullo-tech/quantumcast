@@ -239,7 +239,8 @@ private fun RadioApp(
             onResetAll = vm::resetAll,
             onCalibrateSync = {
                 val granted = androidx.core.content.ContextCompat.checkSelfPermission(
-                    activityContext, android.Manifest.permission.RECORD_AUDIO,
+                    activityContext,
+                    android.Manifest.permission.RECORD_AUDIO,
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 if (granted) vm.startSyncCalibration() else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
             },
