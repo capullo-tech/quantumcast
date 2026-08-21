@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import tech.capullo.audio.ui.BalanceControls
+import tech.capullo.audio.ui.WebPlayerToggles
 import tech.capullo.quantumcast.data.settings.AppSettings
 import tech.capullo.quantumcast.data.settings.RadioServer
 import tech.capullo.quantumcast.data.settings.ThemeMode
@@ -167,7 +169,11 @@ fun SettingsScreen(
             item { SectionHeader("Audio") }
 
             item {
-                BalanceRow(value = settings.balance, onValueChange = onSetBalance)
+                BalanceControls(
+                    value = settings.balance,
+                    onValueChange = onSetBalance,
+                    horizontalPadding = 16.dp,
+                )
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
@@ -188,20 +194,12 @@ fun SettingsScreen(
             item { SectionHeader("Web player") }
 
             item {
-                ToggleRow(
-                    label = "Autostart listening",
-                    description = "Web clients start listening automatically on page load instead of waiting for the headphones button. Browsers may still require one tap the first time. Applies on the web page's next reload.",
-                    checked = settings.webAutoplay,
-                    onToggle = onSetWebAutoplay,
-                )
-            }
-
-            item {
-                ToggleRow(
-                    label = "Debug panel",
-                    description = "Show the audio debug bar at the bottom of the web player. Applies on the web page's next reload.",
-                    checked = settings.webDebugPanel,
-                    onToggle = onSetWebDebugPanel,
+                WebPlayerToggles(
+                    autostart = settings.webAutoplay,
+                    onAutostartChange = onSetWebAutoplay,
+                    debugPanel = settings.webDebugPanel,
+                    onDebugPanelChange = onSetWebDebugPanel,
+                    horizontalPadding = 16.dp,
                 )
             }
 
@@ -447,49 +445,6 @@ private fun ServerPickerRow(current: String, onSelect: (String) -> Unit) {
                     },
                 )
             }
-        }
-    }
-}
-
-// Stereo balance slider (parity with Telecloud's Balance setting). Applied to the
-// broadcast mix in PlaybackService via a BalanceAudioProcessor in the FIFO sink chain.
-@Composable
-private fun BalanceRow(value: Float, onValueChange: (Float) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(
-            "Left/right channel volume for the broadcast mix",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("L", style = MaterialTheme.typography.labelMedium)
-            Slider(
-                value = value,
-                onValueChange = onValueChange,
-                valueRange = -1f..1f,
-                modifier = Modifier.weight(1f),
-            )
-            Text("R", style = MaterialTheme.typography.labelMedium)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                when {
-                    value < -0.01f -> "Left ${(value * -100).toInt()}%"
-                    value > 0.01f -> "Right ${(value * 100).toInt()}%"
-                    else -> "Centered"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = { onValueChange(0f) }, enabled = value != 0f) { Text("Center") }
         }
     }
 }
