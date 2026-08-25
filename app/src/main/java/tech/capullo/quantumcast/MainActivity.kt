@@ -119,11 +119,14 @@ class MainActivity : ComponentActivity() {
             // instead of costing a rig session. --ez probe true separates the arrivals first.
             // am start ... --es dbg pcmdump [--ez probe true] [--es target <client name>]
             // --ei settle <ms> overrides the post-probe settle, so SETTLE_MS can be measured
-            // from dumps instead of from 7-minute calibrations.
+            // from dumps instead of from 7-minute calibrations. --ei capture <ms> shortens the
+            // recording, which is what makes a too-short settle visible: at 12 s the contamination
+            // is ~10 % of the window and averages away.
             "pcmdump" -> vm.dumpCapturePcm(
                 intent.getStringExtra("target"),
                 intent.getBooleanExtra("probe", true),
                 intent.getIntExtra("settle", 7_000).toLong(),
+                intent.getIntExtra("capture", 12_000),
             )
             // Fix the snapserver base port (--ei port N; omit or -1 to auto-pick, 0 to disable).
             // Applies on the next broadcast start. am start ... --es dbg fixport --ei port 34000
