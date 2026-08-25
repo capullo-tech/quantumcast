@@ -240,7 +240,7 @@ class RadioViewModel @Inject constructor(
     fun measureLevelSweep(target: String?) = playbackService?.measureLevelSweep(target)
 
     /** Dump one capture's decimated reference+mic PCM to external files, for offline estimator work. */
-    fun dumpCapturePcm(target: String?, probe: Boolean) = playbackService?.dumpCapturePcm(target, probe)
+    fun dumpCapturePcm(target: String?, probe: Boolean, settleMs: Long = 7_000L) = playbackService?.dumpCapturePcm(target, probe, settleMs)
 
     /** Revert the volumes the last calibration balance overwrote. */
     fun undoBalancedVolumes() = playbackService?.undoBalancedVolumes()

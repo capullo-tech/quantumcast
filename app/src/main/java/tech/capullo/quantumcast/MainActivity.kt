@@ -118,9 +118,12 @@ class MainActivity : ComponentActivity() {
             // /sdcard/Android/data/<pkg>/files/, so estimator questions can be answered offline
             // instead of costing a rig session. --ez probe true separates the arrivals first.
             // am start ... --es dbg pcmdump [--ez probe true] [--es target <client name>]
+            // --ei settle <ms> overrides the post-probe settle, so SETTLE_MS can be measured
+            // from dumps instead of from 7-minute calibrations.
             "pcmdump" -> vm.dumpCapturePcm(
                 intent.getStringExtra("target"),
                 intent.getBooleanExtra("probe", true),
+                intent.getIntExtra("settle", 7_000).toLong(),
             )
             // Fix the snapserver base port (--ei port N; omit or -1 to auto-pick, 0 to disable).
             // Applies on the next broadcast start. am start ... --es dbg fixport --ei port 34000
