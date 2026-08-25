@@ -172,7 +172,6 @@ fun SettingsScreen(
                 BalanceControls(
                     value = settings.balance,
                     onValueChange = onSetBalance,
-                    horizontalPadding = 16.dp,
                 )
             }
 
@@ -199,7 +198,6 @@ fun SettingsScreen(
                     onAutostartChange = onSetWebAutoplay,
                     debugPanel = settings.webDebugPanel,
                     onDebugPanelChange = onSetWebDebugPanel,
-                    horizontalPadding = 16.dp,
                 )
             }
 
