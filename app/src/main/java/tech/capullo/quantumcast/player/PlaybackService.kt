@@ -421,8 +421,26 @@ class PlaybackService : Service() {
      *
      * [probe] optionally offsets one client's latency first, so the dump can capture the SEPARATED
      * geometry the balance actually harvests from rather than the overlapped baseline.
+     *
+     * [settleMs] is the pause between commanding that offset and recording — the same quantity
+     * SyncCalibrator spends as SETTLE_MS, exposed here so it can be MEASURED instead of assumed.
+     * A dump costs ~40 s against a calibration's ~7 min, and the commanded offset (SWEEP_PROBE_MS)
+     * is ground truth: recover it and the settle was long enough. Debug-only path; the default is
+     * the production value.
+     *
+     * [captureMs] shortens the recording for the same reason. At the production 12 s, the ~1.15 s
+     * of audio still in flight when a latency is written is only ~10 % of the window, so the
+     * correlation averages it away and the measurement cannot tell a settle of 0 from one of 7000
+     * — which is exactly what the first run of this experiment found. Shrink the window and the
+     * contamination dominates instead: at 2 s it is more than half, so a too-short settle has to
+     * move the peak. That is what makes the instrument able to discriminate at all.
      */
-    fun dumpCapturePcm(targetName: String?, probe: Boolean) {
+    fun dumpCapturePcm(
+        targetName: String?,
+        probe: Boolean,
+        settleMs: Long = 7_000L,
+        captureMs: Int = 12_000,
+    ) {
         if (calibrationJob?.isActive == true) return
         val control = snapcastControl
         val connected = _state.value.snapcastGroups.flatMap { it.clients }.filter { it.connected }
@@ -454,10 +472,11 @@ class PlaybackService : Service() {
                         Log.w(TAG_CAL, "pcmdump: could not journal — dumping unprobed to stay recoverable")
                     } else {
                         control!!.sendSetLatency(target.id, baseLatency - SWEEP_PROBE_MS)
-                        delay(7_000L)
+                        Log.i(TAG_CAL, "pcmdump: settle ${settleMs}ms after probing $SWEEP_PROBE_MS ms")
+                        delay(settleMs)
                     }
                 }
-                val cap = mic.record(12_000)
+                val cap = mic.record(captureMs)
                     ?: run {
                         Log.w(TAG_CAL, "pcmdump: capture failed")
                         return@launch
@@ -498,6 +517,8 @@ class PlaybackService : Service() {
                         appendLine("lagFormula=(index-pre)*1000/fs")
                         appendLine("probed=$probing")
                         appendLine("probeMs=${if (probing) SWEEP_PROBE_MS else 0}")
+                        appendLine("settleMs=${if (probing) settleMs else 0}")
+                        appendLine("captureMs=$captureMs")
                         appendLine("probeTarget=${if (probing) target?.config?.name else ""}")
                         appendLine(
                             "gains=" + connected.joinToString(",") {

@@ -17,7 +17,7 @@ android {
         applicationId = "tech.capullo.quantumcast"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
+        versionCode = 14
         versionName = "1.0"
     }
 
