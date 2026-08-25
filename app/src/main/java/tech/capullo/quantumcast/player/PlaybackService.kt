@@ -66,6 +66,7 @@ import tech.capullo.audio.snapcast.SnapcontrolPlugin
 import tech.capullo.audio.snapcast.SnapserverPorts
 import tech.capullo.audio.snapcast.SnapserverProcess
 import tech.capullo.audio.snapcast.firstArtist
+import tech.capullo.audio.snapcast.withoutReferenceTaps
 import tech.capullo.quantumcast.MainActivity
 import tech.capullo.quantumcast.data.settings.BroadcastMode
 import tech.capullo.quantumcast.data.settings.SettingsRepository
@@ -340,7 +341,17 @@ class PlaybackService : Service() {
             )
             return null
         }
-        val tap = tech.capullo.audio.snapcast.ReferenceTapProcess(this)
+        // Deregistering matters as much as killing it: snapserver keeps disconnected clients (the
+        // calibration read-back relies on that), so without Server.DeleteClient every run would
+        // leave a permanent phantom in the server's list and in server.json.
+        val tap = tech.capullo.audio.snapcast.ReferenceTapProcess(this) { tapId ->
+            scope.launch {
+                // Let the server notice the process is gone before removing the entry.
+                delay(TAP_DEREGISTER_DELAY_MS)
+                runCatching { snapcastControl?.sendDeleteClient(tapId) }
+                    .onFailure { Log.w("SyncCalibrator", "tap deregister failed: ${it.message}") }
+            }
+        }
         val job = scope.launch { tap.start(st.snapclientHost, st.snapclientPort, ring) }
         calibrationTap = ring
         return {
@@ -924,6 +935,12 @@ class PlaybackService : Service() {
         // Snapcast stream identity (the snapserver `name=`), shown in web players / to snapclients.
         // capullo-audio's SnapserverProcess defaults to "Capullo"; QuantumCast keeps its own name so
         // multiple capullo apps stay distinguishable on a LAN (was hardcoded in QC's SnapserverProcess).
+
+        /** Grace before deleting the reference tap from the server. The process is already
+         *  killed; this only gives snapserver time to register the disconnect, so the delete
+         *  removes a client it agrees is gone rather than racing its own bookkeeping. */
+        private const val TAP_DEREGISTER_DELAY_MS = 1_500L
+
         private const val STREAM_NAME = "QuantumCast"
     }
 
@@ -1949,7 +1966,10 @@ class PlaybackService : Service() {
             client.notifications.collect { notif ->
                 when (notif) {
                     is tech.capullo.audio.snapcast.ServerGetStatusResponse -> {
-                        val groups = notif.result.server.groups
+                        // Filtered here rather than at each list: a calibration reference tap is a
+                        // connected client but not a speaker, and every consumer downstream (the
+                        // control sheet, the device count, reset-all) wants it gone.
+                        val groups = notif.result.server.groups.withoutReferenceTaps()
                         val hostname = notif.result.server.server.host.name
                         val displayName = if (_state.value.broadcastMode == BroadcastMode.SNAPCLIENT) {
                             val serverHost = notif.result.server.server.host.name
@@ -1991,7 +2011,7 @@ class PlaybackService : Service() {
                             }
                     }
                     is tech.capullo.audio.snapcast.ServerOnUpdate -> {
-                        val groups = notif.params.server.groups
+                        val groups = notif.params.server.groups.withoutReferenceTaps()
                         val displayName = if (_state.value.broadcastMode == BroadcastMode.SNAPCLIENT) {
                             val serverHost = notif.params.server.server.host.name
                             groups.flatMap { it.clients }
