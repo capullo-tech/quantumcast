@@ -130,6 +130,9 @@ class MainActivity : ComponentActivity() {
                 intent.getIntExtra("settle", 7_000).toLong(),
                 intent.getIntExtra("capture", 12_000),
             )
+            // Toggle the public-link tunnel without the UI, so the rig can test it.
+            // am start ... --es dbg tunnel --ez on true
+            "tunnel" -> vm.updateSetting { setTunnelEnabled(intent.getBooleanExtra("on", true)) }
             // Fix the snapserver base port (--ei port N; omit or -1 to auto-pick, 0 to disable).
             // Applies on the next broadcast start. am start ... --es dbg fixport --ei port 34000
             "fixport" -> vm.setSnapserverFixedPort(intent.getIntExtra("port", -1))
