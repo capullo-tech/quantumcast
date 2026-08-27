@@ -51,6 +51,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -67,6 +69,7 @@ import tech.capullo.audio.snapcast.SnapserverPorts
 import tech.capullo.audio.snapcast.SnapserverProcess
 import tech.capullo.audio.snapcast.firstArtist
 import tech.capullo.audio.snapcast.withoutReferenceTaps
+import tech.capullo.audio.tunnel.TunnelManager
 import tech.capullo.quantumcast.MainActivity
 import tech.capullo.quantumcast.data.settings.BroadcastMode
 import tech.capullo.quantumcast.data.settings.SettingsRepository
@@ -81,6 +84,9 @@ class PlaybackService : Service() {
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var tunnelManager: TunnelManager
 
     // --- State exposed to ViewModel ---
 
@@ -99,6 +105,13 @@ class PlaybackService : Service() {
         val snapclientPort: Int = 1604,
         /** This broadcaster's resolved HTTP (web player + control) port - for the web/QR URL. */
         val broadcastHttpPort: Int = 1680,
+        /**
+         * Snapserver up and serving, so broadcastHttpPort is real. QC had no such flag - broadcast
+         * liveness lived only in `snapserverProcess != null && snapserverJob?.isActive`, which a
+         * flow cannot observe. Set in startSnapcast, cleared in stopSnapcast: the only two places
+         * that own the snapserver's lifetime.
+         */
+        val isBroadcasting: Boolean = false,
         val snapclientChannel: String = "stereo",
         val snapclientState: tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState =
             tech.capullo.audio.snapcast.SnapclientProcess.ConnectionState.STARTING,
@@ -990,6 +1003,16 @@ class PlaybackService : Service() {
             settingsRepository.settings.collect {
                 balanceProcessor.balance = it.balance
                 snapserverFixedPort = it.snapserverFixedPort
+            }
+        }
+        // Public-link tunnel: runs only while the snapserver (and thus the web player's HTTP port)
+        // is live and the setting is on. distinctUntilChanged because _state churns on every ICY
+        // title and buffering tick, and start() is idempotent but stop() is not free.
+        scope.launch {
+            combine(settingsRepository.settings, _state) { settings, s ->
+                Triple(settings.tunnelEnabled, s.isBroadcasting, s.broadcastHttpPort)
+            }.distinctUntilChanged().collect { (enabled, broadcasting, httpPort) ->
+                if (enabled && broadcasting) tunnelManager.start(httpPort) else tunnelManager.stop()
             }
         }
         // Persist own client's volume/latency on ANY change (slider, knob, remote controller).
@@ -1946,7 +1969,7 @@ class PlaybackService : Service() {
 
     private fun startSnapcast(snapserver: SnapserverProcess, snapserverAddress: String) {
         val ports = snapserver.ports
-        _state.update { it.copy(broadcastHttpPort = ports.httpPort) }
+        _state.update { it.copy(broadcastHttpPort = ports.httpPort, isBroadcasting = true) }
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
         snapserverJob = scope.launch { snapserver.start() }
         snapclientJob = scope.launch { sc.start(snapserverAddress, ports.streamPort) }
@@ -2215,6 +2238,7 @@ class PlaybackService : Service() {
         snapserverJob = null
         stopLocalSnapclient()
         snapserverProcess = null
+        _state.update { it.copy(isBroadcasting = false) }
         localChannelTagSet = false
         volLatRestored = false
         volLatApplied = false
@@ -2417,6 +2441,9 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         stop()
+        // Explicitly, not via the collector: cancelling `scope` below kills the collector, so
+        // relying on it to observe isBroadcasting=false would leave cloudflared running.
+        tunnelManager.stop()
         mediaSession?.release()
         mediaSession = null
         serviceJob.cancel()

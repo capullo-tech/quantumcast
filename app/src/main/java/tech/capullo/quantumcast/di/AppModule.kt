@@ -6,6 +6,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import tech.capullo.audio.tunnel.TunnelManager
 import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.source.radiobrowser.data.repository.RadioRepository
 import javax.inject.Singleton
@@ -29,4 +30,11 @@ object AppModule {
     @Provides
     @Singleton
     fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository = SettingsRepository(context)
+
+    // The library ships TunnelManager without DI annotations so it forces no framework on a
+    // consumer; @Singleton here is what keeps it to one instance - and so to one cloudflared
+    // process - now that Hilt no longer reads that off the class.
+    @Provides
+    @Singleton
+    fun provideTunnelManager(@ApplicationContext context: Context): TunnelManager = TunnelManager(context)
 }

@@ -30,6 +30,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
 import tech.capullo.audio.snapcast.DiscoveredSnapserver
 import tech.capullo.audio.snapcast.SnapserverDiscoveryManager
+import tech.capullo.audio.tunnel.TunnelManager
+import tech.capullo.audio.ui.PublicLinkState
 import tech.capullo.quantumcast.player.PlaybackService
 import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
@@ -182,6 +184,7 @@ private fun RadioApp(
     val showTrackDetail by vm.showDetailScreen.collectAsState()
     val snapclientHost by vm.snapclientHost.collectAsState()
     val broadcastHttpPort by vm.broadcastHttpPort.collectAsState()
+    val tunnelState by vm.tunnelState.collectAsState()
     val snapclientChannel by vm.snapclientChannel.collectAsState()
     val snapcastGroups by vm.snapcastGroups.collectAsState()
     val streamCanGoNext by vm.streamCanGoNext.collectAsState()
@@ -229,6 +232,7 @@ private fun RadioApp(
             streamStats = streamStats,
             snapcastGroups = snapcastGroups,
             broadcastHttpPort = broadcastHttpPort,
+            publicLink = tunnelState.toPublicLinkState(),
             snapclientChannel = snapclientChannel,
             onAdjustClientVolume = vm::adjustClientVolume,
             onAdjustClientLatency = vm::adjustClientLatency,
@@ -428,6 +432,7 @@ private fun RadioApp(
                         onSetAutoEntangleOnLaunch = { vm.updateSetting { setAutoEntangleOnLaunch(it) } },
                         onSetWebDebugPanel = { vm.updateSetting { setWebDebugPanel(it) } },
                         onSetWebAutoplay = { vm.updateSetting { setWebAutoplay(it) } },
+                        onSetTunnelEnabled = { vm.updateSetting { setTunnelEnabled(it) } },
                         onSetMaxHistorySongs = { vm.updateSetting { setMaxHistorySongs(it) } },
                         onExportFavorites = vm::exportFavorites,
                         onImportFavorites = vm::importFavorites,
@@ -453,4 +458,14 @@ private fun ChildTopBar(title: String, onBack: () -> Unit) {
             }
         },
     )
+}
+
+// Maps the tunnel's state machine onto the library's public-link model for the sheet's QR dialog.
+// Same mapping Telecloud uses - the library deliberately does not depend on TunnelManager, so each
+// app bridges the two itself.
+private fun TunnelManager.TunnelState.toPublicLinkState() = when (this) {
+    is TunnelManager.TunnelState.Active -> PublicLinkState.Active(publicUrl)
+    TunnelManager.TunnelState.Starting -> PublicLinkState.Starting
+    is TunnelManager.TunnelState.Error -> PublicLinkState.Error(message)
+    TunnelManager.TunnelState.Off -> PublicLinkState.Off
 }
