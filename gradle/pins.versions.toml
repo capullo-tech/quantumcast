@@ -7,7 +7,7 @@
 # jitpack caches -SNAPSHOT unreliably). Composite build substitutes the sibling locally.
 capulloSourceRadiobrowser = "ce836da8fefc03f1e12f83910738217b1df24aa0"
 # capullo-audio - immutable jitpack commit; the engine + capullo-audio-ui share it.
-capulloAudio = "bbf15845912518127eb5b05ae3ac5ba908992549"
+capulloAudio = "ac21187a44bb1e3cb9991e49d95e10c1a013bf1e"
 # QC's own single-app deps (used by no other repo).
 media = "1.7.0"
 coil = "2.6.0"
@@ -24,6 +24,8 @@ capullo-source-radiobrowser = { module = "com.github.capullo-tech:capullo-source
 # it twice (flat direct + nested transitive via -ui) and fails on duplicate classes.
 capullo-audio = { module = "com.github.capullo-tech.capullo-audio:capullo-audio", version.ref = "capulloAudio" }
 capullo-audio-ui = { module = "com.github.capullo-tech.capullo-audio:capullo-audio-ui", version.ref = "capulloAudio" }
+# Same repo, same commit, same nested group - one pin covers all three modules.
+capullo-tunnel = { module = "com.github.capullo-tech.capullo-audio:capullo-tunnel", version.ref = "capulloAudio" }
 # QC single-app deps.
 androidx-media = { module = "androidx.media:media", version.ref = "media" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }

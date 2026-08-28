@@ -35,6 +35,8 @@ data class AppSettings(
     val autoEntangleOnLaunch: Boolean = false,
     val webDebugPanel: Boolean = false,
     val webAutoplay: Boolean = false,
+    // Public link: expose the web player through a Cloudflare quick tunnel while broadcasting.
+    val tunnelEnabled: Boolean = false,
     // Stereo balance applied to the broadcast mix: -1 = full left, 0 = center, +1 = full right.
     val balance: Float = 0f,
     // This device's own snapclient spatial role - persisted so a set-once L/R + latency + volume
@@ -72,6 +74,7 @@ class SettingsRepository(private val context: Context) {
         val AUTO_ENTANGLE_ON_LAUNCH = booleanPreferencesKey("auto_entangle_on_launch")
         val WEB_DEBUG_PANEL = booleanPreferencesKey("web_debug_panel")
         val WEB_AUTOPLAY = booleanPreferencesKey("web_autoplay")
+        val TUNNEL_ENABLED = booleanPreferencesKey("tunnel_enabled")
         val BALANCE = floatPreferencesKey("balance")
         val SNAPCLIENT_CHANNEL = stringPreferencesKey("snapclient_channel")
         val SNAPCLIENT_VOLUME = intPreferencesKey("snapclient_volume")
@@ -102,6 +105,7 @@ class SettingsRepository(private val context: Context) {
                 autoEntangleOnLaunch = prefs[Keys.AUTO_ENTANGLE_ON_LAUNCH] ?: false,
                 webDebugPanel = prefs[Keys.WEB_DEBUG_PANEL] ?: false,
                 webAutoplay = prefs[Keys.WEB_AUTOPLAY] ?: false,
+                tunnelEnabled = prefs[Keys.TUNNEL_ENABLED] ?: false,
                 balance = prefs[Keys.BALANCE] ?: 0f,
                 snapclientChannel = prefs[Keys.SNAPCLIENT_CHANNEL] ?: "stereo",
                 snapclientVolume = prefs[Keys.SNAPCLIENT_VOLUME] ?: 100,
@@ -129,6 +133,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setAutoEntangleOnLaunch(v: Boolean) = update { it[Keys.AUTO_ENTANGLE_ON_LAUNCH] = v }
     suspend fun setWebDebugPanel(v: Boolean) = update { it[Keys.WEB_DEBUG_PANEL] = v }
     suspend fun setWebAutoplay(v: Boolean) = update { it[Keys.WEB_AUTOPLAY] = v }
+    suspend fun setTunnelEnabled(v: Boolean) = update { it[Keys.TUNNEL_ENABLED] = v }
     suspend fun setBalance(v: Float) = update { it[Keys.BALANCE] = v.coerceIn(-1f, 1f) }
     suspend fun setSnapclientChannel(v: String) = update { it[Keys.SNAPCLIENT_CHANNEL] = v }
     suspend fun setSnapclientVolume(v: Int) = update { it[Keys.SNAPCLIENT_VOLUME] = v.coerceIn(0, 100) }

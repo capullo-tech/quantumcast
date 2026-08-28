@@ -80,6 +80,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import tech.capullo.audio.snapcast.Group
+import tech.capullo.audio.ui.PublicLinkState
 import tech.capullo.audio.ui.SnapcastControlSheet
 import tech.capullo.quantumcast.R
 import tech.capullo.quantumcast.viewmodel.PlayerState
@@ -129,6 +130,7 @@ fun TrackDetailScreen(
     streamStats: RadioViewModel.StreamStats? = null,
     snapcastGroups: List<Group> = emptyList(),
     broadcastHttpPort: Int = 1680,
+    publicLink: PublicLinkState = PublicLinkState.Off,
     snapclientChannel: String = "stereo",
     onAdjustClientVolume: (clientId: String, muted: Boolean, percent: Int) -> Unit = { _, _, _ -> },
     onAdjustClientLatency: (clientId: String, latencyMs: Int) -> Unit = { _, _ -> },
@@ -439,6 +441,7 @@ fun TrackDetailScreen(
             calibrationRunning = calibrationRunning,
             calibrationStatus = calibrationStatus,
             httpPort = broadcastHttpPort,
+            publicLink = publicLink,
             onDismiss = { showSnapcastSheet = false },
         )
     }

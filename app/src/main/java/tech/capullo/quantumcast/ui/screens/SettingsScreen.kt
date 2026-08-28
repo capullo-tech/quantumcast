@@ -49,6 +49,7 @@ fun SettingsScreen(
     onSetAutoEntangleOnLaunch: (Boolean) -> Unit = {},
     onSetWebDebugPanel: (Boolean) -> Unit = {},
     onSetWebAutoplay: (Boolean) -> Unit = {},
+    onSetTunnelEnabled: (Boolean) -> Unit = {},
     onSetMaxHistorySongs: (Int) -> Unit = {},
     onExportFavorites: (java.io.OutputStream) -> Unit = {},
     onImportFavorites: (java.io.InputStream) -> Unit = {},
@@ -199,6 +200,28 @@ fun SettingsScreen(
                     debugPanel = settings.webDebugPanel,
                     onDebugPanelChange = onSetWebDebugPanel,
                 )
+            }
+
+            // Copy matches Telecloud's - same feature, same warnings. The bandwidth figure is per
+            // listener and the link is world-reachable, so both belong in front of the switch.
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Public link", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Expose the web player on the internet via a tunnel while broadcasting " +
+                                "(link shows in the player). Anyone with the link can listen and " +
+                                "control; ~1.4 Mbps upload per listener.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = settings.tunnelEnabled, onCheckedChange = onSetTunnelEnabled)
+                }
             }
 
             // --- QuantumCast-specific sections ---

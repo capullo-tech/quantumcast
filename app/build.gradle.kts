@@ -17,7 +17,7 @@ android {
         applicationId = "tech.capullo.quantumcast"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
+        versionCode = 16
         versionName = "1.0"
     }
 
@@ -151,6 +151,9 @@ dependencies {
     // none of those at compile time anymore, so their former direct declarations were dropped here.
     implementation(pins.capullo.audio)
     implementation(pins.capullo.audio.ui) // shared control sheet + QR dialog
+    // Public-link tunnel: TunnelManager + the cloudflared .so per ABI, carried by the AAR. Opt-in,
+    // hence a separate coordinate: it costs ~8 MB per ABI and an app is free not to have a tunnel.
+    implementation(pins.capullo.tunnel)
 
     // Serialization runtime - Navigation3 `@Serializable data object … : NavKey` route keys.
     implementation(libs.kotlinx.serialization.json)

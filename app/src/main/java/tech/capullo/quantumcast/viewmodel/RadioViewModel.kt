@@ -15,6 +15,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import tech.capullo.audio.tunnel.TunnelManager
 import tech.capullo.quantumcast.data.settings.AppSettings
 import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.quantumcast.player.PlaybackService
@@ -79,8 +80,13 @@ data class RotationState(
 class RadioViewModel @Inject constructor(
     private val repo: RadioRepository,
     val settingsRepo: SettingsRepository,
+    tunnelManager: TunnelManager,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    // The tunnel's own state, straight from the manager - it is not part of PlaybackState, because
+    // the tunnel outlives no broadcast and the manager is the single source of truth for it.
+    val tunnelState: StateFlow<TunnelManager.TunnelState> = tunnelManager.state
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .onEach { repo.setServerUrl(it.apiServer) }
