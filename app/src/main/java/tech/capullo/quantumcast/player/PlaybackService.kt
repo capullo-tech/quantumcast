@@ -68,6 +68,8 @@ import tech.capullo.audio.contracts.PlaybackController
 import tech.capullo.audio.player.AudioFocusController
 import tech.capullo.audio.player.BalanceAudioProcessor
 import tech.capullo.audio.player.FifoAudioBufferSink
+import tech.capullo.audio.player.GainAudioProcessor
+import tech.capullo.audio.player.LiveLoudnessAgcProcessor
 import tech.capullo.audio.snapcast.SnapclientProcess
 import tech.capullo.audio.snapcast.SnapcontrolPlugin
 import tech.capullo.audio.snapcast.SnapserverPorts
@@ -190,6 +192,16 @@ class PlaybackService : Service() {
     // station changes; the per-station renderers factory references this same instance, and
     // an onCreate observer keeps its @Volatile balance in sync with Settings live.
     private val balanceProcessor = BalanceAudioProcessor()
+
+    // Volume normalization for the broadcast mix - same "before the FIFO tee" placement as
+    // balanceProcessor above, right after it in the chain. gainProcessor applies whatever gain
+    // agcProcessor (a passthrough that measures loudness and slews the gain toward -18 LUFS over
+    // tens of seconds - see its class doc for why a live rolling estimate, not a per-track cache
+    // like Telecloud's, is the right design for a stream with no fixed track boundaries) computes.
+    // Persistent across station changes, same reasoning as balanceProcessor; an onCreate observer
+    // keeps agcProcessor.enabled in sync with Settings live.
+    private val gainProcessor = GainAudioProcessor()
+    private val agcProcessor = LiveLoudnessAgcProcessor(gainProcessor)
 
     @Volatile private var triedPlaylistFallback = false
 
@@ -1000,13 +1012,15 @@ class PlaybackService : Service() {
             savedVol = saved.snapclientVolume
             savedLat = saved.snapclientLatency
             balanceProcessor.balance = saved.balance
+            agcProcessor.enabled = saved.normalizationEnabled
             snapserverFixedPort = saved.snapserverFixedPort
             _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
         }
-        // Keep the broadcast balance + fixed-port choice in sync with Settings live.
+        // Keep the broadcast balance + fixed-port + normalization choice in sync with Settings live.
         scope.launch {
             settingsRepository.settings.collect {
                 balanceProcessor.balance = it.balance
+                agcProcessor.enabled = it.normalizationEnabled
                 snapserverFixedPort = it.snapserverFixedPort
             }
         }
@@ -1568,6 +1582,8 @@ class PlaybackService : Service() {
                             mixer,
                             resampler,
                             balanceProcessor,
+                            agcProcessor,
+                            gainProcessor,
                             TeeAudioProcessor(sink),
                         ),
                     )
