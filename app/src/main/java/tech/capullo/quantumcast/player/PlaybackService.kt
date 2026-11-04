@@ -1518,6 +1518,11 @@ class PlaybackService : Service() {
     }
 
     private fun startEngine(url: String, mimeType: String? = null) {
+        // A different station starts from unity: the previous one's gain says nothing about this
+        // one (the library already drops a carried boost; this also drops a carried cut, which
+        // would otherwise play a quieter station too softly until the slow window caught up).
+        // Same-URL restarts (reconnects, codec fallbacks) keep their converged gain.
+        if (url != engineUrl) gainProcessor.gain = 1f
         engineUrl = url
         // stopEngine() removes the listener before stop(), so the IDLE event that
         // would consume intentionalStop never arrives - reset it here instead.
@@ -1581,8 +1586,10 @@ class PlaybackService : Service() {
                         DefaultAudioSink.DefaultAudioProcessorChain(
                             mixer,
                             resampler,
-                            balanceProcessor,
+                            // AGC measures the source before the user's balance: balance cuts the
+                            // far channel, which would read as quieter and get boosted back.
                             agcProcessor,
+                            balanceProcessor,
                             gainProcessor,
                             TeeAudioProcessor(sink),
                         ),
