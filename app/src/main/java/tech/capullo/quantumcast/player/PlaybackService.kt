@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -2294,8 +2295,9 @@ class PlaybackService : Service() {
      *
      * The native client can exit on its own, and nothing used to notice: [SnapclientProcess.start]
      * returned normally, the launching coroutine completed, and [snapclientProcess] stayed non-null
-     * so even [startLocalSnapclient] refused to act. On the rig (2026-09-05) that left a
-     * broadcaster silent for 1h50m with a healthy server, a healthy app and no UI trace.
+     * so even [startLocalSnapclient] refused to act; the client stayed silent with a healthy server
+     * and no UI trace (reproduced on the rig with kill -9). The 2026-09-05 1h50m silence was a
+     * different failure - an intentional focus-loss stop never resumed - see capullo-audio#7.
      *
      * THE TRAP THIS AVOIDS. [stopLocalSnapclient] stops the client with `destroyForcibly()`, which
      * from inside `start()` looks exactly like a crash. A supervisor keyed on "the process is gone"
@@ -2317,16 +2319,28 @@ class PlaybackService : Service() {
     ): Job = scope.launch {
         launch { sc.connectionState.collect { s -> _state.update { it.copy(snapclientState = s) } } }
         var backoffMs = SNAPCLIENT_RETRY_MIN_MS
+        // The first launch keeps each caller's channel (the broadcast path passes none and gets the
+        // library default). Restarts read state instead: live channel changes only update state +
+        // the running client's socket, so a captured value would relaunch an L/R pair on its
+        // pre-change channel while the UI and the server tag show the new one.
+        var launchChannel = channel
         while (isActive) {
-            if (channel != null) {
-                sc.start(host, port, audioChannel = channel)
+            val startedAt = SystemClock.elapsedRealtime()
+            if (launchChannel != null) {
+                sc.start(host, port, audioChannel = launchChannel)
             } else {
                 sc.start(host, port)
             }
             if (!isActive) break
+            // A run that outlived the max backoff was healthy: the next fault is a fresh one-off
+            // and gets the short delay again rather than inheriting a long session's backoff.
+            if (SystemClock.elapsedRealtime() - startedAt >= SNAPCLIENT_RETRY_MAX_MS) {
+                backoffMs = SNAPCLIENT_RETRY_MIN_MS
+            }
             Log.w(TAG, "local snapclient exited on its own - restarting in ${backoffMs}ms")
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(SNAPCLIENT_RETRY_MAX_MS)
+            launchChannel = _state.value.snapclientChannel
         }
     }
 
