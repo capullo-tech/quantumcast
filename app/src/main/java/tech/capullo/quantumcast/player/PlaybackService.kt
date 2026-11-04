@@ -879,6 +879,10 @@ class PlaybackService : Service() {
     private val serviceJob = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + serviceJob)
 
+    // Speaker release after a long pause (scheduleSpeakerRelease). Main thread only.
+    private var releaseSpeakerJob: Job? = null
+    private var speakerReleased = false
+
     // --- MediaSession ---
 
     private var mediaSession: MediaSessionCompat? = null
@@ -917,6 +921,9 @@ class PlaybackService : Service() {
         private const val CHANNEL_ID = "quantumcast_playback"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "QCPlaybackService"
+
+        // How long playback stays paused before the local speaker is released.
+        private const val RELEASE_SPEAKER_AFTER_PAUSE_MS = 30_000L
 
         /** Calibration logs go under the LIBRARY's tag, not this service's, so one
          *  `logcat -s SyncCalibrator` shows a run and its diagnostics together. */
@@ -1707,6 +1714,15 @@ class PlaybackService : Service() {
         // Event.Playing). Writing during preroll deadlocks: the 64KB pipe has
         // no reader yet and a blocked tee stalls READY forever.
         fifoSink?.enableWrites()
+        // Playing again after a long pause: take the speaker back (see scheduleSpeakerRelease).
+        releaseSpeakerJob?.cancel()
+        releaseSpeakerJob = null
+        if (speakerReleased) {
+            speakerReleased = false
+            audioFocus.request()
+            startLocalSnapclient()
+            Log.d(TAG, "speaker reclaimed on Play")
+        }
         pendingSnapserver?.let { snapserver ->
             pendingSnapserver = null
             Log.d(TAG, "Engine playing: starting Snapcast (FIFO writes enabled)")
@@ -1718,10 +1734,29 @@ class PlaybackService : Service() {
     }
 
     private fun onEnginePaused() {
+        scheduleSpeakerRelease()
         _state.update { it.copy(isPlaying = false) }
         publishNowPlaying()
         updateNotification()
         updateMediaSession()
+    }
+
+    // Paused for RELEASE_SPEAKER_AFTER_PAUSE_MS: give the speaker back to the system. Abandoning focus
+    // means another app's playback is no longer a loss to recover from (the quiet-watcher can't
+    // resume us into silence), and the local snapclient stops holding the output. The broadcast
+    // keeps running for other listeners. onEnginePlaying undoes it.
+    private fun scheduleSpeakerRelease() {
+        releaseSpeakerJob?.cancel()
+        releaseSpeakerJob = scope.launch {
+            delay(RELEASE_SPEAKER_AFTER_PAUSE_MS)
+            runOnMain {
+                if (speakerReleased || exoPlayer?.playWhenReady == true || snapserverProcess == null) return@runOnMain
+                speakerReleased = true
+                audioFocus.abandon()
+                stopLocalSnapclient()
+                Log.d(TAG, "speaker released after pause")
+            }
+        }
     }
 
     private fun startBufferingTimeout(timeoutMs: Long = 15_000L) {
@@ -2230,6 +2265,9 @@ class PlaybackService : Service() {
     }
 
     private fun stopSnapcast() {
+        releaseSpeakerJob?.cancel()
+        releaseSpeakerJob = null
+        speakerReleased = false
         audioFocus.abandon()
         snapcontrolPlugin?.stop()
         snapcontrolPlugin = null
