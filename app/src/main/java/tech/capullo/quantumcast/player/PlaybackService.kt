@@ -1742,6 +1742,8 @@ class PlaybackService : Service() {
         // Event.Playing). Writing during preroll deadlocks: the 64KB pipe has
         // no reader yet and a blocked tee stalls READY forever.
         fifoSink?.enableWrites()
+        // Release whatever the pause gate held, faded back in (no-op on first play).
+        fifoSink?.resumeOutput()
         // Playing again after a long pause: take the speaker back (see scheduleSpeakerRelease).
         releaseSpeakerJob?.cancel()
         releaseSpeakerJob = null
@@ -1762,6 +1764,9 @@ class PlaybackService : Service() {
     }
 
     private fun onEnginePaused() {
+        // Hold the PCM ExoPlayer still pushes after a pause, so listeners hear one clean (faded)
+        // stop instead of scattered blips; it's released on resume.
+        fifoSink?.pauseOutput()
         scheduleSpeakerRelease()
         _state.update { it.copy(isPlaying = false) }
         publishNowPlaying()
