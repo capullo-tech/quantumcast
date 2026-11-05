@@ -43,6 +43,7 @@ fun SettingsScreen(
     onSetSleepTimerMinutes: (Int) -> Unit,
     onSetThemeMode: (ThemeMode) -> Unit = {},
     onSetBalance: (Float) -> Unit = {},
+    onSetNormalizationEnabled: (Boolean) -> Unit = {},
     onSetShareService: (tech.capullo.quantumcast.data.settings.ShareService) -> Unit = {},
     onSetCustomServerName: (String) -> Unit = {},
     onSetSnapserverFixedPort: (Int) -> Unit = {},
@@ -174,6 +175,26 @@ fun SettingsScreen(
                     value = settings.balance,
                     onValueChange = onSetBalance,
                 )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Volume normalization", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Continuously evens out loudness differences between stations " +
+                                "(not within a song). Most streams are already normalized by " +
+                                "their own encoder; this corrects the ones that aren't.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = settings.normalizationEnabled, onCheckedChange = onSetNormalizationEnabled)
+                }
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }

@@ -429,6 +429,7 @@ private fun RadioApp(
                         onSetSleepTimerMinutes = { vm.updateSetting { setSleepTimerMinutes(it) } },
                         onSetThemeMode = { vm.updateSetting { setThemeMode(it) } },
                         onSetBalance = { vm.updateSetting { setBalance(it) } },
+                        onSetNormalizationEnabled = { vm.updateSetting { setNormalizationEnabled(it) } },
                         onSetShareService = vm::setShareService,
                         onSetCustomServerName = vm::setCustomServerName,
                         onSetSnapserverFixedPort = vm::setSnapserverFixedPort,
