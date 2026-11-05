@@ -39,6 +39,11 @@ data class AppSettings(
     val tunnelEnabled: Boolean = false,
     // Stereo balance applied to the broadcast mix: -1 = full left, 0 = center, +1 = full right.
     val balance: Float = 0f,
+    // Live rolling loudness normalization (LiveLoudnessAgcProcessor) for the broadcast mix -
+    // continuously slews gain toward -18 LUFS over tens of seconds, correcting for one station
+    // being much louder/quieter than another. Default on; most streams are already loudness-
+    // normalized upstream by their own encoder, but this corrects the cases that aren't.
+    val normalizationEnabled: Boolean = true,
     // This device's own snapclient spatial role - persisted so a set-once L/R + latency + volume
     // arrangement survives a restart ("power on and it's working"). Defaults = today's behaviour.
     val snapclientChannel: String = "stereo",
@@ -76,6 +81,7 @@ class SettingsRepository(private val context: Context) {
         val WEB_AUTOPLAY = booleanPreferencesKey("web_autoplay")
         val TUNNEL_ENABLED = booleanPreferencesKey("tunnel_enabled")
         val BALANCE = floatPreferencesKey("balance")
+        val NORMALIZATION_ENABLED = booleanPreferencesKey("normalization_enabled")
         val SNAPCLIENT_CHANNEL = stringPreferencesKey("snapclient_channel")
         val SNAPCLIENT_VOLUME = intPreferencesKey("snapclient_volume")
         val SNAPCLIENT_LATENCY = intPreferencesKey("snapclient_latency")
@@ -107,6 +113,7 @@ class SettingsRepository(private val context: Context) {
                 webAutoplay = prefs[Keys.WEB_AUTOPLAY] ?: false,
                 tunnelEnabled = prefs[Keys.TUNNEL_ENABLED] ?: false,
                 balance = prefs[Keys.BALANCE] ?: 0f,
+                normalizationEnabled = prefs[Keys.NORMALIZATION_ENABLED] ?: true,
                 snapclientChannel = prefs[Keys.SNAPCLIENT_CHANNEL] ?: "stereo",
                 snapclientVolume = prefs[Keys.SNAPCLIENT_VOLUME] ?: 100,
                 snapclientLatency = prefs[Keys.SNAPCLIENT_LATENCY] ?: 0,
@@ -135,6 +142,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setWebAutoplay(v: Boolean) = update { it[Keys.WEB_AUTOPLAY] = v }
     suspend fun setTunnelEnabled(v: Boolean) = update { it[Keys.TUNNEL_ENABLED] = v }
     suspend fun setBalance(v: Float) = update { it[Keys.BALANCE] = v.coerceIn(-1f, 1f) }
+    suspend fun setNormalizationEnabled(v: Boolean) = update { it[Keys.NORMALIZATION_ENABLED] = v }
     suspend fun setSnapclientChannel(v: String) = update { it[Keys.SNAPCLIENT_CHANNEL] = v }
     suspend fun setSnapclientVolume(v: Int) = update { it[Keys.SNAPCLIENT_VOLUME] = v.coerceIn(0, 100) }
     suspend fun setSnapclientLatency(v: Int) = update { it[Keys.SNAPCLIENT_LATENCY] = v }
