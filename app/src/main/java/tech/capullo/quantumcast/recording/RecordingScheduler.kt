@@ -32,8 +32,7 @@ interface RecordingEntryPoint {
     fun recordingRepository(): RecordingRepository
 }
 
-fun Context.recordingRepository(): RecordingRepository =
-    EntryPointAccessors.fromApplication(applicationContext, RecordingEntryPoint::class.java).recordingRepository()
+fun Context.recordingRepository(): RecordingRepository = EntryPointAccessors.fromApplication(applicationContext, RecordingEntryPoint::class.java).recordingRepository()
 
 /**
  * Turns schedules into exact alarms. One alarm per enabled schedule, always for its next
@@ -54,8 +53,7 @@ object RecordingScheduler {
     // "19:00 Managua" stays 19:00 Managua across either side's DST change, and weekdays are the
     // station's weekdays. Results are absolute instants; callers may convert as they like.
 
-    private fun startOn(s: Schedule, date: java.time.LocalDate, zone: ZoneId): ZonedDateTime =
-        ZonedDateTime.of(date, LocalTime.of(s.startMinute / 60, s.startMinute % 60), zone)
+    private fun startOn(s: Schedule, date: java.time.LocalDate, zone: ZoneId): ZonedDateTime = ZonedDateTime.of(date, LocalTime.of(s.startMinute / 60, s.startMinute % 60), zone)
 
     fun nextStart(s: Schedule, now: ZonedDateTime): ZonedDateTime? {
         val n = now.withZoneSameInstant(s.zone())
@@ -115,15 +113,16 @@ object RecordingScheduler {
         context.getSystemService(AlarmManager::class.java).cancel(alarmIntent(context, scheduleId, 0))
     }
 
-    fun canScheduleExact(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+    fun canScheduleExact(context: Context): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
 
     private fun set(context: Context, scheduleId: String, occurrence: Long, triggerAt: Long) {
         val am = context.getSystemService(AlarmManager::class.java)
         val pi = alarmIntent(context, scheduleId, occurrence)
         if (canScheduleExact(context)) {
             val show = PendingIntent.getActivity(
-                context, 0, Intent(context, MainActivity::class.java),
+                context,
+                0,
+                Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, show), pi)
@@ -133,15 +132,14 @@ object RecordingScheduler {
         Log.i(TAG, "armed $scheduleId for ${Instant.ofEpochMilli(triggerAt)} (occurrence ${Instant.ofEpochMilli(occurrence)})")
     }
 
-    private fun alarmIntent(context: Context, scheduleId: String, occurrence: Long): PendingIntent =
-        PendingIntent.getBroadcast(
-            context,
-            scheduleId.hashCode(),
-            Intent(context, ScheduleAlarmReceiver::class.java)
-                .putExtra(EXTRA_SCHEDULE_ID, scheduleId)
-                .putExtra(EXTRA_OCCURRENCE, occurrence),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+    private fun alarmIntent(context: Context, scheduleId: String, occurrence: Long): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        scheduleId.hashCode(),
+        Intent(context, ScheduleAlarmReceiver::class.java)
+            .putExtra(EXTRA_SCHEDULE_ID, scheduleId)
+            .putExtra(EXTRA_OCCURRENCE, occurrence),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     /** Reports occurrences that ended without ever starting (phone off, app force-stopped…). */
     suspend fun reportMissed(context: Context) {
@@ -150,9 +148,13 @@ object RecordingScheduler {
         val now = ZonedDateTime.now(ZoneId.systemDefault())
         prefs.testAt.takeIf { it > 0 && System.currentTimeMillis() > it + 30_000 }?.let {
             repo.setTest(null)
-            alert(context, TEST_ID.hashCode(), "Schedule test failed",
+            alert(
+                context,
+                TEST_ID.hashCode(),
+                "Schedule test failed",
                 "QuantumCast was not woken up at the test time, so scheduled recordings will not run. " +
-                    "Allow auto start for QuantumCast (Recordings → Storage shows where), then test again.")
+                    "Allow auto start for QuantumCast (Recordings → Storage shows where), then test again.",
+            )
         }
         for (s in prefs.schedules) {
             if (!s.enabled) continue
@@ -160,8 +162,12 @@ object RecordingScheduler {
             if (last < s.createdAt) continue
             if ((prefs.lastStarted[s.id] ?: 0) >= last || (prefs.lastMissed[s.id] ?: 0) >= last) continue
             repo.markMissed(s.id, last)
-            alert(context, s.id.hashCode(), "Missed recording: ${s.station.name}",
-                "The scheduled recording did not run (phone off, or the app was force-stopped). Check Recordings → Storage for the reliability checklist.")
+            alert(
+                context,
+                s.id.hashCode(),
+                "Missed recording: ${s.station.name}",
+                "The scheduled recording did not run (phone off, or the app was force-stopped). Check Recordings → Storage for the reliability checklist.",
+            )
         }
     }
 
@@ -172,11 +178,14 @@ object RecordingScheduler {
         }
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val open = PendingIntent.getActivity(
-            context, 1, Intent(context, MainActivity::class.java),
+            context,
+            1,
+            Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         nm.notify(
-            "rec-alert", id,
+            "rec-alert",
+            id,
             NotificationCompat.Builder(context, ALERT_CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_notify_error)
                 .setContentTitle(title)
@@ -227,8 +236,12 @@ class ScheduleAlarmReceiver : BroadcastReceiver() {
                     repo.setTest(null)
                     if (prefs.testPid == android.os.Process.myPid()) {
                         // The app was never closed, so this proves nothing about waking up.
-                        RecordingScheduler.alert(context, id.hashCode(), "Schedule test inconclusive",
-                            "QuantumCast was still running at the test time, so the wake-up wasn't tested. Run the test again.")
+                        RecordingScheduler.alert(
+                            context,
+                            id.hashCode(),
+                            "Schedule test inconclusive",
+                            "QuantumCast was still running at the test time, so the wake-up wasn't tested. Run the test again.",
+                        )
                         return@launch
                     }
                     try {

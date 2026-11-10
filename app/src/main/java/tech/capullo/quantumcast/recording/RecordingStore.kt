@@ -31,19 +31,18 @@ class RecordingStore(private val context: Context, private val treeUri: Uri?) {
         return all.sortedByDescending { it.lastModified }
     }
 
-    private fun listInternal(index: Map<String, RecMeta>, active: Set<String>): List<RecordingFile> =
-        internalDir().listFiles().orEmpty()
-            .filter { it.isFile && it.name in index }
-            .map { f ->
-                RecordingFile(
-                    name = f.name,
-                    uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", f),
-                    size = f.length(),
-                    lastModified = f.lastModified(),
-                    meta = index[f.name] ?: RecMeta(),
-                    inProgress = f.name in active,
-                )
-            }
+    private fun listInternal(index: Map<String, RecMeta>, active: Set<String>): List<RecordingFile> = internalDir().listFiles().orEmpty()
+        .filter { it.isFile && it.name in index }
+        .map { f ->
+            RecordingFile(
+                name = f.name,
+                uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", f),
+                size = f.length(),
+                lastModified = f.lastModified(),
+                meta = index[f.name] ?: RecMeta(),
+                inProgress = f.name in active,
+            )
+        }
 
     private fun listTree(index: Map<String, RecMeta>, active: Set<String>): List<RecordingFile> {
         val tree = treeUri ?: return emptyList()
@@ -96,8 +95,11 @@ class RecordingStore(private val context: Context, private val treeUri: Uri?) {
     }
 
     fun delete(file: RecordingFile): Boolean = runCatching {
-        if (treeUri == null) File(internalDir(), file.name).delete()
-        else DocumentsContract.deleteDocument(context.contentResolver, file.uri)
+        if (treeUri == null) {
+            File(internalDir(), file.name).delete()
+        } else {
+            DocumentsContract.deleteDocument(context.contentResolver, file.uri)
+        }
     }.getOrDefault(false)
 
     /**
@@ -126,8 +128,7 @@ class RecordingStore(private val context: Context, private val treeUri: Uri?) {
         private const val TAG = "RecordingStore"
         private val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmm")
 
-        fun sanitize(name: String): String =
-            name.replace(Regex("""[\\/:*?"<>|\p{Cntrl}]"""), "").replace(Regex("""\s+"""), " ")
-                .trim().take(60).ifEmpty { "Station" }
+        fun sanitize(name: String): String = name.replace(Regex("""[\\/:*?"<>|\p{Cntrl}]"""), "").replace(Regex("""\s+"""), " ")
+            .trim().take(60).ifEmpty { "Station" }
     }
 }

@@ -117,8 +117,7 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
         val CUSTOM_SPEED = floatPreferencesKey("custom_speed")
     }
 
-    private inline fun <reified T> Preferences.decode(key: Preferences.Key<String>, default: T): T =
-        this[key]?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() } ?: default
+    private inline fun <reified T> Preferences.decode(key: Preferences.Key<String>, default: T): T = this[key]?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() } ?: default
 
     val prefs: Flow<RecordingPrefs> = context.recordingStore.data.map { p ->
         RecordingPrefs(
@@ -152,8 +151,7 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
     val filesVersion: StateFlow<Int> = _filesVersion
 
     fun putActive(rec: ActiveRecording) = _active.update { it + (rec.id to rec) }
-    fun updateActive(id: String, f: (ActiveRecording) -> ActiveRecording) =
-        _active.update { m -> m[id]?.let { m + (id to f(it)) } ?: m }
+    fun updateActive(id: String, f: (ActiveRecording) -> ActiveRecording) = _active.update { m -> m[id]?.let { m + (id to f(it)) } ?: m }
     fun removeActive(id: String) = _active.update { it - id }
     fun filesChanged() = _filesVersion.update { it + 1 }
 
@@ -185,16 +183,14 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
         editMap<ResumePoint>(Keys.RESUME) { it - set }
     }
 
-    suspend fun setResume(name: String, posMs: Long) =
-        editMap<ResumePoint>(Keys.RESUME) { it + (name to ResumePoint(posMs, System.currentTimeMillis())) }
+    suspend fun setResume(name: String, posMs: Long) = editMap<ResumePoint>(Keys.RESUME) { it + (name to ResumePoint(posMs, System.currentTimeMillis())) }
 
     suspend fun clearResume(name: String) = editMap<ResumePoint>(Keys.RESUME) { it - name }
 
-    private suspend inline fun <reified V> editMap(key: Preferences.Key<String>, crossinline f: (Map<String, V>) -> Map<String, V>) =
-        context.recordingStore.edit { p ->
-            val m: Map<String, V> = p[key]?.let { runCatching { json.decodeFromString<Map<String, V>>(it) }.getOrNull() } ?: emptyMap()
-            p[key] = json.encodeToString(f(m))
-        }
+    private suspend inline fun <reified V> editMap(key: Preferences.Key<String>, crossinline f: (Map<String, V>) -> Map<String, V>) = context.recordingStore.edit { p ->
+        val m: Map<String, V> = p[key]?.let { runCatching { json.decodeFromString<Map<String, V>>(it) }.getOrNull() } ?: emptyMap()
+        p[key] = json.encodeToString(f(m))
+    }
 
     suspend fun saveSchedule(s: Schedule) = editSchedules { list ->
         if (list.any { it.id == s.id }) list.map { if (it.id == s.id) s else it } else list + s

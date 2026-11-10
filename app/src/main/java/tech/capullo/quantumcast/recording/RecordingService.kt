@@ -61,7 +61,9 @@ class RecordingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // startForegroundService() demands startForeground() promptly, even for a stop command.
         ServiceCompat.startForeground(
-            this, NOTIFICATION_ID, buildNotification(),
+            this,
+            NOTIFICATION_ID,
+            buildNotification(),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0,
         )
         when (intent?.action) {
@@ -112,7 +114,10 @@ class RecordingService : Service() {
                                 fileName = e.name
                                 repo.updateActive(id) { it.copy(fileName = e.name) }
                                 // Index immediately: a hard kill must still leave the file listed and rotatable.
-                                scope.launch { repo.indexFile(e.name, RecMeta(0, station.name, station.favicon, startedAt)); repo.filesChanged() }
+                                scope.launch {
+                                    repo.indexFile(e.name, RecMeta(0, station.name, station.favicon, startedAt))
+                                    repo.filesChanged()
+                                }
                             }
                         }
                     },
@@ -142,11 +147,19 @@ class RecordingService : Service() {
                         // Self-test: report, then drop the throwaway file so it never clutters the list.
                         val got = rec?.bytes ?: 0
                         if (got > 0) {
-                            RecordingScheduler.alert(this@RecordingService, RecordingScheduler.TEST_ID.hashCode(), "Schedule test passed",
-                                "QuantumCast woke up on its own and recorded ${RecordingService.formatBytes(got)}. Scheduled recordings will work on this phone.")
+                            RecordingScheduler.alert(
+                                this@RecordingService,
+                                RecordingScheduler.TEST_ID.hashCode(),
+                                "Schedule test passed",
+                                "QuantumCast woke up on its own and recorded ${RecordingService.formatBytes(got)}. Scheduled recordings will work on this phone.",
+                            )
                         } else {
-                            RecordingScheduler.alert(this@RecordingService, RecordingScheduler.TEST_ID.hashCode(), "Schedule test: no audio",
-                                "QuantumCast woke up on time (auto start is fine), but ${station.name} sent no audio. Try the test with another station.")
+                            RecordingScheduler.alert(
+                                this@RecordingService,
+                                RecordingScheduler.TEST_ID.hashCode(),
+                                "Schedule test: no audio",
+                                "QuantumCast woke up on time (auto start is fine), but ${station.name} sent no audio. Try the test with another station.",
+                            )
                         }
                         if (fileName.isNotEmpty()) {
                             val store = repo.store()
@@ -213,13 +226,22 @@ class RecordingService : Service() {
     private fun acquireLocks() {
         if (wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QuantumCast:recording").apply { setReferenceCounted(false); acquire() }
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QuantumCast:recording").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
         }
         if (wifiLock == null) {
-            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-            else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
             wifiLock = applicationContext.getSystemService(WifiManager::class.java)
-                .createWifiLock(mode, "QuantumCast:recording").apply { setReferenceCounted(false); acquire() }
+                .createWifiLock(mode, "QuantumCast:recording").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
         }
     }
 
@@ -248,11 +270,15 @@ class RecordingService : Service() {
             (if (recs.size > 1) "${r.station.name}: " else "") + state + ends
         }
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val stopAll = PendingIntent.getService(
-            this, 1, Intent(this, RecordingService::class.java).setAction(ACTION_STOP_ALL),
+            this,
+            1,
+            Intent(this, RecordingService::class.java).setAction(ACTION_STOP_ALL),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, CHANNEL)
@@ -283,6 +309,7 @@ class RecordingService : Service() {
         private const val TAG = "RecordingService"
         private const val CHANNEL = "recording"
         private const val NOTIFICATION_ID = 4711
+
         /** Past the connect burst; bitrate is measured from here on. */
         private const val STEADY_AFTER_MS = 15_000L
         private const val ACTION_START = "tech.capullo.quantumcast.recording.START"
@@ -293,17 +320,14 @@ class RecordingService : Service() {
         private const val EXTRA_SCHEDULE_ID = "schedule_id"
         private const val EXTRA_ID = "id"
 
-        fun startIntent(context: Context, station: RecStation, endAt: Long?, scheduleId: String?): Intent =
-            Intent(context, RecordingService::class.java).setAction(ACTION_START)
-                .putExtra(EXTRA_STATION, Json.encodeToString(station))
-                .putExtra(EXTRA_END_AT, endAt ?: 0L)
-                .putExtra(EXTRA_SCHEDULE_ID, scheduleId)
+        fun startIntent(context: Context, station: RecStation, endAt: Long?, scheduleId: String?): Intent = Intent(context, RecordingService::class.java).setAction(ACTION_START)
+            .putExtra(EXTRA_STATION, Json.encodeToString(station))
+            .putExtra(EXTRA_END_AT, endAt ?: 0L)
+            .putExtra(EXTRA_SCHEDULE_ID, scheduleId)
 
-        fun stopIntent(context: Context, id: String): Intent =
-            Intent(context, RecordingService::class.java).setAction(ACTION_STOP).putExtra(EXTRA_ID, id)
+        fun stopIntent(context: Context, id: String): Intent = Intent(context, RecordingService::class.java).setAction(ACTION_STOP).putExtra(EXTRA_ID, id)
 
-        fun formatElapsed(s: Long): String =
-            if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
+        fun formatElapsed(s: Long): String = if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 
         fun formatBytes(b: Long): String = when {
             b >= 1024L * 1024 * 1024 -> "%.1f GB".format(b / 1024.0 / 1024 / 1024)

@@ -1175,8 +1175,11 @@ class RadioViewModel @Inject constructor(
             runCatching { repo.importFavorites(backup, replace) }
                 .onSuccess { r ->
                     toast(
-                        if (replace) "Replaced favorites with ${r.added} from the file"
-                        else "Imported ${r.added} new favorites" + if (r.alreadyThere > 0) " (${r.alreadyThere} already there)" else "",
+                        if (replace) {
+                            "Replaced favorites with ${r.added} from the file"
+                        } else {
+                            "Imported ${r.added} new favorites" + if (r.alreadyThere > 0) " (${r.alreadyThere} already there)" else ""
+                        },
                     )
                 }
                 .onFailure { toast("Import failed: ${it.message}") }

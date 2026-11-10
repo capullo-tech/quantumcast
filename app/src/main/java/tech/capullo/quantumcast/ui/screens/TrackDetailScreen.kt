@@ -1395,32 +1395,34 @@ private fun NowPlayingControls(
                     },
                     background = playColors.containerColor,
                     modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
-                ) { CompositionLocalProvider(LocalContentColor provides playColors.contentColor) {
-                    if (lockedInClient) {
-                        Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(40.dp))
-                    } else if (isBuffering) {
-                        Box(contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(
-                                progress = { (bufferingPercent / 100f).coerceIn(0f, 1f) },
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides playColors.contentColor) {
+                        if (lockedInClient) {
+                            Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(40.dp))
+                        } else if (isBuffering) {
+                            Box(contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(
+                                    progress = { (bufferingPercent / 100f).coerceIn(0f, 1f) },
+                                    modifier = Modifier.size(40.dp),
+                                    strokeWidth = 3.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
+                                )
+                                Text(
+                                    text = "${bufferingPercent.toInt()}%",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
                                 modifier = Modifier.size(40.dp),
-                                strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f),
-                            )
-                            Text(
-                                text = "${bufferingPercent.toInt()}%",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
                             )
                         }
-                    } else {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(40.dp),
-                        )
                     }
-                } }
+                }
             }
 
             // RIGHT zone (hugs play): next (+ in-button countdown ring in rotation) + repeat

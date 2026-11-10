@@ -59,7 +59,12 @@ class RecordingViewModel @Inject constructor(
     }
 
     // Growing files' sizes change without an event, so tick every few seconds while recording.
-    private val tick = flow { while (true) { emit(Unit); delay(3_000) } }
+    private val tick = flow {
+        while (true) {
+            emit(Unit)
+            delay(3_000)
+        }
+    }
 
     val files: StateFlow<List<RecordingFile>> = combine(recordings.prefs, recordings.filesVersion, recordings.active, tick) { p, _, a, _ -> p to a }
         .map { (p, a) ->
@@ -73,8 +78,11 @@ class RecordingViewModel @Inject constructor(
     /** Long-press on play: start recording [station], or stop it if it is already recording. */
     fun toggleRecord(station: RecStation) {
         val cur = active.value.firstOrNull { it.station.uuid == station.uuid }
-        if (cur != null) stop(cur.id)
-        else ContextCompat.startForegroundService(context, RecordingService.startIntent(context, station, null, null))
+        if (cur != null) {
+            stop(cur.id)
+        } else {
+            ContextCompat.startForegroundService(context, RecordingService.startIntent(context, station, null, null))
+        }
     }
 
     fun stop(id: String) {

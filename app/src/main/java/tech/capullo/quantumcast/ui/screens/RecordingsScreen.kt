@@ -121,7 +121,10 @@ fun RecordingsScreen(
         if (oemWarning && hint != null) {
             val testStation = stations.firstOrNull()
             AlertDialog(
-                onDismissRequest = { oemWarning = false; vm.markOemWarned() },
+                onDismissRequest = {
+                    oemWarning = false
+                    vm.markOemWarned()
+                },
                 title = { Text("One more step for schedules") },
                 text = {
                     Text(
@@ -139,9 +142,16 @@ fun RecordingsScreen(
                 dismissButton = {
                     Row {
                         if (testStation != null) {
-                            TextButton(onClick = { oemWarning = false; vm.markOemWarned(); runTest(testStation) }) { Text("Test") }
+                            TextButton(onClick = {
+                                oemWarning = false
+                                vm.markOemWarned()
+                                runTest(testStation)
+                            }) { Text("Test") }
                         }
-                        TextButton(onClick = { oemWarning = false; vm.markOemWarned() }) { Text("Later") }
+                        TextButton(onClick = {
+                            oemWarning = false
+                            vm.markOemWarned()
+                        }) { Text("Later") }
                     }
                 },
             )
@@ -191,7 +201,10 @@ private fun FilesTab(
                 // The playlist is this list as shown.
                 onPlay = { onPlayRecording(f, playable) },
                 onShare = { shareFile(context, f) },
-                onSave = { saving = f; saveLauncher.launch(f.name) },
+                onSave = {
+                    saving = f
+                    saveLauncher.launch(f.name)
+                },
                 onDelete = { confirmDelete = f },
             )
         }
@@ -201,7 +214,12 @@ private fun FilesTab(
             onDismissRequest = { confirmDelete = null },
             title = { Text("Delete recording?") },
             text = { Text(f.name) },
-            confirmButton = { TextButton(onClick = { vm.delete(f); confirmDelete = null }) { Text("Delete") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.delete(f)
+                    confirmDelete = null
+                }) { Text("Delete") }
+            },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
         )
     }
@@ -210,7 +228,12 @@ private fun FilesTab(
 @Composable
 private fun ActiveRow(r: ActiveRecording, onStop: () -> Unit) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(r.id) { while (true) { kotlinx.coroutines.delay(1_000); now = System.currentTimeMillis() } }
+    LaunchedEffect(r.id) {
+        while (true) {
+            kotlinx.coroutines.delay(1_000)
+            now = System.currentTimeMillis()
+        }
+    }
     val status = when (r.state) {
         RecState.CONNECTING -> "Connecting…"
         RecState.RECONNECTING -> "Reconnecting…"
@@ -279,9 +302,18 @@ private fun FileRow(
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Share") }, onClick = { menu = false; onShare() })
-                    DropdownMenuItem(text = { Text("Save to…") }, onClick = { menu = false; onSave() })
-                    DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
+                    DropdownMenuItem(text = { Text("Share") }, onClick = {
+                        menu = false
+                        onShare()
+                    })
+                    DropdownMenuItem(text = { Text("Save to…") }, onClick = {
+                        menu = false
+                        onSave()
+                    })
+                    DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                        menu = false
+                        onDelete()
+                    })
                 }
             }
         },
@@ -354,9 +386,21 @@ private fun SchedulesTab(
         ScheduleDialog(
             initial = editing,
             picker = picker,
-            onDismiss = { creating = false; editing = null },
-            onSave = { onSave(it); creating = false; editing = null },
-            onDelete = editing?.let { e -> { onDelete(e.id); editing = null } },
+            onDismiss = {
+                creating = false
+                editing = null
+            },
+            onSave = {
+                onSave(it)
+                creating = false
+                editing = null
+            },
+            onDelete = editing?.let { e ->
+                {
+                    onDelete(e.id)
+                    editing = null
+                }
+            },
         )
     }
 }
@@ -449,7 +493,10 @@ private fun ScheduleDialog(
                             }
                             DropdownMenu(expanded = pickZone, onDismissRequest = { pickZone = false }) {
                                 zoneChoices.forEach { z ->
-                                    DropdownMenuItem(text = { Text(StationZones.label(z)) }, onClick = { zoneId = z; pickZone = false })
+                                    DropdownMenuItem(text = { Text(StationZones.label(z)) }, onClick = {
+                                        zoneId = z
+                                        pickZone = false
+                                    })
                                 }
                             }
                         }
@@ -563,8 +610,11 @@ private fun StorageTab(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Folder", style = MaterialTheme.typography.titleMedium)
         Text(
-            if (prefs.treeUri == null) "App folder (internal). Removed if the app is uninstalled; use Save to… to keep a copy."
-            else Uri.decode(prefs.folderUri.substringAfterLast("/")),
+            if (prefs.treeUri == null) {
+                "App folder (internal). Removed if the app is uninstalled; use Save to… to keep a copy."
+            } else {
+                Uri.decode(prefs.folderUri.substringAfterLast("/"))
+            },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -613,8 +663,11 @@ private fun ReliabilityChecklist(context: Context, testStation: RecStation?, onT
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     CheckRow("Notifications allowed", notificationsOk) {
-        if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+        if (Build.VERSION.SDK_INT >= 33) {
+            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+        }
     }
     CheckRow("Battery optimization off", batteryOk) {
         context.startActivity(
@@ -649,8 +702,11 @@ private fun ScheduleTestRow(station: RecStation?, onTest: (RecStation) -> Unit) 
         headlineContent = { Text("Test scheduled recording") },
         supportingContent = {
             Text(
-                if (station == null) "Play a station or add a favorite first."
-                else "Closes QuantumCast, then checks it wakes up by itself in 1 minute and records ${station.name} for 20 s.",
+                if (station == null) {
+                    "Play a station or add a favorite first."
+                } else {
+                    "Closes QuantumCast, then checks it wakes up by itself in 1 minute and records ${station.name} for 20 s."
+                },
             )
         },
         trailingContent = { TextButton(enabled = station != null, onClick = { confirm = true }) { Text("Test") } },
@@ -666,7 +722,12 @@ private fun ScheduleTestRow(station: RecStation?, onTest: (RecStation) -> Unit) 
                         "and auto start needs allowing.",
                 )
             },
-            confirmButton = { TextButton(onClick = { confirm = false; onTest(station) }) { Text("Close & test") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = false
+                    onTest(station)
+                }) { Text("Close & test") }
+            },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
         )
     }
@@ -706,6 +767,10 @@ private fun CheckRow(label: String, ok: Boolean?, hint: String? = null, onFix: (
         },
         headlineContent = { Text(label, fontWeight = if (ok == false) FontWeight.SemiBold else FontWeight.Normal) },
         supportingContent = hint?.let { { Text(it) } },
-        trailingContent = if (ok != true) { { TextButton(onClick = { runCatching(onFix) }) { Text(if (ok == null) "Open" else "Fix") } } } else null,
+        trailingContent = if (ok != true) {
+            { TextButton(onClick = { runCatching(onFix) }) { Text(if (ok == null) "Open" else "Fix") } }
+        } else {
+            null
+        },
     )
 }

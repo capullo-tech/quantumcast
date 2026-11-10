@@ -1,8 +1,8 @@
 package tech.capullo.quantumcast.ui.screens
 
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -171,7 +171,13 @@ fun SkipIntervalButton(
     tint: Color = LocalContentColor.current,
 ) {
     val haptics = LocalHapticFeedback.current
-    val label = if (seconds < 60) "$seconds" else if (seconds % 60 == 0) "${seconds / 60}m" else "${seconds / 60}:${"%02d".format(seconds % 60)}"
+    val label = if (seconds < 60) {
+        "$seconds"
+    } else if (seconds % 60 == 0) {
+        "${seconds / 60}m"
+    } else {
+        "${seconds / 60}:${"%02d".format(seconds % 60)}"
+    }
     Box(
         modifier = Modifier
             .size(size)
@@ -365,4 +371,3 @@ fun RecordingActiveIndicator(onClick: () -> Unit) {
         BlinkingRecDot(10.dp)
     }
 }
-

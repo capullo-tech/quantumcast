@@ -249,17 +249,21 @@ private fun RadioApp(
     // Non-null while a recording (not a station) plays: switches both players to recording controls.
     val playingRecording by vm.playingRecording.collectAsState()
     val recordingPrefs by vm.recordingPrefs.collectAsState()
-    val recordingUi = if (playingRecording == null) null else tech.capullo.quantumcast.ui.screens.RecordingPlaybackUi(
-        progress = vm.mediaProgress,
-        skipSeconds = recordingPrefs.skipSeconds,
-        speed = recordingPrefs.speed,
-        onSeek = vm::seekRecording,
-        onSkipBack = vm::skipBackward,
-        onSkipForward = vm::skipForward,
-        onPrevious = vm::previousRecording,
-        onNext = vm::nextRecording,
-        onSetSpeed = vm::setRecordingSpeed,
-    )
+    val recordingUi = if (playingRecording == null) {
+        null
+    } else {
+        tech.capullo.quantumcast.ui.screens.RecordingPlaybackUi(
+            progress = vm.mediaProgress,
+            skipSeconds = recordingPrefs.skipSeconds,
+            speed = recordingPrefs.speed,
+            onSeek = vm::seekRecording,
+            onSkipBack = vm::skipBackward,
+            onSkipForward = vm::skipForward,
+            onPrevious = vm::previousRecording,
+            onNext = vm::nextRecording,
+            onSetSpeed = vm::setRecordingSpeed,
+        )
+    }
 
     fun startCustomRotation(stations: List<Station>) = vm.startCustomRotation(stations)
 

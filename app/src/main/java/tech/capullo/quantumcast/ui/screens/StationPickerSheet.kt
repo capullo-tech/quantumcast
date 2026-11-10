@@ -45,8 +45,7 @@ fun StationPickerSheet(
     val scope = rememberCoroutineScope()
     val q = query.trim()
 
-    fun matches(name: String, country: String) =
-        q.isEmpty() || name.contains(q, ignoreCase = true) || country.contains(q, ignoreCase = true)
+    fun matches(name: String, country: String) = q.isEmpty() || name.contains(q, ignoreCase = true) || country.contains(q, ignoreCase = true)
 
     // Same order as the Favorites screen: groups by their sort order (members by theirs), then the rest.
     val sections: List<Pair<String, List<FavoriteEntity>>> = remember(favorites, groups, q) {
@@ -64,11 +63,19 @@ fun StationPickerSheet(
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it; directoryResults = null },
+                onValueChange = {
+                    query = it
+                    directoryResults = null
+                },
                 placeholder = { Text("Search station or country") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = {
-                    if (query.isNotEmpty()) IconButton(onClick = { query = ""; directoryResults = null }) { Icon(Icons.Default.Clear, "Clear") }
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = {
+                            query = ""
+                            directoryResults = null
+                        }) { Icon(Icons.Default.Clear, "Clear") }
+                    }
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
@@ -149,7 +156,11 @@ private fun PickRow(name: String, country: String, favicon: String, countryCode:
             )
         },
         headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = if (country.isNotEmpty()) { { Text(listOf(flag, country).filter { it.isNotEmpty() }.joinToString(" ")) } } else null,
+        supportingContent = if (country.isNotEmpty()) {
+            { Text(listOf(flag, country).filter { it.isNotEmpty() }.joinToString(" ")) }
+        } else {
+            null
+        },
     )
 }
 

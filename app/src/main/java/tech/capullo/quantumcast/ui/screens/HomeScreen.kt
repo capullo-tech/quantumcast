@@ -141,8 +141,11 @@ fun HomeScreen(
             item {
                 FilledTonalButton(
                     onClick = {
-                        if (searchText.isNotBlank()) submitSearch()
-                        else if (!isShuffleLoading) onShuffleRotation()
+                        if (searchText.isNotBlank()) {
+                            submitSearch()
+                        } else if (!isShuffleLoading) {
+                            onShuffleRotation()
+                        }
                     },
                     enabled = !isShuffleLoading,
                     modifier = Modifier

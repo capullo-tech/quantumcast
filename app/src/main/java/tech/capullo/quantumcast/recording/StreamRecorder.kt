@@ -222,12 +222,20 @@ class StreamRecorder(
 
     private fun fetchText(url: String): String {
         val c = open(url, icy = false)
-        try { return c.inputStream.use { readText(it) } } finally { c.disconnect() }
+        try {
+            return c.inputStream.use { readText(it) }
+        } finally {
+            c.disconnect()
+        }
     }
 
     private fun fetchBytes(url: String): ByteArray {
         val c = open(url, icy = false)
-        try { return c.inputStream.use { it.readBytes() } } finally { c.disconnect() }
+        try {
+            return c.inputStream.use { it.readBytes() }
+        } finally {
+            c.disconnect()
+        }
     }
 
     // --- output ---
@@ -327,7 +335,10 @@ class TsAudioDemuxer {
     fun feed(data: ByteArray, emit: (ByteArray, Int, Int) -> Unit) {
         var p = 0
         while (p + 188 <= data.size) {
-            if (data[p] != 0x47.toByte()) { p++; continue } // resync
+            if (data[p] != 0x47.toByte()) {
+                p++
+                continue
+            } // resync
             val b1 = data[p + 1].toInt() and 0xFF
             val pid = ((b1 and 0x1F) shl 8) or (data[p + 2].toInt() and 0xFF)
             val pusi = b1 and 0x40 != 0
@@ -366,7 +377,10 @@ class TsAudioDemuxer {
         while (i + 4 <= stop) {
             val program = ((d[i].toInt() and 0xFF) shl 8) or (d[i + 1].toInt() and 0xFF)
             val pid = ((d[i + 2].toInt() and 0x1F) shl 8) or (d[i + 3].toInt() and 0xFF)
-            if (program != 0) { pmtPid = pid; return }
+            if (program != 0) {
+                pmtPid = pid
+                return
+            }
             i += 4
         }
     }

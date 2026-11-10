@@ -108,7 +108,10 @@ fun SettingsScreen(
                 }) { Text("Save to file") }
             },
             dismissButton = {
-                TextButton(onClick = { showExport = false; onShareFavorites(exportM3u) }) { Text("Share") }
+                TextButton(onClick = {
+                    showExport = false
+                    onShareFavorites(exportM3u)
+                }) { Text("Share") }
             },
         )
     }
@@ -482,7 +485,10 @@ private fun IntervalChoiceRow(label: String, description: String, seconds: Int, 
                 tech.capullo.quantumcast.recording.RecordingPrefs.INTERVAL_CHOICES.forEach { s ->
                     DropdownMenuItem(
                         text = { Text(tech.capullo.quantumcast.recording.RecordingPrefs.intervalLabel(s)) },
-                        onClick = { open = false; onSelect(s) },
+                        onClick = {
+                            open = false
+                            onSelect(s)
+                        },
                     )
                 }
             }

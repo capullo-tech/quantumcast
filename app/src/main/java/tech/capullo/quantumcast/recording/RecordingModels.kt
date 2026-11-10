@@ -36,9 +36,8 @@ data class Schedule(
 ) {
     fun runsOn(day: DayOfWeek): Boolean = days and (1 shl (day.value - 1)) != 0
 
-    fun zone(): java.time.ZoneId =
-        zoneId.takeIf { it.isNotEmpty() }?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
-            ?: java.time.ZoneId.systemDefault()
+    fun zone(): java.time.ZoneId = zoneId.takeIf { it.isNotEmpty() }?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+        ?: java.time.ZoneId.systemDefault()
 }
 
 enum class RecState { CONNECTING, RECORDING, RECONNECTING }

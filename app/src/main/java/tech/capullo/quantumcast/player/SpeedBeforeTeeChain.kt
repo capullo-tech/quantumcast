@@ -34,8 +34,7 @@ class SpeedBeforeTeeChain(pre: Array<AudioProcessor>, tee: AudioProcessor) : Def
 
     override fun applySkipSilenceEnabled(skipSilenceEnabled: Boolean): Boolean = false
 
-    override fun getMediaDuration(playoutDuration: Long): Long =
-        if (speed.isActive) speed.getMediaDuration(playoutDuration) else playoutDuration
+    override fun getMediaDuration(playoutDuration: Long): Long = if (speed.isActive) speed.getMediaDuration(playoutDuration) else playoutDuration
 
     override fun getSkippedOutputFrameCount(): Long = 0
 }
