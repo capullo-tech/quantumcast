@@ -1887,8 +1887,8 @@ class PlaybackService : Service() {
 
     // --- Snapcast ---
 
-    // OS-assigned ports (default) so multiple capullo apps coexist and the ports aren't a fixed
-    // guess; the resolved trio is read back off snapserver.ports to wire the snapclient / NSD /
+    // A random consecutive block (default) so multiple capullo apps coexist and the ports aren't a
+    // fixed guess; the resolved trio is read back off snapserver.ports to wire the snapclient / NSD /
     // control / web URL. A fixed base port (Settings) instead pins the trio so the server address
     // survives broadcast restarts (snapclients reconnect without rediscovery; web origin stable).
     private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(
@@ -1899,14 +1899,14 @@ class PlaybackService : Service() {
         controlSocketName = SnapserverProcess.controlSocketName(this),
     ).also { snapserverProcess = it }
 
-    /** Fixed base if set AND its trio is actually free; otherwise OS-assigned. A busy fixed
+    /** Fixed base if set AND its trio is actually free; otherwise a random block. A busy fixed
      *  port falls back to random with a Toast so the broadcast never silently dies on a
      *  collision (user-editable base can clash with another app or a stale server). */
     private fun resolveSnapserverPorts(): SnapserverPorts {
         val base = snapserverFixedPort
         if (base <= 0) return SnapserverPorts.free()
         SnapserverPorts.fixedIfFree(base)?.let { return it }
-        Log.w(TAG, "fixed snapserver port $base unavailable — falling back to OS-assigned")
+        Log.w(TAG, "fixed snapserver port $base unavailable — falling back to a random block")
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(
                 this,

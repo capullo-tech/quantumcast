@@ -141,7 +141,7 @@ fun SettingsScreen(
                     label = "Fixed server port",
                     description = "Pin the broadcast to a fixed port (base, base+1, base+2) so " +
                         "clients reconnect and the web player keeps its identity across restarts. " +
-                        "Off = OS-assigned (default). Applies on the next broadcast.",
+                        "Off = random port (default). Applies on the next broadcast.",
                     checked = settings.snapserverFixedPort > 0,
                     onToggle = { on -> onSetSnapserverFixedPort(if (on) -1 else 0) },
                 )
