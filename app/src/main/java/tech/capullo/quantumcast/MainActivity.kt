@@ -94,14 +94,27 @@ class MainActivity : ComponentActivity() {
                 // One blink clock for every "recording" indicator, running only while something records.
                 tech.capullo.quantumcast.ui.screens.ProvideRecBlink(active = recordingsActive.isNotEmpty()) {
                     RadioApp(vm, recVm, discoveredServers, discoveryManager)
+                    FavoritesImportDialog(vm)
                 }
             }
         }
+        if (savedInstanceState == null) handleFavoritesFile(intent)
+    }
+
+    /** A favorites backup opened from a chat/file manager (VIEW) or shared to the app (SEND). */
+    private fun handleFavoritesFile(intent: Intent?) {
+        val uri = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            else -> null
+        } ?: return
+        vm.readFavoritesFile(uri)
     }
 
     // ADB test: adb shell am start -n tech.capullo.quantumcast/.MainActivity --es dbg shuffle
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleFavoritesFile(intent)
         // Debug-only test hooks. MainActivity is the exported launcher, so gate these to
         // debuggable builds - a release build must expose no playback-control surface to other apps.
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
@@ -504,8 +517,9 @@ private fun RadioApp(
                         onSetWebAutoplay = { vm.updateSetting { setWebAutoplay(it) } },
                         onSetTunnelEnabled = { vm.updateSetting { setTunnelEnabled(it) } },
                         onSetMaxHistorySongs = { vm.updateSetting { setMaxHistorySongs(it) } },
-                        onExportFavorites = vm::exportFavorites,
-                        onImportFavorites = vm::importFavorites,
+                        onExportFavorites = { uri, m3u -> vm.exportFavorites(uri, m3u) },
+                        onShareFavorites = { m3u -> vm.shareFavorites(m3u) },
+                        onPickImportFile = { uri -> vm.readFavoritesFile(uri) },
                         onBack = settingsBack,
                         onOpenRecordingStorage = { backStack.add(RecordingsRoute(tab = 2)) },
                         recordingPrefs = recordingPrefs,
@@ -558,4 +572,40 @@ private fun TunnelManager.TunnelState.toPublicLinkState() = when (this) {
     TunnelManager.TunnelState.Starting -> PublicLinkState.Starting
     is TunnelManager.TunnelState.Error -> PublicLinkState.Error(message)
     TunnelManager.TunnelState.Off -> PublicLinkState.Off
+}
+
+/**
+ * Merge-or-replace choice for a parsed favorites backup, wherever it came from (Settings → Import,
+ * or a file opened/shared into the app). Nothing changes until the user picks.
+ */
+@Composable
+private fun FavoritesImportDialog(vm: RadioViewModel) {
+    val backup by vm.pendingImport.collectAsState()
+    val b = backup ?: return
+    var confirmReplace by remember(b) { mutableStateOf(false) }
+    val groups = b.groups.size
+    val summary = "This file has ${b.favorites.size} favorite${if (b.favorites.size == 1) "" else "s"}" +
+        (if (groups > 0) " in $groups group${if (groups == 1) "" else "s"}" else "") + "."
+    if (!confirmReplace) {
+        AlertDialog(
+            onDismissRequest = vm::cancelImport,
+            title = { Text("Import favorites") },
+            text = { Text("$summary\n\nAdd to mine keeps your favorites and adds only stations you don't have yet.") },
+            confirmButton = { TextButton(onClick = { vm.importPending(replace = false) }) { Text("Add to mine") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { confirmReplace = true }) { Text("Replace mine") }
+                    TextButton(onClick = vm::cancelImport) { Text("Cancel") }
+                }
+            },
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = vm::cancelImport,
+            title = { Text("Replace all favorites?") },
+            text = { Text("Your current favorites and groups will be deleted and replaced with the ${b.favorites.size} from the file.") },
+            confirmButton = { TextButton(onClick = { vm.importPending(replace = true) }) { Text("Replace") } },
+            dismissButton = { TextButton(onClick = vm::cancelImport) { Text("Cancel") } },
+        )
+    }
 }

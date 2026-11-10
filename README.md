@@ -9,6 +9,7 @@ player for browser clients, plus per-device volume, latency offset, and
 left/right/stereo channel assignment. Record any station on demand (long-press play) or on a
 weekly schedule, saved as the station's own MP3/AAC with a size cap that rotates out the oldest,
 and play them back in-app (through Snapcast too) with resume, skip, 0.5-4× speed and smart rewind.
+Favorites can be backed up, shared and merged as JSON, or exported as an M3U playlist.
 
 ## Screenshots
 

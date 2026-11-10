@@ -1114,11 +1114,77 @@ class RadioViewModel @Inject constructor(
     fun reorderGroup(id: String, newSortOrder: Int) {
         viewModelScope.launch { repo.updateGroupSortOrder(id, newSortOrder) }
     }
-    fun exportFavorites(outputStream: OutputStream) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.exportFavorites(outputStream) } }
+    // --- Favorites backup (JSON, restorable) and playlist (M3U, for other players) ---
+
+    private fun toast(msg: String) = viewModelScope.launch(Dispatchers.Main) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
     }
-    fun importFavorites(inputStream: InputStream) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.importFavorites(inputStream) } }
+
+    /** Writes the backup or playlist; the stream is opened and closed inside (the old export closed it early → empty files). */
+    private suspend fun writeFavorites(m3u: Boolean, open: () -> OutputStream?): Int {
+        val out = open() ?: error("Can't open the file")
+        return if (m3u) {
+            // Straight from the DB: the UI-facing flows may have no subscriber here.
+            val favs = repo.getFavorites().first()
+            out.use { it.write(FavoritesPlaylist.m3u(favs, repo.getGroups().first()).toByteArray()) }
+            favs.size
+        } else {
+            repo.exportFavorites(out) // closes the stream itself
+        }
+    }
+
+    /** Save to a user-picked document. */
+    fun exportFavorites(uri: android.net.Uri, m3u: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { writeFavorites(m3u) { context.contentResolver.openOutputStream(uri, "wt") } }
+            .onSuccess { toast("Exported $it favorites") }
+            .onFailure { toast("Export failed: ${it.message}") }
+    }
+
+    /** Share via the Android share menu (WhatsApp, Telegram, email…). */
+    fun shareFavorites(m3u: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+            val file = java.io.File(dir, FavoritesPlaylist.fileName(m3u))
+            writeFavorites(m3u) { file.outputStream() }
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
+            val send = Intent(Intent.ACTION_SEND)
+                .setType(if (m3u) "audio/x-mpegurl" else "application/json")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.startActivity(
+                Intent.createChooser(send, "Share favorites").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { toast("Share failed: ${it.message}") }
+    }
+
+    /** A parsed backup waiting for the user's merge/replace choice (from Settings or an opened file). */
+    private val _pendingImport = MutableStateFlow<tech.capullo.source.radiobrowser.data.repository.FavoritesBackup?>(null)
+    val pendingImport: StateFlow<tech.capullo.source.radiobrowser.data.repository.FavoritesBackup?> = _pendingImport
+
+    fun readFavoritesFile(uri: android.net.Uri) = viewModelScope.launch(Dispatchers.IO) {
+        val backup = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { repo.readFavoritesBackup(it) }
+        }.getOrNull()
+        if (backup == null) toast("This isn't a QuantumCast favorites file") else _pendingImport.value = backup
+    }
+
+    fun importPending(replace: Boolean) {
+        val backup = _pendingImport.value ?: return
+        _pendingImport.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.importFavorites(backup, replace) }
+                .onSuccess { r ->
+                    toast(
+                        if (replace) "Replaced favorites with ${r.added} from the file"
+                        else "Imported ${r.added} new favorites" + if (r.alreadyThere > 0) " (${r.alreadyThere} already there)" else "",
+                    )
+                }
+                .onFailure { toast("Import failed: ${it.message}") }
+        }
+    }
+
+    fun cancelImport() {
+        _pendingImport.value = null
     }
 
     // --- Snapclient (QuantumCast tab) ---
