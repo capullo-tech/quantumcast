@@ -1,9 +1,11 @@
 package tech.capullo.quantumcast.ui.screens
 
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -49,30 +51,43 @@ val LocalRecBlink = compositionLocalOf<State<Float>> { mutableFloatStateOf(0f) }
 
 @Composable
 fun ProvideRecBlink(active: Boolean, content: @Composable () -> Unit) {
-    if (!active) {
-        // No running animation (no per-frame recomposition) while nothing records.
-        CompositionLocalProvider(LocalRecBlink provides remember { mutableFloatStateOf(0f) }, content = content)
-        return
+    // content() must stay at ONE call site: calling it from two branches made Compose treat the
+    // app as new UI whenever recording started/stopped, rebuilding every screen (Now Playing
+    // replayed its fade-in). Only the clock is conditional.
+    val idle = remember { mutableFloatStateOf(0f) }
+    // Keep the clock alive briefly after the last recording stops so the play button can finish
+    // morphing back to its icon instead of snapping.
+    var running by remember { mutableStateOf(active) }
+    LaunchedEffect(active) {
+        if (active) {
+            running = true
+        } else {
+            kotlinx.coroutines.delay(300)
+            running = false
+        }
     }
-    val t = rememberInfiniteTransition(label = "recBlink")
-    val v = t.animateFloat(
-        initialValue = 0f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            keyframes {
-                durationMillis = 1400
-                // Long enough each way for the play/pause ⇄ dot morph to read as a shape change.
-                0f at 0
-                0f at 450
-                1f at 700
-                1f at 1150
-                0f at 1400
-            },
-        ),
-        label = "recBlinkPhase",
-    )
-    CompositionLocalProvider(LocalRecBlink provides v, content = content)
+    val clock: State<Float> = if (active || running) rememberBlinkClock() else idle
+    CompositionLocalProvider(LocalRecBlink provides clock, content = content)
 }
+
+/** Runs only while something records, so idle screens don't redraw every frame. */
+@Composable
+private fun rememberBlinkClock(): State<Float> = rememberInfiniteTransition(label = "recBlink").animateFloat(
+    initialValue = 0f,
+    targetValue = 0f,
+    animationSpec = infiniteRepeatable(
+        keyframes {
+            durationMillis = 1400
+            // Long enough each way for the play/pause ⇄ dot morph to read as a shape change.
+            0f at 0
+            0f at 450
+            1f at 700
+            1f at 1150
+            0f at 1400
+        },
+    ),
+    label = "recBlinkPhase",
+)
 
 /** A red dot pulsing on the shared clock: "something is recording". */
 @Composable
@@ -134,10 +149,13 @@ fun PlayPauseButton(
             .then(if (recordingThis) Modifier.semantics { contentDescription = "Recording" } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (!recordingThis || glyph == null) {
+        // 1 while this station records, 0 otherwise; animated so stop/start morph instead of snap.
+        val weight = animateFloatAsState(if (recordingThis) 1f else 0f, tween(250), label = "recWeight")
+        if (glyph == null || (!recordingThis && weight.value == 0f)) {
+            // At weight 0 the morph glyph matches the icon exactly, so this swap is invisible.
             content()
         } else {
-            MorphingGlyph(glyph, blink, glyphColor, Modifier.size(glyphSize))
+            MorphingGlyph(glyph, blink, weight, glyphColor, Modifier.size(glyphSize))
         }
     }
 }
@@ -153,10 +171,12 @@ enum class PlayGlyph { PLAY, PAUSE }
  * morph with no twisting (convex pieces have exactly one boundary point per ray).
  */
 @Composable
-private fun MorphingGlyph(glyph: PlayGlyph, blink: State<Float>, color: Color, modifier: Modifier) {
+private fun MorphingGlyph(glyph: PlayGlyph, blink: State<Float>, weight: State<Float>, color: Color, modifier: Modifier) {
     val path = remember { androidx.compose.ui.graphics.Path() }
     androidx.compose.foundation.Canvas(modifier) {
-        val raw = blink.value
+        // weight eases the whole effect in/out when recording starts/stops, so the glyph never
+        // jumps between icon and dot mid-blink.
+        val raw = blink.value * weight.value
         val t = raw * raw * (3 - 2 * raw) // smoothstep: eases in and out of each end
         val from = if (glyph == PlayGlyph.PLAY) GlyphShapes.play else GlyphShapes.pause
         val k = size.minDimension / 24f
