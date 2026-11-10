@@ -1382,6 +1382,13 @@ private fun NowPlayingControls(
                     size = 68.dp,
                     enabled = !lockedInClient,
                     recordingThis = isRecording,
+                    glyph = when {
+                        lockedInClient || isBuffering -> null
+                        isPlaying -> PlayGlyph.PAUSE
+                        else -> PlayGlyph.PLAY
+                    },
+                    glyphSize = 40.dp,
+                    glyphColor = playColors.contentColor,
                     onClick = onTogglePlayPause,
                     onLongClick = when {
                         isSnapclientMode -> null

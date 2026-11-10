@@ -189,6 +189,12 @@ fun NowPlayingBar(
                         size = 48.dp,
                         enabled = !lockedInClient,
                         recordingThis = isRecording,
+                        glyph = when {
+                            lockedInClient -> null
+                            state.isPlaying || state.isBuffering -> PlayGlyph.PAUSE
+                            else -> PlayGlyph.PLAY
+                        },
+                        glyphColor = MaterialTheme.colorScheme.primary,
                         onClick = onTogglePlayPause,
                         onLongClick = when {
                             isSnapclientMode -> null

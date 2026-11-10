@@ -61,10 +61,11 @@ fun ProvideRecBlink(active: Boolean, content: @Composable () -> Unit) {
         animationSpec = infiniteRepeatable(
             keyframes {
                 durationMillis = 1400
+                // Long enough each way for the play/pause ⇄ dot morph to read as a shape change.
                 0f at 0
-                0f at 600
-                1f at 750
-                1f at 1300
+                0f at 450
+                1f at 700
+                1f at 1150
                 0f at 1400
             },
         ),
@@ -89,8 +90,10 @@ fun BlinkingRecDot(size: Dp = 10.dp, modifier: Modifier = Modifier) {
 // --- Play / pause ---------------------------------------------------------------------------
 
 /**
- * Play/pause button. While [recordingThis] is true it alternates between its normal icon and a
- * centred red dot (the station being played is recording). Tap and long-press are the caller's.
+ * Play/pause button. While [recordingThis] is true its glyph morphs back and forth between the
+ * play triangle / pause bars and a red dot (the station being played is recording): the outline
+ * itself changes shape, it doesn't cross-fade. [glyph] says which icon is showing; null when the
+ * button shows something that isn't play/pause (lock, buffering ring) - that content never morphs.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -103,6 +106,9 @@ fun PlayPauseButton(
     longClickLabel: String?,
     modifier: Modifier = Modifier,
     background: Color = Color.Transparent,
+    glyph: PlayGlyph? = null,
+    glyphSize: Dp = 24.dp,
+    glyphColor: Color = LocalContentColor.current,
     content: @Composable () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -128,18 +134,102 @@ fun PlayPauseButton(
             .then(if (recordingThis) Modifier.semantics { contentDescription = "Recording" } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (!recordingThis) {
+        if (!recordingThis || glyph == null) {
             content()
         } else {
-            Box(Modifier.graphicsLayer { alpha = 1f - blink.value }, contentAlignment = Alignment.Center) { content() }
-            Box(
-                Modifier
-                    .size(size * 0.32f)
-                    .graphicsLayer { alpha = blink.value }
-                    .clip(CircleShape)
-                    .background(RecRed),
-            )
+            MorphingGlyph(glyph, blink, glyphColor, Modifier.size(glyphSize))
         }
+    }
+}
+
+enum class PlayGlyph { PLAY, PAUSE }
+
+/**
+ * Draws [glyph] morphed toward the record dot by the shared clock's value (0 = icon, 1 = dot).
+ *
+ * Each shape is two convex pieces (left/right), matching the Material icons' geometry exactly so
+ * the start frame is pixel-identical to the regular icon. Every piece is resampled as N points along
+ * rays from its own centre; interpolating those point lists point-by-point gives a real outline
+ * morph with no twisting (convex pieces have exactly one boundary point per ray).
+ */
+@Composable
+private fun MorphingGlyph(glyph: PlayGlyph, blink: State<Float>, color: Color, modifier: Modifier) {
+    val path = remember { androidx.compose.ui.graphics.Path() }
+    androidx.compose.foundation.Canvas(modifier) {
+        val raw = blink.value
+        val t = raw * raw * (3 - 2 * raw) // smoothstep: eases in and out of each end
+        val from = if (glyph == PlayGlyph.PLAY) GlyphShapes.play else GlyphShapes.pause
+        val k = size.minDimension / 24f
+        path.reset()
+        for (piece in 0..1) {
+            val a = from[piece]
+            val b = GlyphShapes.dot[piece]
+            for (i in 0 until GlyphShapes.N) {
+                val x = (a[2 * i] + (b[2 * i] - a[2 * i]) * t) * k
+                val y = (a[2 * i + 1] + (b[2 * i + 1] - a[2 * i + 1]) * t) * k
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+        }
+        drawPath(path, androidx.compose.ui.graphics.lerp(color, RecRed, t))
+    }
+}
+
+/** Outline samples for the morph, in Material's 24×24 icon space. */
+private object GlyphShapes {
+    const val N = 64
+
+    // Material PlayArrow: M8,5 v14 l11,-7 z, split at x=13.5 into a quad and a triangle.
+    // Material Pause: bars x 6..10 and 14..18, y 5..19.
+    // Dot: r=4.2 at (12,12), split into left/right halves so each half meets one piece.
+    val play = listOf(
+        sample(listOf(8f to 5f, 13.5f to 8.5f, 13.5f to 15.5f, 8f to 19f)),
+        sample(listOf(13.5f to 8.5f, 19f to 12f, 13.5f to 15.5f)),
+    )
+    val pause = listOf(
+        sample(listOf(6f to 5f, 10f to 5f, 10f to 19f, 6f to 19f)),
+        sample(listOf(14f to 5f, 18f to 5f, 18f to 19f, 14f to 19f)),
+    )
+    val dot = listOf(halfDisc(left = true), halfDisc(left = false))
+
+    private fun halfDisc(left: Boolean): FloatArray {
+        val r = 4.2f
+        val pts = (0..32).map { i ->
+            // left: arc from top (−90°) through 180° to bottom (90°); right: top → 0° → bottom.
+            val deg = if (left) -90f - 180f * i / 32 else -90f + 180f * i / 32
+            val rad = Math.toRadians(deg.toDouble())
+            (12f + r * kotlin.math.cos(rad).toFloat()) to (12f + r * kotlin.math.sin(rad).toFloat())
+        }
+        return sample(pts)
+    }
+
+    /** N boundary points of a convex polygon, on rays from its centroid at even angles from straight up, clockwise. */
+    private fun sample(poly: List<Pair<Float, Float>>): FloatArray {
+        val cx = poly.sumOf { it.first.toDouble() } / poly.size
+        val cy = poly.sumOf { it.second.toDouble() } / poly.size
+        val out = FloatArray(2 * N)
+        for (i in 0 until N) {
+            val ang = -Math.PI / 2 + 2 * Math.PI * i / N
+            val dx = kotlin.math.cos(ang)
+            val dy = kotlin.math.sin(ang)
+            var best = Double.MAX_VALUE
+            for (e in poly.indices) {
+                val (x1, y1) = poly[e]
+                val (x2, y2) = poly[(e + 1) % poly.size]
+                val ex = (x2 - x1).toDouble()
+                val ey = (y2 - y1).toDouble()
+                val den = dx * ey - dy * ex
+                if (kotlin.math.abs(den) < 1e-9) continue
+                val wx = x1 - cx
+                val wy = y1 - cy
+                val s = (wx * ey - wy * ex) / den // distance along the ray
+                val u = (wx * dy - wy * dx) / den // position along the edge
+                if (s > 0 && u >= -1e-6 && u <= 1 + 1e-6 && s < best) best = s
+            }
+            out[2 * i] = (cx + dx * best).toFloat()
+            out[2 * i + 1] = (cy + dy * best).toFloat()
+        }
+        return out
     }
 }
 
