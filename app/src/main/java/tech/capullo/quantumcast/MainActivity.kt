@@ -51,10 +51,13 @@ import tech.capullo.source.radiobrowser.data.model.Station
 
 @Serializable private data object SettingsRoute : NavKey
 
+@Serializable private data class RecordingsRoute(val tab: Int = 0) : NavKey
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val vm: RadioViewModel by viewModels()
+    private val recVm: tech.capullo.quantumcast.viewmodel.RecordingViewModel by viewModels()
     private lateinit var discoveryManager: SnapserverDiscoveryManager
 
     private val skipReceiver = object : BroadcastReceiver() {
@@ -87,7 +90,11 @@ class MainActivity : ComponentActivity() {
             val settings by vm.settings.collectAsState()
             RadioTheme(themeMode = settings.themeMode) {
                 val discoveredServers by discoveryManager.discoveredServers.collectAsState()
-                RadioApp(vm, discoveredServers, discoveryManager)
+                val recordingsActive by recVm.active.collectAsState()
+                // One blink clock for every "recording" indicator, running only while something records.
+                tech.capullo.quantumcast.ui.screens.ProvideRecBlink(active = recordingsActive.isNotEmpty()) {
+                    RadioApp(vm, recVm, discoveredServers, discoveryManager)
+                }
             }
         }
     }
@@ -158,6 +165,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RadioApp(
     vm: RadioViewModel,
+    recVm: tech.capullo.quantumcast.viewmodel.RecordingViewModel,
     discoveredServers: List<DiscoveredSnapserver>,
     discoveryManager: SnapserverDiscoveryManager,
 ) {
@@ -196,6 +204,49 @@ private fun RadioApp(
     val streamStats by vm.streamStats.collectAsState()
     val sleepTimerActive by vm.sleepTimerActive.collectAsState()
     val sleepTimerSecondsRemaining by vm.sleepTimerSecondsRemaining.collectAsState()
+    val activeRecordings by recVm.active.collectAsState()
+
+    // Recording targets the station this phone streams itself; in client mode there is none.
+    // Not while a recording plays (its synthetic station has no stream URL anyway).
+    val recStation = playerState.station?.takeIf { snapclientHost.isEmpty() && it.streamUrl.isNotEmpty() }?.let {
+        tech.capullo.quantumcast.recording.RecStation(it.uuid, it.name, it.streamUrl, it.favicon)
+    }
+    val isRecordingCurrent = recStation != null && activeRecordings.any { it.station.uuid == recStation.uuid }
+    // The recording notification (with its Stop button) needs POST_NOTIFICATIONS on 13+; the
+    // playback notification never did (media-style is exempt), so the app never asked before.
+    val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { }
+    val toggleRecord: () -> Unit = {
+        if (recStation != null) {
+            if (!isRecordingCurrent && Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(activityContext, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            // Feedback is the play button itself (it starts/stops alternating with a red dot).
+            recVm.toggleRecord(recStation)
+        }
+    }
+    val openRecordings: () -> Unit = {
+        if (backStack.lastOrNull() !is RecordingsRoute) backStack.add(RecordingsRoute())
+    }
+
+    // Non-null while a recording (not a station) plays: switches both players to recording controls.
+    val playingRecording by vm.playingRecording.collectAsState()
+    val recordingPrefs by vm.recordingPrefs.collectAsState()
+    val recordingUi = if (playingRecording == null) null else tech.capullo.quantumcast.ui.screens.RecordingPlaybackUi(
+        progress = vm.mediaProgress,
+        skipSeconds = recordingPrefs.skipSeconds,
+        speed = recordingPrefs.speed,
+        onSeek = vm::seekRecording,
+        onSkipBack = vm::skipBackward,
+        onSkipForward = vm::skipForward,
+        onPrevious = vm::previousRecording,
+        onNext = vm::nextRecording,
+        onSetSpeed = vm::setRecordingSpeed,
+    )
 
     fun startCustomRotation(stations: List<Station>) = vm.startCustomRotation(stations)
 
@@ -216,6 +267,15 @@ private fun RadioApp(
                 if (backStack.lastOrNull() != SettingsRoute) backStack.add(SettingsRoute)
             },
             onTogglePlayPause = vm::togglePlayPause,
+            isRecording = isRecordingCurrent,
+            onToggleRecord = toggleRecord,
+            anyRecording = activeRecordings.isNotEmpty(),
+            onOpenRecordings = {
+                vm.hideDetail()
+                openRecordings()
+            },
+            recording = recordingUi,
+            onToggleSpeed = vm::toggleRecordingSpeed,
             onIdentifyNow = vm::identifyNow,
             onCancelIdentify = vm::cancelIdentify,
             onSkip = vm::skipStation,
@@ -292,6 +352,10 @@ private fun RadioApp(
                 onSkipPrev = vm::skipPrevStation,
                 onSkip = vm::skipStation,
                 onOpenDetail = { vm.showDetail() },
+                isRecording = isRecordingCurrent,
+                onToggleRecord = toggleRecord,
+                recording = recordingUi,
+                onToggleSpeed = vm::toggleRecordingSpeed,
             )
         },
     ) { padding ->
@@ -330,6 +394,8 @@ private fun RadioApp(
                         onOpenCountries = {
                             if (backStack.lastOrNull() != CountriesRoute) backStack.add(CountriesRoute)
                         },
+                        onOpenRecordings = openRecordings,
+                        recordingActive = activeRecordings.isNotEmpty(),
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -441,8 +507,28 @@ private fun RadioApp(
                         onExportFavorites = vm::exportFavorites,
                         onImportFavorites = vm::importFavorites,
                         onBack = settingsBack,
+                        onOpenRecordingStorage = { backStack.add(RecordingsRoute(tab = 2)) },
+                        recordingPrefs = recordingPrefs,
+                        onSetSkipSeconds = { s -> vm.updateRecordingPrefs { setSkipSeconds(s) } },
+                        onSetSmartRewind = { on -> vm.updateRecordingPrefs { setSmartRewind(on) } },
+                        onSetSmartRewindLimit = { s -> vm.updateRecordingPrefs { setSmartRewindLimit(s) } },
+                        onSetPitchCorrection = vm::setPitchCorrection,
                         modifier = Modifier.padding(padding),
                     )
+                }
+                entry<RecordingsRoute> { route ->
+                    BackHandler { backStack.removeLastOrNull() }
+                    Column(modifier = Modifier.padding(padding)) {
+                        ChildTopBar("Recordings") { backStack.removeLastOrNull() }
+                        RecordingsScreen(
+                            vm = recVm,
+                            currentStation = recStation,
+                            initialTab = route.tab,
+                            playingName = playingRecording?.name,
+                            onPlayRecording = vm::playRecording,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             },
         )

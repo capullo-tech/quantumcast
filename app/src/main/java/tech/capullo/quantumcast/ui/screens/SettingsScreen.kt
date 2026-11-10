@@ -55,6 +55,12 @@ fun SettingsScreen(
     onExportFavorites: (java.io.OutputStream) -> Unit = {},
     onImportFavorites: (java.io.InputStream) -> Unit = {},
     onBack: () -> Unit = {},
+    onOpenRecordingStorage: () -> Unit = {},
+    recordingPrefs: tech.capullo.quantumcast.recording.RecordingPrefs = tech.capullo.quantumcast.recording.RecordingPrefs(),
+    onSetSkipSeconds: (Int) -> Unit = {},
+    onSetSmartRewind: (Boolean) -> Unit = {},
+    onSetSmartRewindLimit: (Int) -> Unit = {},
+    onSetPitchCorrection: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -345,6 +351,54 @@ fun SettingsScreen(
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Recordings") }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("Folder, size limit & schedule checklist") },
+                    supportingContent = { Text("Where recordings are saved, how much space they may use, and what scheduled recordings need") },
+                    modifier = Modifier.clickable(onClick = onOpenRecordingStorage),
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Recordings playback") }
+            item {
+                IntervalChoiceRow(
+                    label = "Skip interval",
+                    description = "Tap ⟲ / ⟳ to jump back or forward by this much (long-press: previous / next recording)",
+                    seconds = recordingPrefs.skipSeconds,
+                    onSelect = onSetSkipSeconds,
+                )
+            }
+            item {
+                ToggleRow(
+                    label = "Smart rewind",
+                    description = "When resuming, jump back further the longer playback was paused",
+                    checked = recordingPrefs.smartRewind,
+                    onToggle = onSetSmartRewind,
+                )
+            }
+            if (recordingPrefs.smartRewind) {
+                item {
+                    IntervalChoiceRow(
+                        label = "Smart rewind limit",
+                        description = "Never jump back more than this",
+                        seconds = recordingPrefs.smartRewindLimitSeconds,
+                        onSelect = onSetSmartRewindLimit,
+                    )
+                }
+            }
+            item {
+                ToggleRow(
+                    label = "Pitch correction",
+                    description = "Keep voices natural at other speeds. Off: faster also sounds higher, like tape",
+                    checked = recordingPrefs.pitchCorrection,
+                    onToggle = onSetPitchCorrection,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("Favorites Backup") }
 
             item {
@@ -387,6 +441,39 @@ fun SettingsScreen(
             item { Spacer(Modifier.height(16.dp)) }
         }
     } // Column
+}
+
+/** Picks one of the shared interval choices (2 s … 5 min). */
+@Composable
+private fun IntervalChoiceRow(label: String, description: String, seconds: Int, onSelect: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { open = true }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box {
+            Text(
+                tech.capullo.quantumcast.recording.RecordingPrefs.intervalLabel(seconds),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                tech.capullo.quantumcast.recording.RecordingPrefs.INTERVAL_CHOICES.forEach { s ->
+                    DropdownMenuItem(
+                        text = { Text(tech.capullo.quantumcast.recording.RecordingPrefs.intervalLabel(s)) },
+                        onClick = { open = false; onSelect(s) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

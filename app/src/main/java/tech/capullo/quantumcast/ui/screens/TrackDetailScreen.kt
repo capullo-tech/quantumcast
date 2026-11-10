@@ -111,6 +111,14 @@ fun TrackDetailScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit = {},
     onTogglePlayPause: () -> Unit,
+    isRecording: Boolean = false,
+    onToggleRecord: () -> Unit = {},
+    /** Any recording running (this station or another): blinking dot left of the ear. */
+    anyRecording: Boolean = false,
+    onOpenRecordings: () -> Unit = {},
+    /** Non-null while a recording (not a station) plays. */
+    recording: RecordingPlaybackUi? = null,
+    onToggleSpeed: () -> Unit = {},
     onIdentifyNow: () -> Unit = {},
     onCancelIdentify: () -> Unit = {},
     onSkip: () -> Unit = {},
@@ -169,6 +177,11 @@ fun TrackDetailScreen(
 
     BackHandler { onBack() }
 
+    var showSpeedPanel by remember { mutableStateOf(false) }
+    if (showSpeedPanel && recording != null) {
+        SpeedPanel(speed = recording.speed, onSetSpeed = recording.onSetSpeed, onDismiss = { showSpeedPanel = false })
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -212,7 +225,14 @@ fun TrackDetailScreen(
                 }
             },
             actions = {
-                if (!isSnapclientMode) {
+                // Something is recording (this station or a schedule on another): blinking dot,
+                // tap opens Recordings.
+                if (anyRecording) RecordingActiveIndicator(onClick = onOpenRecordings)
+                if (recording != null) {
+                    // Song ID listens to the live stream, so it has no meaning for a recording;
+                    // the speed control takes its place.
+                    SpeedChip(recording.speed) { showSpeedPanel = true }
+                } else if (!isSnapclientMode) {
                     HearingButton(
                         isRunning = isShazamRunning,
                         onClick = if (isShazamRunning) onCancelIdentify else onIdentifyNow,
@@ -386,7 +406,10 @@ fun TrackDetailScreen(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true }, onToggleOrder = onToggleRotationOrder, onCycleRepeat = onCycleRepeat)
+                if (recording != null) {
+                    RecordingSeekBar(recording, Modifier.padding(bottom = 8.dp))
+                }
+                NowPlayingControls(playerState.isPlaying, playerState.isBuffering, playerState.bufferingPercent, rotationState, onTogglePlayPause, onSkip, onSkipPrev, onToggleTimerPause, isSnapclientMode, streamCanGoNext, streamCanGoPrevious, isStreamLocked, snapcastGroups = snapcastGroups, ownClientId = ownClientId, onOpenSnapcast = { showSnapcastSheet = true }, onOpenQueue = { showQueueSheet = true }, onToggleOrder = onToggleRotationOrder, onCycleRepeat = onCycleRepeat, isRecording = isRecording, onToggleRecord = onToggleRecord, recording = recording, onToggleSpeed = onToggleSpeed)
             }
             Spacer(Modifier.height(24.dp))
             // This screen draws edge-to-edge OUTSIDE the app Scaffold, so it gets no automatic
@@ -1274,6 +1297,10 @@ private fun NowPlayingControls(
     onOpenQueue: () -> Unit = {},
     onToggleOrder: () -> Unit = {},
     onCycleRepeat: () -> Unit = {},
+    isRecording: Boolean = false,
+    onToggleRecord: () -> Unit = {},
+    recording: RecordingPlaybackUi? = null,
+    onToggleSpeed: () -> Unit = {},
 ) {
     val lockedInClient = isSnapclientMode && isStreamLocked
     val rotationActive = rotationState.isActive && !isSnapclientMode
@@ -1327,7 +1354,15 @@ private fun NowPlayingControls(
                         )
                     }
                 }
-                if (rotationActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
+                if (recording != null) {
+                    SkipIntervalButton(
+                        forward = false,
+                        seconds = recording.skipSeconds,
+                        onTap = recording.onSkipBack,
+                        onLongPress = recording.onPrevious,
+                        tint = sideTint,
+                    )
+                } else if (rotationActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
                     IconButton(
                         onClick = onSkipPrev,
                         enabled = !lockedInClient,
@@ -1341,12 +1376,26 @@ private fun NowPlayingControls(
             // CENTER: play / pause - fixed 68dp, never moves off-centre; shows lock when locked.
             // 8dp horizontal padding keeps a gap to prev/next (parity with TC's 8dp spacing).
             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
-                FilledIconButton(
-                    onClick = onTogglePlayPause,
+                // Tap = play/pause. Long-press = record (live) or 1× ⇄ last speed (recording).
+                val playColors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors()
+                PlayPauseButton(
+                    size = 68.dp,
                     enabled = !lockedInClient,
-                    modifier = Modifier.size(68.dp).alpha(if (lockedInClient) 0.38f else 1f),
-                    colors = if (isSnapclientMode) snapFilledColors else IconButtonDefaults.filledIconButtonColors(),
-                ) {
+                    recordingThis = isRecording,
+                    onClick = onTogglePlayPause,
+                    onLongClick = when {
+                        isSnapclientMode -> null
+                        recording != null -> onToggleSpeed
+                        else -> onToggleRecord
+                    },
+                    longClickLabel = when {
+                        recording != null -> "Switch speed"
+                        isRecording -> "Stop recording"
+                        else -> "Record"
+                    },
+                    background = playColors.containerColor,
+                    modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
+                ) { CompositionLocalProvider(LocalContentColor provides playColors.contentColor) {
                     if (lockedInClient) {
                         Icon(Icons.Default.Lock, "Locked by broadcaster", modifier = Modifier.size(40.dp))
                     } else if (isBuffering) {
@@ -1371,7 +1420,7 @@ private fun NowPlayingControls(
                             modifier = Modifier.size(40.dp),
                         )
                     }
-                }
+                } }
             }
 
             // RIGHT zone (hugs play): next (+ in-button countdown ring in rotation) + repeat
@@ -1381,6 +1430,13 @@ private fun NowPlayingControls(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when {
+                    recording != null -> SkipIntervalButton(
+                        forward = true,
+                        seconds = recording.skipSeconds,
+                        onTap = recording.onSkipForward,
+                        onLongPress = recording.onNext,
+                        tint = sideTint,
+                    )
                     rotationActive -> NextButtonWithRing(
                         progress = rotationState.progress,
                         timerPaused = rotationState.timerPaused,

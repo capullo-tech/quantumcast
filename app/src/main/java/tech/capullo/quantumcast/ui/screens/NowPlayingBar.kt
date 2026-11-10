@@ -53,6 +53,11 @@ fun NowPlayingBar(
     onSkipPrev: () -> Unit = {},
     onSkip: () -> Unit = {},
     onOpenDetail: () -> Unit = {},
+    isRecording: Boolean = false,
+    onToggleRecord: () -> Unit = {},
+    /** Non-null while a recording (not a station) plays. */
+    recording: RecordingPlaybackUi? = null,
+    onToggleSpeed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -93,6 +98,8 @@ fun NowPlayingBar(
             tonalElevation = 8.dp,
             modifier = Modifier.fillMaxWidth(),
         ) {
+            Column {
+            if (recording != null) MiniProgressLine(recording.progress)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -135,7 +142,8 @@ fun NowPlayingBar(
                                 t.trackName
                             }
                         }
-                    val subtitle = shazamLine ?: state.icyTitle.ifEmpty { station.country }
+                    // A recording's subtitle is when it was recorded (its synthetic station's country).
+                    val subtitle = if (recording != null) station.country else shazamLine ?: state.icyTitle.ifEmpty { station.country }
                     if (subtitle.isNotEmpty()) {
                         Text(
                             text = subtitle,
@@ -155,7 +163,17 @@ fun NowPlayingBar(
                 }
 
                 val lockedInClient = isSnapclientMode && isStreamLocked
-                if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
+                if (recording != null) {
+                    SkipIntervalButton(
+                        forward = false,
+                        seconds = recording.skipSeconds,
+                        onTap = recording.onSkipBack,
+                        onLongPress = recording.onPrevious,
+                        size = 44.dp,
+                        iconSize = 30.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
                     IconButton(onClick = onSkipPrev, enabled = !lockedInClient) {
                         Icon(
                             Icons.Default.SkipPrevious,
@@ -165,7 +183,24 @@ fun NowPlayingBar(
                         )
                     }
                 }
-                IconButton(onClick = onTogglePlayPause, enabled = !lockedInClient) {
+                // Tap = play/pause. Long-press = record this station (live) or 1× ⇄ last speed
+                // (recording). Never in client mode: there is no stream on this device.
+                PlayPauseButton(
+                    size = 48.dp,
+                    enabled = !lockedInClient,
+                    recordingThis = isRecording,
+                    onClick = onTogglePlayPause,
+                    onLongClick = when {
+                        isSnapclientMode -> null
+                        recording != null -> onToggleSpeed
+                        else -> onToggleRecord
+                    },
+                    longClickLabel = when {
+                        recording != null -> "Switch speed"
+                        isRecording -> "Stop recording"
+                        else -> "Record"
+                    },
+                ) {
                     if (lockedInClient) {
                         Icon(
                             Icons.Default.Lock,
@@ -181,7 +216,17 @@ fun NowPlayingBar(
                         )
                     }
                 }
-                if (rotationState.isActive || (isSnapclientMode && streamCanGoNext) || lockedInClient) {
+                if (recording != null) {
+                    SkipIntervalButton(
+                        forward = true,
+                        seconds = recording.skipSeconds,
+                        onTap = recording.onSkipForward,
+                        onLongPress = recording.onNext,
+                        size = 44.dp,
+                        iconSize = 30.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (rotationState.isActive || (isSnapclientMode && streamCanGoNext) || lockedInClient) {
                     IconButton(onClick = onSkip, enabled = !lockedInClient) {
                         Icon(
                             Icons.Default.SkipNext,
@@ -191,6 +236,7 @@ fun NowPlayingBar(
                         )
                     }
                 }
+            }
             }
         }
     }
