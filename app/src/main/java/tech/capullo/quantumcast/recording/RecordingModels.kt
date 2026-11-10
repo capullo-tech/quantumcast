@@ -11,12 +11,16 @@ data class RecStation(
     val name: String,
     val url: String,
     val favicon: String = "",
+    /** Country name as radio-browser spells it ("Nicaragua"); for "station time" schedules. */
+    val country: String = "",
+    /** ISO 3166 code when known (search results have it, favorites don't). */
+    val countryCode: String = "",
 )
 
 /**
  * A weekly recurring recording. [days] is a bitmask, bit 0 = Monday … bit 6 = Sunday
- * ([DayOfWeek.getValue] - 1). [startMinute] is minutes after local midnight; the window may
- * cross midnight.
+ * ([DayOfWeek.getValue] - 1). [startMinute] is minutes after midnight in [zone]; the window may
+ * cross midnight. Days are counted in that zone too.
  */
 @Serializable
 data class Schedule(
@@ -27,8 +31,14 @@ data class Schedule(
     val durationMinutes: Int,
     val enabled: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Time zone the start time is in; empty = the phone's own ("my time"). */
+    val zoneId: String = "",
 ) {
     fun runsOn(day: DayOfWeek): Boolean = days and (1 shl (day.value - 1)) != 0
+
+    fun zone(): java.time.ZoneId =
+        zoneId.takeIf { it.isNotEmpty() }?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+            ?: java.time.ZoneId.systemDefault()
 }
 
 enum class RecState { CONNECTING, RECORDING, RECONNECTING }

@@ -209,7 +209,7 @@ private fun RadioApp(
     // Recording targets the station this phone streams itself; in client mode there is none.
     // Not while a recording plays (its synthetic station has no stream URL anyway).
     val recStation = playerState.station?.takeIf { snapclientHost.isEmpty() && it.streamUrl.isNotEmpty() }?.let {
-        tech.capullo.quantumcast.recording.RecStation(it.uuid, it.name, it.streamUrl, it.favicon)
+        tech.capullo.quantumcast.recording.RecStation(it.uuid, it.name, it.streamUrl, it.favicon, it.country, it.countryCode)
     }
     val isRecordingCurrent = recStation != null && activeRecordings.any { it.station.uuid == recStation.uuid }
     // The recording notification (with its Stop button) needs POST_NOTIFICATIONS on 13+; the

@@ -46,6 +46,18 @@ class RecordingViewModel @Inject constructor(
     val favorites: StateFlow<List<FavoriteEntity>> = radioRepo.getFavorites()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val groups: StateFlow<List<tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity>> = radioRepo.getGroups()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val directory = radioRepo
+
+    /** Station picker fallback: search the whole Radio Browser directory by name. */
+    suspend fun searchDirectory(query: String): List<RecStation> = withContext(Dispatchers.IO) {
+        runCatching { directory.search(query, 40) }.getOrDefault(emptyList()).map {
+            RecStation(it.uuid, it.name, it.streamUrl, it.favicon, it.country, it.countryCode)
+        }
+    }
+
     // Growing files' sizes change without an event, so tick every few seconds while recording.
     private val tick = flow { while (true) { emit(Unit); delay(3_000) } }
 

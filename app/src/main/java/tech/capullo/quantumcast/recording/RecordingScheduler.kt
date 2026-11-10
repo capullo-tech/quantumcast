@@ -50,34 +50,44 @@ object RecordingScheduler {
     private const val TAG = "RecordingScheduler"
     private const val ALERT_CHANNEL = "recording_alerts"
 
+    // All occurrence math runs in the schedule's own zone (the phone's, or the station's), so
+    // "19:00 Managua" stays 19:00 Managua across either side's DST change, and weekdays are the
+    // station's weekdays. Results are absolute instants; callers may convert as they like.
+
+    private fun startOn(s: Schedule, date: java.time.LocalDate, zone: ZoneId): ZonedDateTime =
+        ZonedDateTime.of(date, LocalTime.of(s.startMinute / 60, s.startMinute % 60), zone)
+
     fun nextStart(s: Schedule, now: ZonedDateTime): ZonedDateTime? {
+        val n = now.withZoneSameInstant(s.zone())
         for (d in 0..7L) {
-            val date = now.toLocalDate().plusDays(d)
+            val date = n.toLocalDate().plusDays(d)
             if (!s.runsOn(date.dayOfWeek)) continue
-            val start = ZonedDateTime.of(date, LocalTime.of(s.startMinute / 60, s.startMinute % 60), now.zone)
-            if (start.isAfter(now)) return start
+            val start = startOn(s, date, n.zone)
+            if (start.isAfter(n)) return start
         }
         return null
     }
 
     /** Start of the window [now] falls in, if any (today's or yesterday's, for windows past midnight). */
     fun currentWindowStart(s: Schedule, now: ZonedDateTime): ZonedDateTime? {
+        val n = now.withZoneSameInstant(s.zone())
         for (d in 0..1L) {
-            val date = now.toLocalDate().minusDays(d)
+            val date = n.toLocalDate().minusDays(d)
             if (!s.runsOn(date.dayOfWeek)) continue
-            val start = ZonedDateTime.of(date, LocalTime.of(s.startMinute / 60, s.startMinute % 60), now.zone)
-            if (!start.isAfter(now) && now.isBefore(start.plusMinutes(s.durationMinutes.toLong()))) return start
+            val start = startOn(s, date, n.zone)
+            if (!start.isAfter(n) && n.isBefore(start.plusMinutes(s.durationMinutes.toLong()))) return start
         }
         return null
     }
 
     /** Start of the most recent occurrence that has fully ended. */
     fun lastEndedStart(s: Schedule, now: ZonedDateTime): ZonedDateTime? {
+        val n = now.withZoneSameInstant(s.zone())
         for (d in 0..8L) {
-            val date = now.toLocalDate().minusDays(d)
+            val date = n.toLocalDate().minusDays(d)
             if (!s.runsOn(date.dayOfWeek)) continue
-            val start = ZonedDateTime.of(date, LocalTime.of(s.startMinute / 60, s.startMinute % 60), now.zone)
-            if (!start.plusMinutes(s.durationMinutes.toLong()).isAfter(now)) return start
+            val start = startOn(s, date, n.zone)
+            if (!start.plusMinutes(s.durationMinutes.toLong()).isAfter(n)) return start
         }
         return null
     }

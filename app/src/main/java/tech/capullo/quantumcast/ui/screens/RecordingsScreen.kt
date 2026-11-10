@@ -49,6 +49,7 @@ import tech.capullo.quantumcast.recording.RecordingScheduler
 import tech.capullo.quantumcast.recording.RecordingService
 import tech.capullo.quantumcast.recording.ResumePoint
 import tech.capullo.quantumcast.recording.Schedule
+import tech.capullo.quantumcast.recording.StationZones
 import tech.capullo.quantumcast.viewmodel.RecordingViewModel
 import java.text.DateFormat
 import java.time.DayOfWeek
@@ -92,9 +93,10 @@ fun RecordingsScreen(
                 Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label) })
             }
         }
+        val groups by vm.groups.collectAsState()
         val stations = buildList {
             currentStation?.let { add(it) }
-            favorites.forEach { f -> if (none { it.uuid == f.uuid }) add(RecStation(f.uuid, f.name, f.url, f.favicon)) }
+            favorites.forEach { f -> if (none { it.uuid == f.uuid }) add(RecStation(f.uuid, f.name, f.url, f.favicon, f.country)) }
         }
         val runTest: (RecStation) -> Unit = { st ->
             vm.runScheduleTest(st) { (context as? android.app.Activity)?.finishAndRemoveTask() }
@@ -104,7 +106,7 @@ fun RecordingsScreen(
             0 -> FilesTab(vm, active, files, prefs.resume, playingName, onPlayRecording)
             1 -> SchedulesTab(
                 schedules = prefs.schedules,
-                stations = stations,
+                picker = PickerSource(currentStation, favorites, groups, vm::searchDirectory),
                 onSave = { s ->
                     val isNew = prefs.schedules.none { it.id == s.id }
                     vm.saveSchedule(s)
@@ -309,7 +311,7 @@ private val DAYS = DayOfWeek.entries
 @Composable
 private fun SchedulesTab(
     schedules: List<Schedule>,
-    stations: List<RecStation>,
+    picker: PickerSource,
     onSave: (Schedule) -> Unit,
     onDelete: (String) -> Unit,
 ) {
@@ -329,7 +331,15 @@ private fun SchedulesTab(
                     modifier = Modifier.clickable { editing = s },
                     headlineContent = { Text(s.station.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
-                        Text("${daysLabel(s.days)} · ${"%02d:%02d".format(s.startMinute / 60, s.startMinute % 60)} · ${s.durationMinutes} min")
+                        val hm = "%02d:%02d".format(s.startMinute / 60, s.startMinute % 60)
+                        val whenText = if (s.zoneId.isEmpty()) {
+                            hm
+                        } else {
+                            // Station time: also show what it is on the phone's clock.
+                            val local = RecordingScheduler.nextStart(s, java.time.ZonedDateTime.now())?.let { localLabel(it) }
+                            "$hm ${s.station.country.ifEmpty { StationZones.city(s.zoneId) }}" + (local?.let { " ($it your time)" } ?: "")
+                        }
+                        Text("${daysLabel(s.days)} · $whenText · ${s.durationMinutes} min")
                     },
                     trailingContent = { Switch(checked = s.enabled, onCheckedChange = { onSave(s.copy(enabled = it)) }) },
                 )
@@ -343,13 +353,28 @@ private fun SchedulesTab(
     if (creating || editing != null) {
         ScheduleDialog(
             initial = editing,
-            stations = stations,
+            picker = picker,
             onDismiss = { creating = false; editing = null },
             onSave = { onSave(it); creating = false; editing = null },
             onDelete = editing?.let { e -> { onDelete(e.id); editing = null } },
         )
     }
 }
+
+/** Phone-local "Tue 03:00" (weekday only if it differs from the schedule's own day). */
+private fun localLabel(start: java.time.ZonedDateTime): String {
+    val local = start.withZoneSameInstant(java.time.ZoneId.systemDefault())
+    val hm = "%02d:%02d".format(local.hour, local.minute)
+    return if (local.dayOfWeek != start.dayOfWeek) local.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()) + " " + hm else hm
+}
+
+/** What the station picker draws from. */
+class PickerSource(
+    val current: RecStation?,
+    val favorites: List<tech.capullo.source.radiobrowser.data.db.FavoriteEntity>,
+    val groups: List<tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity>,
+    val searchDirectory: suspend (String) -> List<RecStation>,
+)
 
 private fun daysLabel(mask: Int): String = when (mask) {
     0b0011111 -> "Mon–Fri"
@@ -363,15 +388,12 @@ private fun daysLabel(mask: Int): String = when (mask) {
 @Composable
 private fun ScheduleDialog(
     initial: Schedule?,
-    stations: List<RecStation>,
+    picker: PickerSource,
     onDismiss: () -> Unit,
     onSave: (Schedule) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
-    val choices = remember(stations, initial) {
-        if (initial != null && stations.none { it.uuid == initial.station.uuid }) listOf(initial.station) + stations else stations
-    }
-    var station by remember { mutableStateOf(initial?.station ?: choices.firstOrNull()) }
+    var station by remember { mutableStateOf(initial?.station ?: picker.current ?: picker.favorites.firstOrNull()?.let { RecStation(it.uuid, it.name, it.url, it.favicon, it.country) }) }
     var days by remember { mutableIntStateOf(initial?.days ?: 0b0011111) }
     val time = rememberTimePickerState(
         initialHour = (initial?.startMinute ?: (18 * 60 + 30)) / 60,
@@ -381,6 +403,11 @@ private fun ScheduleDialog(
     var duration by remember { mutableStateOf((initial?.durationMinutes ?: 60).toString()) }
     var pickStation by remember { mutableStateOf(false) }
     var pickTime by remember { mutableStateOf(false) }
+    // "" = my time; otherwise the station's zone.
+    var zoneId by remember { mutableStateOf(initial?.zoneId ?: "") }
+    var pickZone by remember { mutableStateOf(false) }
+    val stationZones = remember(station) { station?.let { StationZones.zonesFor(it) }.orEmpty() }
+    val zoneChoices = remember(stationZones) { stationZones.ifEmpty { StationZones.allZones() } }
 
     val mins = duration.toIntOrNull()?.takeIf { it in 1..24 * 60 }
     AlertDialog(
@@ -388,19 +415,8 @@ private fun ScheduleDialog(
         title = { Text(if (initial == null) "New schedule" else "Edit schedule") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (choices.isEmpty()) {
-                    Text("Add the station to Favorites first, or start playing it.", color = MaterialTheme.colorScheme.error)
-                } else {
-                    Box {
-                        OutlinedButton(onClick = { pickStation = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(station?.name ?: "Choose station", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        DropdownMenu(expanded = pickStation, onDismissRequest = { pickStation = false }) {
-                            choices.forEach { s ->
-                                DropdownMenuItem(text = { Text(s.name) }, onClick = { station = s; pickStation = false })
-                            }
-                        }
-                    }
+                OutlinedButton(onClick = { pickStation = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(station?.name ?: "Choose station", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     DAYS.forEach { d ->
@@ -414,6 +430,47 @@ private fun ScheduleDialog(
                 }
                 OutlinedButton(onClick = { pickTime = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Starts at %02d:%02d".format(time.hour, time.minute))
+                }
+                // Whose clock the start time (and the days) are on.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = zoneId.isEmpty(), onClick = { zoneId = "" }, label = { Text("My time") })
+                    FilterChip(
+                        selected = zoneId.isNotEmpty(),
+                        enabled = station != null,
+                        onClick = { if (zoneId.isEmpty()) zoneId = station?.let { StationZones.defaultZone(it) } ?: zoneChoices.firstOrNull().orEmpty() },
+                        label = { Text("Station time") },
+                    )
+                }
+                if (zoneId.isNotEmpty()) {
+                    if (zoneChoices.size > 1) {
+                        Box {
+                            OutlinedButton(onClick = { pickZone = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text(StationZones.label(zoneId), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            DropdownMenu(expanded = pickZone, onDismissRequest = { pickZone = false }) {
+                                zoneChoices.forEach { z ->
+                                    DropdownMenuItem(text = { Text(StationZones.label(z)) }, onClick = { zoneId = z; pickZone = false })
+                                }
+                            }
+                        }
+                    } else {
+                        Text("${station?.country.orEmpty()} · ${StationZones.label(zoneId)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (stationZones.isEmpty()) {
+                        Text(
+                            "Couldn't tell this station's country, so pick its time zone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // What that means on the phone's clock (next run).
+                    val preview = remember(zoneId, days, time.hour, time.minute) {
+                        val s = Schedule("preview", station ?: RecStation("", "", ""), days, time.hour * 60 + time.minute, 1, zoneId = zoneId)
+                        RecordingScheduler.nextStart(s, java.time.ZonedDateTime.now())?.let { localLabel(it) }
+                    }
+                    preview?.let {
+                        Text("Next run: $it your time", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 OutlinedTextField(
                     value = duration,
@@ -440,12 +497,13 @@ private fun ScheduleDialog(
                     onSave(
                         Schedule(
                             id = initial?.id ?: UUID.randomUUID().toString(),
-                            station = station!!,
+                            station = station!!.let { st -> st.copy(countryCode = StationZones.countryCode(st).orEmpty()) },
                             days = days,
                             startMinute = time.hour * 60 + time.minute,
                             durationMinutes = mins!!,
                             enabled = initial?.enabled ?: true,
                             createdAt = initial?.createdAt ?: System.currentTimeMillis(),
+                            zoneId = zoneId,
                         ),
                     )
                 },
@@ -453,6 +511,21 @@ private fun ScheduleDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+    if (pickStation) {
+        StationPickerSheet(
+            current = picker.current,
+            favorites = picker.favorites,
+            groups = picker.groups,
+            searchDirectory = picker.searchDirectory,
+            onPick = { st ->
+                // A different station means a different country: re-pick its zone if on station time.
+                if (zoneId.isNotEmpty() && st.uuid != station?.uuid) zoneId = StationZones.defaultZone(st) ?: zoneId
+                station = st
+                pickStation = false
+            },
+            onDismiss = { pickStation = false },
+        )
+    }
     if (pickTime) {
         AlertDialog(
             onDismissRequest = { pickTime = false },
