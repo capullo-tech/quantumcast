@@ -71,6 +71,9 @@ import tech.capullo.audio.player.BalanceAudioProcessor
 import tech.capullo.audio.player.FifoAudioBufferSink
 import tech.capullo.audio.player.GainAudioProcessor
 import tech.capullo.audio.player.LiveLoudnessAgcProcessor
+import tech.capullo.audio.snapcast.SnapcastArt
+import tech.capullo.audio.snapcast.SnapcastArtwork
+import tech.capullo.audio.snapcast.SnapcastRemoteArt
 import tech.capullo.audio.snapcast.SnapclientProcess
 import tech.capullo.audio.snapcast.SnapcontrolPlugin
 import tech.capullo.audio.snapcast.SnapserverPorts
@@ -1210,7 +1213,9 @@ class PlaybackService : Service() {
         val title = meta?.title ?: ""
         val artist = meta?.firstArtist() ?: ""
         val stationName = meta?.station ?: ""
-        val art = meta?.artUrl ?: ""
+        // A capullo broadcaster sends its art as a path on its own snapserver: resolved against the one
+        // the control client talks to, Coil fetches it in the background like any other art URL.
+        val art = SnapcastRemoteArt.resolveUrl(meta?.artUrl, snapControlHost, snapControlHttpPort) ?: ""
         val country = meta?.country ?: ""
         val countryCode = meta?.countryCode ?: ""
         val codec = meta?.codec ?: ""
@@ -1941,16 +1946,20 @@ class PlaybackService : Service() {
         override fun seekTo(positionMs: Long) {} // live radio - not seekable
     }
 
-    // Artwork is prepared app-side as base64 (the engine mapper expects NowPlaying.artworkBase64,
-    // not a URL): Shazam art wins, else the station favicon - parity with the old
-    // SnapcontrolCallbacks.currentArtworkUrl. artUrl also rides in extras for clients that follow it;
-    // the base64 (artData) covers clients that embed bytes (e.g. RadioCapullo).
-    @Volatile private var snapArtUrl: String? = null
+    // Artwork: Shazam art wins, else the station favicon - parity with the old
+    // SnapcontrolCallbacks.currentArtworkUrl. The download is published through SnapcastArtwork: our
+    // snapserver serves the full image (`artUrl` = its path) and only a tiny thumbnail rides in
+    // `artData` (full-size embedded art stalls the broadcast at every change). Until it lands, or when
+    // the image can't be published (SVG, ICO favicons), `artUrl` is the source URL itself so web
+    // players and listeners can still load it directly.
+    @Volatile private var snapArtSourceUrl: String? = null
 
-    @Volatile private var snapArtBase64: String? = null
+    @Volatile private var snapArt: SnapcastArt? = null
 
-    @Volatile private var snapArtExtension: String? = null
+    // Source URL already downloaded, publishable or not: never downloaded again (a failed download is retried).
+    @Volatile private var snapArtAttemptedUrl: String? = null
     private var snapArtJob: Job? = null
+    private val snapArtwork by lazy { SnapcastArtwork(applicationContext) }
 
     // Push the current metadata to web players / snapclients. Replaces the old
     // snapcontrolPlugin?.notifyPropertiesChanged() call sites (no-op until a session connects).
@@ -1973,7 +1982,7 @@ class PlaybackService : Service() {
             artist = st.shazamArtistName,
             album = st.stationName,
             streamUrl = st.stationUrl.ifEmpty { null },
-            artworkBase64 = snapArtBase64,
+            artworkBase64 = snapArt?.thumbnailBase64,
             isPlaying = st.isPlaying,
             canGoNext = canSkip,
             canGoPrevious = canSkip,
@@ -1987,8 +1996,7 @@ class PlaybackService : Service() {
                 if (st.shazamAppleMusicUrl.isNotEmpty()) put("appleMusicUrl", st.shazamAppleMusicUrl)
                 if (st.stationTags.isNotEmpty()) put("tags", st.stationTags)
                 if (st.stationUuid.isNotEmpty()) put("uuid", st.stationUuid)
-                snapArtUrl?.takeIf { it.isNotEmpty() }?.let { put("artUrl", it) }
-                snapArtExtension?.let { put("artExtension", it) }
+                (snapArt?.urlPath ?: snapArtSourceUrl?.takeIf { it.isNotEmpty() })?.let { put("artUrl", it) }
                 calBoostLease?.let { put("calBoost", it) }
             },
         )
@@ -2000,9 +2008,9 @@ class PlaybackService : Service() {
      * connection; the addressed client self-filters and applies it, and the lease expiry means a
      * crash here cannot leave that phone loud.
      *
-     * Deliberately NOT renewed on a short ticker: every extras change invalidates the metadata
-     * serialization cache, which re-escapes the (~300 KB) embedded art blob and can starve the
-     * real-time FIFO writer. So the lease is issued generously once per round instead. If a round
+     * Deliberately NOT renewed on a short ticker: every extras change is a full metadata push that
+     * snapserver parses on the thread reading the audio pipe and rebroadcasts to every control
+     * connection. So the lease is issued generously once per round instead. If a round
      * outlives it the boost simply drops and that target reads as unmeasurable, which is a safe fail.
      */
     private fun publishCalBoost(targets: Map<String, Int>, leaseMs: Long) {
@@ -2014,27 +2022,26 @@ class PlaybackService : Service() {
         publishNowPlaying()
     }
 
-    // Download the effective art URL to base64 for the artData embed; re-publish when it lands.
+    // Download the effective art URL and publish it; re-publish the now-playing when it lands.
     private fun refreshSnapArt() {
         val url = _state.value.artworkUrl.ifEmpty { _state.value.stationFavicon }
-        if (url == snapArtUrl && (url.isEmpty() || snapArtBase64 != null)) return
-        if (url.isEmpty()) {
-            snapArtUrl = null
-            snapArtBase64 = null
-            snapArtExtension = null
-            snapArtJob?.cancel()
+        // Same art: published, in flight, or downloaded but unusable. Only a failed download retries.
+        if (url == snapArtSourceUrl &&
+            (url.isEmpty() || snapArt != null || url == snapArtAttemptedUrl || snapArtJob?.isActive == true)
+        ) {
             return
         }
-        snapArtUrl = url
-        snapArtBase64 = null
         snapArtJob?.cancel()
+        snapArtSourceUrl = url
+        snapArt = null
+        if (url.isEmpty()) return
         snapArtJob = scope.launch {
-            val bytes = runCatching {
-                withContext(Dispatchers.IO) { java.net.URL(url).openStream().use { it.readBytes() } }
-            }.getOrNull() ?: return@launch
-            if (snapArtUrl != url) return@launch // art changed while downloading
-            snapArtBase64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            snapArtExtension = url.substringAfterLast('.').substringBefore('?').lowercase().ifEmpty { "jpg" }
+            val bytes = SnapcastRemoteArt.download(url) ?: return@launch
+            // Named and labelled from the bytes, never from the URL's extension.
+            val art = snapArtwork.publish(bytes)
+            if (snapArtSourceUrl != url) return@launch // art changed while downloading
+            snapArtAttemptedUrl = url
+            snapArt = art ?: return@launch
             snapNowPlaying.value = buildSnapNowPlaying()
             snapcontrolPlugin?.notifyPropertiesChanged()
         }
@@ -2070,7 +2077,15 @@ class PlaybackService : Service() {
         audioFocus.request()
     }
 
+    // The snapserver the control client talks to (our own while broadcasting, the remote one while
+    // listening in): stream art paths (`artUrl`) resolve against it.
+    @Volatile private var snapControlHost = ""
+
+    @Volatile private var snapControlHttpPort = 0
+
     private fun startSnapcastControl(host: String, httpPort: Int) {
+        snapControlHost = host
+        snapControlHttpPort = httpPort
         snapcastControlJob?.cancel()
         val client = tech.capullo.audio.snapcast.SnapcastControlClient(host, httpPort)
             .also { snapcastControl = it }
