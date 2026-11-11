@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="recordings" path="Recordings/" />
+    <files-path name="recordings_internal" path="Recordings/" />
+    <!-- Favorites backups/playlists written for the share menu. -->
+    <cache-path name="share" path="share/" />
+</paths>

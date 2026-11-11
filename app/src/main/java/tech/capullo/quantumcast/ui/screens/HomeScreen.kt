@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -20,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -57,6 +59,9 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
     onOpenCountries: () -> Unit = {},
+    onOpenRecordings: () -> Unit = {},
+    /** Any recording running: the Recordings row's dot blinks red. */
+    recordingActive: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -118,12 +123,30 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
+                // Discovery is overloaded by design: empty field = global random, typed text = search.
+                // The hint says which one the big button will do, so it never surprises.
+                Text(
+                    text = if (searchText.isBlank()) {
+                        "Discovery: random stations worldwide"
+                    } else {
+                        "Discovery: search \"${searchText.trim()}\""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 32.dp),
+                )
             }
 
             // 3. Discovery - quantum-shuffle a random rotation (shows the entangle animation while loading)
             item {
                 FilledTonalButton(
-                    onClick = { if (!isShuffleLoading) onShuffleRotation() },
+                    onClick = {
+                        if (searchText.isNotBlank()) {
+                            submitSearch()
+                        } else if (!isShuffleLoading) {
+                            onShuffleRotation()
+                        }
+                    },
                     enabled = !isShuffleLoading,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -142,20 +165,32 @@ fun HomeScreen(
                 }
             }
 
-            // 4 + 5. Favorites / Countries → push their own screens
+            // 4 + 5 + 6. Favorites / Countries / Recordings → push their own screens
             item {
                 NavRow("Favorites", Icons.Default.Favorite, onOpenFavorites)
                 NavRow("Countries", Icons.Default.Public, onOpenCountries)
+                NavRow("Recordings", Icons.Default.FiberManualRecord, onOpenRecordings, blinkRed = recordingActive)
             }
         }
     }
 }
 
 @Composable
-private fun NavRow(label: String, icon: ImageVector, onClick: () -> Unit) {
+private fun NavRow(label: String, icon: ImageVector, onClick: () -> Unit, blinkRed: Boolean = false) {
     ListItem(
         leadingContent = {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            if (blinkRed) {
+                // A recording is running: the row's dot turns red and pulses on the shared clock.
+                val v by LocalRecBlink.current
+                Icon(
+                    icon,
+                    contentDescription = "Recording in progress",
+                    tint = RecRed,
+                    modifier = Modifier.graphicsLayer { alpha = 0.25f + 0.75f * v },
+                )
+            } else {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
         },
         headlineContent = { Text(label, style = MaterialTheme.typography.titleMedium) },
         trailingContent = {
