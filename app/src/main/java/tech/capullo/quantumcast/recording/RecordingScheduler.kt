@@ -277,6 +277,9 @@ class ScheduleAlarmReceiver : BroadcastReceiver() {
 /** Boot, app update, clock/zone change, exact-alarm permission change: alarms must be re-armed. */
 class ScheduleRearmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        // Exported (system broadcasts need it), so any app can target it explicitly. Act only on
+        // the actions the manifest lists; those are protected broadcasts only the system can send.
+        if (intent.action !in REARM_ACTIONS) return
         val pending = goAsync()
         receiverScope.launch {
             try {
@@ -287,3 +290,11 @@ class ScheduleRearmReceiver : BroadcastReceiver() {
         }
     }
 }
+
+private val REARM_ACTIONS = setOf(
+    Intent.ACTION_BOOT_COMPLETED,
+    Intent.ACTION_MY_PACKAGE_REPLACED,
+    Intent.ACTION_TIME_CHANGED,
+    Intent.ACTION_TIMEZONE_CHANGED,
+    AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED,
+)
