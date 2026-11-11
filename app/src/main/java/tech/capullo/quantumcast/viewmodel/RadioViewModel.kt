@@ -559,6 +559,7 @@ class RadioViewModel @Inject constructor(
     /** When the current recording was paused (in this session), for smart rewind. 0 = not paused. */
     private var pausedAtMs = 0L
     private var lastResumeSaveMs = 0L
+    private var flacFixJob: Job? = null
 
     fun playRecording(file: tech.capullo.quantumcast.recording.RecordingFile, queue: List<tech.capullo.quantumcast.recording.RecordingFile>) {
         val svc = playbackService ?: return
@@ -586,7 +587,17 @@ class RadioViewModel @Inject constructor(
         _playerState.update { it.copy(station = station, icyTitle = "", currentTrack = null) }
         _trackHistory.value = emptyList()
         _streamStats.value = null
-        svc.playMedia(file.uri.toString(), file.stationName, subtitle, file.meta.favicon, start, p.speed, pitchFor(p.speed, p))
+        val play = { svc.playMedia(file.uri.toString(), file.stationName, subtitle, file.meta.favicon, start, p.speed, pitchFor(p.speed, p)) }
+        flacFixJob?.cancel()
+        if (file.name.endsWith(".flac") && !file.inProgress) {
+            // FLAC from fMP4 HLS is seekable only once STREAMINFO has its total-samples (filled once).
+            flacFixJob = viewModelScope.launch {
+                withContext(Dispatchers.IO) { tech.capullo.quantumcast.recording.FlacFrames.fixTotalSamples(context, file.uri) }
+                play()
+            }
+        } else {
+            play()
+        }
     }
 
     private fun pitchFor(speed: Float, p: tech.capullo.quantumcast.recording.RecordingPrefs) = if (p.pitchCorrection) 1f else speed
@@ -602,6 +613,7 @@ class RadioViewModel @Inject constructor(
 
     /** Saves where the current recording is and forgets it as "playing" (switching to a station or stopping). */
     private fun leaveRecording() {
+        flacFixJob?.cancel()
         val rec = _playingRecording.value ?: return
         val pos = _mediaProgress.value.positionMs
         viewModelScope.launch { recordings.setResume(rec.name, pos) }
