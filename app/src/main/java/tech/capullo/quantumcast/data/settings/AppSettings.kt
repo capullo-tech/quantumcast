@@ -49,7 +49,7 @@ data class AppSettings(
     val snapclientChannel: String = "stereo",
     val snapclientVolume: Int = 100,
     val snapclientLatency: Int = 0,
-    // Snapserver base port: 0 = OS-assigned/random (default). >0 pins the trio to
+    // Snapserver base port: 0 = random base (default). >0 pins the trio to
     // base/base+1/base+2 so the server address survives broadcast restarts.
     val snapserverFixedPort: Int = 0,
 )
@@ -147,7 +147,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setSnapclientVolume(v: Int) = update { it[Keys.SNAPCLIENT_VOLUME] = v.coerceIn(0, 100) }
     suspend fun setSnapclientLatency(v: Int) = update { it[Keys.SNAPCLIENT_LATENCY] = v }
 
-    /** 0 = OS-assigned/random; otherwise the base port (clamped to a safe range). */
+    /** 0 = random base; otherwise the base port (clamped to a safe range). */
     suspend fun setSnapserverFixedPort(v: Int) = update {
         it[Keys.SNAPSERVER_FIXED_PORT] = if (v <= 0) 0 else v.coerceIn(1024, 65531)
     }

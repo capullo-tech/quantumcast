@@ -941,20 +941,21 @@ class RadioViewModel @Inject constructor(
 
     // --- Snapclient (QuantumCast tab) ---
 
-    // Manual listen-in: the user types the port they KNOW - the HTTP port from the web-player URL, not
-    // the hidden random stream port. Resolve the real stream port from it via the broadcaster's
-    // listen.json; if that fails (stock/legacy server, or the typed port really was a stream port),
-    // fall back to treating the typed port as a direct stream port with the default control port.
-    // Navigate / show the "connecting" UI IMMEDIATELY - the listen.json fetch is a network round-trip
-    // (up to a few seconds on an unreachable host); making the user stare at an unchanged Home until it
-    // returns reads as a frozen tap. So show the connecting screen synchronously, then dial once resolved.
+    // Manual listen-in: the user types whichever port they KNOW, usually the HTTP port from the
+    // web-player URL. A broadcaster's ports are one consecutive stream/tcp/http block, so resolve()
+    // probes the typed port and the two above it for its listen.json and learns all three. If nothing
+    // resolves (stock/legacy server, or the typed port really was a stream port), fall back to
+    // treating the typed port as a direct stream port with the default control port.
+    // Navigate / show the "connecting" UI IMMEDIATELY - the listen.json probes are network round-trips
+    // (up to a few seconds each on an unreachable host); making the user stare at an unchanged Home
+    // until they return reads as a frozen tap. So show the connecting screen synchronously, then dial
+    // once resolved.
     fun connectManually(host: String, typedPort: Int?) {
         showConnectingTo(host)
         viewModelScope.launch {
-            val httpGuess = typedPort ?: 1680
-            val ports = tech.capullo.audio.snapcast.SnapserverListenInfo.fetch(host, httpGuess)
+            val ports = tech.capullo.audio.snapcast.SnapserverListenInfo.resolve(host, typedPort, defaultHttpPort = 1680)
             if (ports != null) {
-                playbackService?.connectAsSnapclient(host, ports.streamPort, httpGuess)
+                playbackService?.connectAsSnapclient(host, ports.streamPort, ports.httpPort)
             } else {
                 playbackService?.connectAsSnapclient(host, typedPort ?: 1604, 1680)
             }
