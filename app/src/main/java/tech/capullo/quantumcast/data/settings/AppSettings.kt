@@ -149,6 +149,9 @@ class SettingsRepository(private val context: Context) {
 
     /** 0 = random base; otherwise the base port (clamped to a safe range). */
     suspend fun setSnapserverFixedPort(v: Int) = update {
-        it[Keys.SNAPSERVER_FIXED_PORT] = if (v <= 0) 0 else v.coerceIn(1024, 65531)
+        it[Keys.SNAPSERVER_FIXED_PORT] = normalizeSnapserverFixedPort(v)
     }
 }
+
+/** Stored snapserver base port: <= 0 means random (0); otherwise clamped to 1024..65531. */
+internal fun normalizeSnapserverFixedPort(v: Int): Int = if (v <= 0) 0 else v.coerceIn(1024, 65531)
