@@ -202,24 +202,6 @@ class StreamRecorder(
         }
     }
 
-    /** Prefer an audio-only variant (highest bandwidth); else the lowest-bandwidth variant. */
-    private fun pickVariant(master: String): String {
-        data class V(val bw: Long, val audioOnly: Boolean, val uri: String)
-        val lines = master.lines().map { it.trim() }
-        val vs = mutableListOf<V>()
-        for ((i, l) in lines.withIndex()) {
-            if (!l.startsWith("#EXT-X-STREAM-INF")) continue
-            val uri = lines.drop(i + 1).firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: continue
-            val bw = Regex("""BANDWIDTH=(\d+)""").find(l)?.groupValues?.get(1)?.toLong() ?: 0
-            val codecs = Regex("""CODECS="([^"]*)"""").find(l)?.groupValues?.get(1).orEmpty()
-            val video = "avc" in codecs || "hvc" in codecs || "hev" in codecs || "RESOLUTION=" in l
-            vs += V(bw, !video, uri)
-        }
-        val audio = vs.filter { it.audioOnly }
-        return (audio.maxByOrNull { it.bw } ?: vs.minByOrNull { it.bw })?.uri
-            ?: throw IOException("HLS master playlist without variants")
-    }
-
     private fun fetchText(url: String): String {
         val c = open(url, icy = false)
         try {
@@ -282,6 +264,24 @@ class StreamRecorder(
                     kind ?: ("mp3" to "audio/mpeg")
                 }
             }
+        }
+
+        /** Prefer an audio-only variant (highest bandwidth); else the lowest-bandwidth variant. */
+        internal fun pickVariant(master: String): String {
+            data class V(val bw: Long, val audioOnly: Boolean, val uri: String)
+            val lines = master.lines().map { it.trim() }
+            val vs = mutableListOf<V>()
+            for ((i, l) in lines.withIndex()) {
+                if (!l.startsWith("#EXT-X-STREAM-INF")) continue
+                val uri = lines.drop(i + 1).firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: continue
+                val bw = Regex("""BANDWIDTH=(\d+)""").find(l)?.groupValues?.get(1)?.toLong() ?: 0
+                val codecs = Regex("""CODECS="([^"]*)"""").find(l)?.groupValues?.get(1).orEmpty()
+                val video = "avc" in codecs || "hvc" in codecs || "hev" in codecs || "RESOLUTION=" in l
+                vs += V(bw, !video, uri)
+            }
+            val audio = vs.filter { it.audioOnly }
+            return (audio.maxByOrNull { it.bw } ?: vs.minByOrNull { it.bw })?.uri
+                ?: throw IOException("HLS master playlist without variants")
         }
 
         /** Size of a leading ID3v2 tag (HLS packed audio carries one per segment), else 0. */

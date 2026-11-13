@@ -177,6 +177,8 @@ dependencies {
     // QR code generation (share listening address in Qcast tab)
     implementation(libs.zxing.core)
 
+    testImplementation(libs.junit)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
