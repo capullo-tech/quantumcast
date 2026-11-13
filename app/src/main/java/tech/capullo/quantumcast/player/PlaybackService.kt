@@ -29,7 +29,6 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
-import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -71,7 +70,9 @@ import tech.capullo.audio.contracts.PlaybackController
 import tech.capullo.audio.player.AudioFocusController
 import tech.capullo.audio.player.BalanceAudioProcessor
 import tech.capullo.audio.player.FifoAudioBufferSink
+import tech.capullo.audio.player.FixedRateResampler
 import tech.capullo.audio.player.GainAudioProcessor
+import tech.capullo.audio.player.HiResDecimator
 import tech.capullo.audio.player.LiveLoudnessAgcProcessor
 import tech.capullo.audio.snapcast.SnapcastArt
 import tech.capullo.audio.snapcast.SnapcastArtwork
@@ -1604,8 +1605,9 @@ class PlaybackService : Service() {
                 // LOCKSTEP with capullo-audio SnapserverProcess.SAMPLE_FORMAT (48000): the FIFO the
                 // tee writes is read by snapserver at that rate, so this resampler must output the
                 // same. Mismatch (this was 44100 vs a 48000 FIFO) made the server read the PCM ~9%
-                // fast and hard-resync constantly - the stutter.
-                val resampler = SonicAudioProcessor().apply { setOutputSampleRateHz(48000) }
+                // fast and hard-resync constantly - the stutter. FixedRateResampler, not a bare
+                // SonicAudioProcessor: the latter forgets its target on every sink reset.
+                val resampler = FixedRateResampler(48000)
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false) // keep the chain in 16-bit PCM
                     .setAudioProcessorChain(
@@ -1616,6 +1618,9 @@ class PlaybackService : Service() {
                         SpeedBeforeTeeChain(
                             arrayOf(
                                 mixer,
+                                // Anti-alias low-pass + decimation for >48k input (Sonic has none:
+                                // a 192k master's ultrasonic content would fold into the audible band).
+                                HiResDecimator(),
                                 resampler,
                                 // AGC measures the source before the user's balance: balance cuts the
                                 // far channel, which would read as quieter and get boosted back.
