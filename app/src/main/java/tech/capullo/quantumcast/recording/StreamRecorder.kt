@@ -42,6 +42,12 @@ class StreamRecorder(
     private var bytes = 0L
     private var lastProgress = 0L
 
+    // fMP4 files that start with a header (.m4a init, FLAC STREAMINFO); class-level so a reconnect
+    // keeps appending to the same file consistently.
+    private var headerInit: ByteArray? = null // the init the file's header came from
+    private var tfdtBase: Long? = null // first fragment's decode time; fragments are rebased to start at 0
+    private val flacFrames = FlacFrames.Rebaser() // FLAC frame numbers, rebased to start at 0
+
     /** Records until [endAtMs] (wall clock) or cancellation. Throws only for unsupported streams. */
     suspend fun run(endAtMs: Long?) {
         var backoffMs = 2_000L
@@ -100,7 +106,7 @@ class StreamRecorder(
         }
     }
 
-    private fun open(start: String, icy: Boolean): HttpURLConnection {
+    private fun open(start: String, icy: Boolean, range: LongRange? = null): HttpURLConnection {
         var url = start
         repeat(8) {
             val c = URL(url).openConnection() as HttpURLConnection
@@ -109,6 +115,7 @@ class StreamRecorder(
             c.readTimeout = 15_000
             c.setRequestProperty("User-Agent", "QuantumCast")
             if (icy) c.setRequestProperty("Icy-MetaData", "1")
+            if (range != null) c.setRequestProperty("Range", "bytes=${range.first}-${range.last}")
             val code = c.responseCode
             if (code in 300..399) {
                 val loc = c.getHeaderField("Location") ?: throw IOException("Redirect without Location")
@@ -169,12 +176,47 @@ class StreamRecorder(
         }
         val ts = TsAudioDemuxer()
         var nextSeq = -1L
+        // fMP4 (EXT-X-MAP): the init segment describes the codec; re-read only when its URI changes.
+        var mapUri: String? = null
+        var fmp4: Fmp4Audio? = null
+        var mapInit: ByteArray? = null // the current init; without [fmp4] the audio stays .m4a
         while (true) {
             currentCoroutineContext().ensureActive()
             if (endAtMs != null && System.currentTimeMillis() >= endAtMs) return
-            if ("#EXT-X-MAP" in text) throw UnsupportedStreamException("This HLS station uses fMP4 segments, not supported yet")
             Regex("""#EXT-X-KEY:METHOD=([A-Z0-9-]+)""").find(text)?.groupValues?.get(1)?.let {
                 if (it != "NONE") throw UnsupportedStreamException("This HLS station is encrypted")
+            }
+            if ("#EXT-X-BYTERANGE" in text) {
+                throw UnsupportedStreamException("This HLS station uses byte-range segments, not supported yet")
+            }
+            Regex("""#EXT-X-MAP:([^\n]*)""").find(text)?.groupValues?.get(1)?.let { attrs ->
+                val uri = Regex("""URI="([^"]+)"""").find(attrs)?.groupValues?.get(1)
+                    ?: throw IOException("EXT-X-MAP without URI")
+                if (uri != mapUri) {
+                    val range = Regex("""BYTERANGE="(\d+)(?:@(\d+))?"""").find(attrs)?.groupValues
+                    val init = fetchBytes(
+                        resolve(mediaUrl, uri),
+                        range?.let { r ->
+                            val len = r[1].toLong()
+                            val at = r[2].toLongOrNull() ?: 0L
+                            at until at + len
+                        },
+                    )
+                    val written = headerInit
+                    if (written != null && !written.contentEquals(init)) {
+                        // The file's header (m4a init, FLAC STREAMINFO) no longer matches the
+                        // fragments; end here so the file stays valid.
+                        throw UnsupportedStreamException("HLS init segment changed mid-recording")
+                    }
+                    mapUri = uri
+                    mapInit = init
+                    fmp4 = when (val r = Fmp4Audio.parseInit(init)) {
+                        is Fmp4Audio.Companion.Init.Elementary -> r.audio
+                        Fmp4Audio.Companion.Init.KeepAsM4a -> null
+                        Fmp4Audio.Companion.Init.NoAudio -> throw UnsupportedStreamException("This HLS stream has no audio track")
+                    }
+                    Log.i(TAG, "${station.name}: fMP4 → ${fmp4?.ext ?: "m4a (kept as is)"}")
+                }
             }
             val mediaSeq = Regex("""#EXT-X-MEDIA-SEQUENCE:(\d+)""").find(text)?.groupValues?.get(1)?.toLong() ?: 0L
             val segs = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
@@ -186,11 +228,38 @@ class StreamRecorder(
                 val seq = mediaSeq + i
                 if (seq < nextSeq) continue
                 val data = fetchBytes(resolve(mediaUrl, seg))
-                if (data.isNotEmpty() && data[0] == 0x47.toByte()) {
-                    ts.feed(data) { b, off, len -> writeAudio(b, off, len) }
-                } else {
-                    val skip = id3Size(data)
-                    writeAudio(data, skip, data.size - skip)
+                val f = fmp4
+                val init = mapInit
+                when {
+                    f != null -> {
+                        val h = f.header
+                        if (h != null && out == null) {
+                            writeAudio(h, 0, h.size, f.ext to f.mime)
+                            headerInit = init
+                        }
+                        val fmt = f.ext to f.mime
+                        if (f.ext == "flac") {
+                            f.extract(data) { b, off, len -> flacFrames.rebase(b, off, len)?.let { writeAudio(it, 0, it.size, fmt) } ?: writeAudio(b, off, len, fmt) }
+                        } else {
+                            f.extract(data) { b, off, len -> writeAudio(b, off, len, fmt) }
+                        }
+                    }
+                    init != null -> {
+                        // Fragmented MP4 kept as .m4a: init once at the top of the file, then fragments.
+                        // Live tfdt values count from the stream's start; rebase so playback starts at 0:00.
+                        val base = tfdtBase ?: Fmp4Audio.firstTfdt(data)?.also { tfdtBase = it }
+                        if (base != null) Fmp4Audio.rebaseTfdt(data, base)
+                        if (out == null) {
+                            writeAudio(init, 0, init.size, M4A)
+                            headerInit = init
+                        }
+                        writeAudio(data, 0, data.size, M4A)
+                    }
+                    data.isNotEmpty() && data[0] == 0x47.toByte() -> ts.feed(data) { b, off, len -> writeAudio(b, off, len) }
+                    else -> {
+                        val skip = id3Size(data)
+                        writeAudio(data, skip, data.size - skip)
+                    }
                 }
                 nextSeq = seq + 1
                 if (endAtMs != null && System.currentTimeMillis() >= endAtMs) return
@@ -202,7 +271,11 @@ class StreamRecorder(
         }
     }
 
-    /** Prefer an audio-only variant (highest bandwidth); else the lowest-bandwidth variant. */
+    /**
+     * Prefer an audio-only variant (highest bandwidth); else a separate audio rendition
+     * (EXT-X-MEDIA TYPE=AUDIO with a URI - the variants of such streams can be video-only, with
+     * the sound only in the rendition); else the lowest-bandwidth variant.
+     */
     private fun pickVariant(master: String): String {
         data class V(val bw: Long, val audioOnly: Boolean, val uri: String)
         val lines = master.lines().map { it.trim() }
@@ -215,9 +288,11 @@ class StreamRecorder(
             val video = "avc" in codecs || "hvc" in codecs || "hev" in codecs || "RESOLUTION=" in l
             vs += V(bw, !video, uri)
         }
-        val audio = vs.filter { it.audioOnly }
-        return (audio.maxByOrNull { it.bw } ?: vs.minByOrNull { it.bw })?.uri
-            ?: throw IOException("HLS master playlist without variants")
+        vs.filter { it.audioOnly }.maxByOrNull { it.bw }?.let { return it.uri }
+        val renditions = lines.filter { it.startsWith("#EXT-X-MEDIA") && "TYPE=AUDIO" in it }
+            .mapNotNull { l -> Regex("""URI="([^"]+)"""").find(l)?.groupValues?.get(1)?.let { (("DEFAULT=YES" in l) to it) } }
+        (renditions.firstOrNull { it.first } ?: renditions.firstOrNull())?.let { return it.second }
+        return vs.minByOrNull { it.bw }?.uri ?: throw IOException("HLS master playlist without variants")
     }
 
     private fun fetchText(url: String): String {
@@ -229,10 +304,15 @@ class StreamRecorder(
         }
     }
 
-    private fun fetchBytes(url: String): ByteArray {
-        val c = open(url, icy = false)
+    private fun fetchBytes(url: String, range: LongRange? = null): ByteArray {
+        val c = open(url, icy = false, range = range)
         try {
-            return c.inputStream.use { it.readBytes() }
+            val bytes = c.inputStream.use { it.readBytes() }
+            // A server that ignores Range sends the whole file (200): cut the slice ourselves.
+            if (range != null && c.responseCode == 200 && bytes.size > range.last) {
+                return bytes.copyOfRange(range.first.toInt(), range.last.toInt() + 1)
+            }
+            return bytes
         } finally {
             c.disconnect()
         }
@@ -240,10 +320,11 @@ class StreamRecorder(
 
     // --- output ---
 
-    private fun writeAudio(b: ByteArray, off: Int, len: Int) {
+    /** [format] (extension, mime) overrides sniffing when the caller knows it (fMP4 paths). */
+    private fun writeAudio(b: ByteArray, off: Int, len: Int, format: Pair<String, String>? = null) {
         if (len <= 0) return
         val os = out ?: run {
-            val (ext, mime) = sniff(b, off, len)
+            val (ext, mime) = format ?: sniff(b, off, len)
             val (name, stream) = openOutput(ext, mime)
             onEvent(Event.FileOpened(name))
             BufferedOutputStream(stream, 64 * 1024).also { out = it }
@@ -261,6 +342,9 @@ class StreamRecorder(
 
     companion object {
         private const val TAG = "StreamRecorder"
+
+        /** Fragmented MP4 that has no elementary-stream form is kept as-is. */
+        private val M4A = "m4a" to "audio/mp4"
 
         /** Format from the audio bytes themselves; Content-Type is too often wrong on radio. */
         fun sniff(b: ByteArray, off: Int, len: Int): Pair<String, String> {
