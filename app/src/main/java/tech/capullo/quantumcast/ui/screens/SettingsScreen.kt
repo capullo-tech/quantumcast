@@ -141,6 +141,9 @@ fun SettingsScreen(
             // OS clock - the outer Scaffold zeroes its top inset, so each screen's own TopAppBar
             // applies it exactly once.
         )
+        // Read live at dispose time: switching the pin off removes the Base port row, and its
+        // dispose-time save must not turn the pin back on with an abandoned edit.
+        val pinOn by rememberUpdatedState(settings.snapserverFixedPort > 0)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 8.dp),
@@ -180,9 +183,9 @@ fun SettingsScreen(
                         description = "Uses this port and the next two (base+1, base+2). 1024-65531.",
                         value = settings.snapserverFixedPort.toString(),
                         placeholder = "34000",
-                        // Ignore blank/invalid input: turning the pin off is the toggle's job, and an
-                        // implicit save (Back, focus loss) must not switch it off by accident.
-                        onValueChange = { s -> s.trim().toIntOrNull()?.takeIf { it > 0 }?.let(onSetSnapserverFixedPort) },
+                        // Blank/invalid input is rejected: turning the pin off is the toggle's job.
+                        isValid = { s -> s.trim().toIntOrNull()?.let { it > 0 } == true },
+                        onValueChange = { s -> if (pinOn) s.trim().toIntOrNull()?.let(onSetSnapserverFixedPort) },
                         keyboardType = KeyboardType.Number,
                     )
                 }
@@ -759,6 +762,7 @@ private fun TextInputRow(
     onValueChange: (String) -> Unit,
     description: String = "",
     keyboardType: KeyboardType = KeyboardType.Uri,
+    isValid: (String) -> Boolean = { true },
 ) {
     var text by remember(value) { mutableStateOf(value) }
     // Saved on the check button, the keyboard's Done, losing focus, or leaving the screen (Back):
@@ -766,10 +770,11 @@ private fun TextInputRow(
     val latestText by rememberUpdatedState(text)
     val latestValue by rememberUpdatedState(value)
     val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val latestIsValid by rememberUpdatedState(isValid)
     val focusManager = LocalFocusManager.current
     var hadFocus by remember { mutableStateOf(false) }
     fun commit() {
-        if (latestText != latestValue) latestOnValueChange(latestText)
+        if (latestText != latestValue && latestIsValid(latestText)) latestOnValueChange(latestText)
     }
     DisposableEffect(Unit) { onDispose { commit() } }
     Row(
@@ -789,10 +794,8 @@ private fun TextInputRow(
                 placeholder = { Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    commit()
-                    focusManager.clearFocus()
-                }),
+                // Clearing focus commits through the focus-loss path below.
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { state ->
@@ -800,8 +803,8 @@ private fun TextInputRow(
                         hadFocus = state.isFocused
                     },
                 trailingIcon = {
-                    if (text != value) {
-                        IconButton(onClick = { onValueChange(text) }) {
+                    if (text != value && isValid(text)) {
+                        IconButton(onClick = { commit() }) {
                             Icon(Icons.Default.Check, "Save", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
