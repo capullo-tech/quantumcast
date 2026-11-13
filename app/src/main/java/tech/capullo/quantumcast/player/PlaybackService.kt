@@ -25,6 +25,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
@@ -40,6 +41,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +73,9 @@ import tech.capullo.audio.player.BalanceAudioProcessor
 import tech.capullo.audio.player.FifoAudioBufferSink
 import tech.capullo.audio.player.GainAudioProcessor
 import tech.capullo.audio.player.LiveLoudnessAgcProcessor
+import tech.capullo.audio.snapcast.SnapcastArt
+import tech.capullo.audio.snapcast.SnapcastArtwork
+import tech.capullo.audio.snapcast.SnapcastRemoteArt
 import tech.capullo.audio.snapcast.SnapclientProcess
 import tech.capullo.audio.snapcast.SnapcontrolPlugin
 import tech.capullo.audio.snapcast.SnapserverPorts
@@ -155,6 +160,8 @@ class PlaybackService : Service() {
         val shazamSpotifyUrl: String = "",
         val shazamAppleMusicUrl: String = "",
         val isStreamLocked: Boolean = false,
+        /** Playing a recording (seekable file), not a live station. */
+        val mediaMode: Boolean = false,
     )
 
     private val _state = MutableStateFlow(PlaybackState())
@@ -1095,7 +1102,7 @@ class PlaybackService : Service() {
                 stationCountry = artist, stationUuid = uuid,
                 stationCountryCode = countryCode, stationCodec = codec, stationBitrate = bitrate,
                 stationTags = tags,
-                isBuffering = true, broadcastMode = BroadcastMode.QUANTUMCAST,
+                isBuffering = true, broadcastMode = BroadcastMode.QUANTUMCAST, mediaMode = false,
                 artworkUrl = "",
                 snapclientHost = "",
                 icyTitle = "",
@@ -1210,7 +1217,9 @@ class PlaybackService : Service() {
         val title = meta?.title ?: ""
         val artist = meta?.firstArtist() ?: ""
         val stationName = meta?.station ?: ""
-        val art = meta?.artUrl ?: ""
+        // A capullo broadcaster sends its art as a path on its own snapserver: resolved against the one
+        // the control client talks to, Coil fetches it in the background like any other art URL.
+        val art = SnapcastRemoteArt.resolveUrl(meta?.artUrl, snapControlHost, snapControlHttpPort) ?: ""
         val country = meta?.country ?: ""
         val countryCode = meta?.countryCode ?: ""
         val codec = meta?.codec ?: ""
@@ -1554,7 +1563,12 @@ class PlaybackService : Service() {
             .setConnectTimeoutMs(10_000)
             .setReadTimeoutMs(10_000)
             .setUserAgent("QuantumCast")
-        val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http))
+        // Constant-bitrate seeking: recordings are raw MP3/ADTS with no seek index. Live streams
+        // are unseekable either way, so this only matters for recordings.
+        val extractors = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+            .setConstantBitrateSeekingAlwaysEnabled(true)
+        val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http), extractors)
             // Generous retries ≈ VLC's --http-reconnect for flaky radio streams
             .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(8))
         val loadControl = DefaultLoadControl.Builder()
@@ -1595,14 +1609,20 @@ class PlaybackService : Service() {
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false) // keep the chain in 16-bit PCM
                     .setAudioProcessorChain(
-                        DefaultAudioSink.DefaultAudioProcessorChain(
-                            mixer,
-                            resampler,
-                            // AGC measures the source before the user's balance: balance cuts the
-                            // far channel, which would read as quieter and get boosted back.
-                            agcProcessor,
-                            balanceProcessor,
-                            gainProcessor,
+                        // Speed (recordings) is applied BEFORE the tee, so every Snapcast listener and
+                        // web player hears the same speed. DefaultAudioProcessorChain appends its speed
+                        // stage after all given processors, i.e. after the tee: the FIFO would get 1×
+                        // audio while the player clock ran faster.
+                        SpeedBeforeTeeChain(
+                            arrayOf(
+                                mixer,
+                                resampler,
+                                // AGC measures the source before the user's balance: balance cuts the
+                                // far channel, which would read as quieter and get boosted back.
+                                agcProcessor,
+                                balanceProcessor,
+                                gainProcessor,
+                            ),
                             TeeAudioProcessor(sink),
                         ),
                     )
@@ -1623,10 +1643,101 @@ class PlaybackService : Service() {
             .apply { if (mimeType != null) setMimeType(mimeType) }
             .build()
         player.setMediaItem(item)
+        if (_state.value.mediaMode) {
+            if (mediaStartMs > 0) player.seekTo(mediaStartMs)
+            player.playbackParameters = mediaParams
+            startMediaTicker()
+        }
         player.prepare()
         player.play()
         startBufferingTimeout()
         Log.d(TAG, "ExoPlayer → tee→FIFO $engineFifoPath (caching=${engineCachingMs}ms)")
+    }
+
+    // --- Recording playback (a local file through the same engine → Snapcast path) ---
+
+    data class MediaProgress(val positionMs: Long = 0, val durationMs: Long = 0)
+
+    private val _mediaProgress = MutableStateFlow(MediaProgress())
+
+    /** Position/duration of the recording being played, ticked every 500 ms (kept out of [state] so only progress UI recomposes). */
+    val mediaProgress: StateFlow<MediaProgress> = _mediaProgress.asStateFlow()
+
+    /** A recording reached its end (not an error, not a user stop). */
+    var onMediaEnded: (() -> Unit)? = null
+
+    private var mediaStartMs = 0L
+    private var mediaParams = PlaybackParameters.DEFAULT
+    private var mediaTickJob: Job? = null
+
+    /**
+     * Plays a recording ([uri]: file or content URI) through the broadcast engine, so Snapcast
+     * speakers and web players hear it like a station. Same Snapcast handling as [playStation].
+     */
+    fun playMedia(uri: String, title: String, subtitle: String, favicon: String, startMs: Long, speed: Float, pitch: Float) {
+        val snapcastAlive = snapserverProcess != null && snapserverJob?.isActive == true
+        _state.update {
+            it.copy(
+                stationName = title, stationUrl = uri, stationFavicon = favicon,
+                stationCountry = subtitle, stationUuid = "rec:$uri",
+                stationCountryCode = "", stationCodec = "", stationBitrate = 0, stationTags = "",
+                isBuffering = true, broadcastMode = BroadcastMode.QUANTUMCAST,
+                artworkUrl = "", snapclientHost = "", icyTitle = "",
+                shazamTrackName = "", shazamArtistName = "",
+                shazamYoutubeUrl = "", shazamSpotifyUrl = "", shazamAppleMusicUrl = "",
+                mediaMode = true,
+            )
+        }
+        stopEngine()
+        _mediaProgress.value = MediaProgress(startMs, 0)
+        mediaStartMs = startMs
+        mediaParams = PlaybackParameters(speed, pitch)
+        engineCachingMs = 1500
+        if (snapcastAlive) {
+            engineFifoPath = snapserverProcess!!.pipeFilepath
+            startEngine(uri, null)
+            audioFocus.request()
+            audioFocus.refocus()
+        } else {
+            stopSnapcast()
+            val snapserver = ensureSnapserver()
+            pendingSnapserver = snapserver
+            engineFifoPath = snapserver.pipeFilepath
+            startEngine(uri, null)
+        }
+        updateNotification()
+        updateMediaSession()
+    }
+
+    fun seekTo(positionMs: Long) = runOnMain {
+        val p = exoPlayer ?: return@runOnMain
+        val dur = p.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
+        val target = positionMs.coerceIn(0, dur)
+        p.seekTo(target)
+        _mediaProgress.value = _mediaProgress.value.copy(positionMs = target)
+        updateMediaSession()
+    }
+
+    /** pitch == speed is the "tape" effect (pitch correction off); pitch 1 keeps voices natural. */
+    fun setMediaSpeed(speed: Float, pitch: Float) = runOnMain {
+        mediaParams = PlaybackParameters(speed, pitch)
+        if (_state.value.mediaMode) exoPlayer?.playbackParameters = mediaParams
+        updateMediaSession()
+    }
+
+    private fun startMediaTicker() {
+        mediaTickJob?.cancel()
+        mediaTickJob = scope.launch {
+            while (isActive) {
+                withContext(Dispatchers.Main) {
+                    exoPlayer?.let { p ->
+                        val dur = p.duration.takeIf { it != C.TIME_UNSET } ?: 0L
+                        _mediaProgress.value = MediaProgress(p.currentPosition, dur)
+                    }
+                }
+                delay(500)
+            }
+        }
     }
 
     private val exoListener = object : Player.Listener {
@@ -1650,7 +1761,10 @@ class PlaybackService : Service() {
                     stopEngineWatchdog()
                     _state.update { it.copy(isPlaying = false, isBuffering = false, bufferingPercent = 0f) }
                     updateNotification()
-                    if (!wasIntentional) onStationError?.invoke()
+                    // A recording reaching its end is normal: the VM advances the playlist.
+                    if (!wasIntentional) {
+                        if (_state.value.mediaMode) onMediaEnded?.invoke() else onStationError?.invoke()
+                    }
                 }
                 Player.STATE_IDLE -> {
                     // After stop() (intentional) or error (handled in onPlayerError)
@@ -1668,7 +1782,7 @@ class PlaybackService : Service() {
         override fun onPlayerError(error: PlaybackException) {
             cancelBufferingTimeout()
             Log.e(TAG, "ExoPlayer error: ${error.errorCodeName}", error)
-            if (maybeResolvePlaylistAndRetry(error)) return
+            if (!_state.value.mediaMode && maybeResolvePlaylistAndRetry(error)) return
             _state.update { it.copy(isPlaying = false, isBuffering = false, bufferingPercent = 0f, icyTitle = "") }
             onStationError?.invoke()
         }
@@ -1875,6 +1989,8 @@ class PlaybackService : Service() {
         resolveJob = null
         engineUrl = "" // invalidates any resolve completion that raced the cancel
         pendingSnapserver = null
+        mediaTickJob?.cancel()
+        mediaTickJob = null
         exoPlayer?.let { p ->
             p.removeListener(exoListener)
             p.stop()
@@ -1887,8 +2003,8 @@ class PlaybackService : Service() {
 
     // --- Snapcast ---
 
-    // OS-assigned ports (default) so multiple capullo apps coexist and the ports aren't a fixed
-    // guess; the resolved trio is read back off snapserver.ports to wire the snapclient / NSD /
+    // A random consecutive block (default) so multiple capullo apps coexist and the ports aren't a
+    // fixed guess; the resolved trio is read back off snapserver.ports to wire the snapclient / NSD /
     // control / web URL. A fixed base port (Settings) instead pins the trio so the server address
     // survives broadcast restarts (snapclients reconnect without rediscovery; web origin stable).
     private fun ensureSnapserver(): SnapserverProcess = snapserverProcess ?: SnapserverProcess(
@@ -1899,14 +2015,14 @@ class PlaybackService : Service() {
         controlSocketName = SnapserverProcess.controlSocketName(this),
     ).also { snapserverProcess = it }
 
-    /** Fixed base if set AND its trio is actually free; otherwise OS-assigned. A busy fixed
+    /** Fixed base if set AND its trio is actually free; otherwise a random block. A busy fixed
      *  port falls back to random with a Toast so the broadcast never silently dies on a
      *  collision (user-editable base can clash with another app or a stale server). */
     private fun resolveSnapserverPorts(): SnapserverPorts {
         val base = snapserverFixedPort
         if (base <= 0) return SnapserverPorts.free()
         SnapserverPorts.fixedIfFree(base)?.let { return it }
-        Log.w(TAG, "fixed snapserver port $base unavailable — falling back to OS-assigned")
+        Log.w(TAG, "fixed snapserver port $base unavailable — falling back to a random block")
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(
                 this,
@@ -1938,19 +2054,26 @@ class PlaybackService : Service() {
         override fun previous() {
             onSkipPrevRequested?.invoke()
         }
-        override fun seekTo(positionMs: Long) {} // live radio - not seekable
+        override fun seekTo(positionMs: Long) {
+            // Live radio isn't seekable; a recording is.
+            if (_state.value.mediaMode) this@PlaybackService.seekTo(positionMs)
+        }
     }
 
-    // Artwork is prepared app-side as base64 (the engine mapper expects NowPlaying.artworkBase64,
-    // not a URL): Shazam art wins, else the station favicon - parity with the old
-    // SnapcontrolCallbacks.currentArtworkUrl. artUrl also rides in extras for clients that follow it;
-    // the base64 (artData) covers clients that embed bytes (e.g. RadioCapullo).
-    @Volatile private var snapArtUrl: String? = null
+    // Artwork: Shazam art wins, else the station favicon - parity with the old
+    // SnapcontrolCallbacks.currentArtworkUrl. The download is published through SnapcastArtwork: our
+    // snapserver serves the full image (`artUrl` = its path) and only a tiny thumbnail rides in
+    // `artData` (full-size embedded art stalls the broadcast at every change). Until it lands, or when
+    // the image can't be published (SVG, ICO favicons), `artUrl` is the source URL itself so web
+    // players and listeners can still load it directly.
+    @Volatile private var snapArtSourceUrl: String? = null
 
-    @Volatile private var snapArtBase64: String? = null
+    @Volatile private var snapArt: SnapcastArt? = null
 
-    @Volatile private var snapArtExtension: String? = null
+    // Source URL already downloaded, publishable or not: never downloaded again (a failed download is retried).
+    @Volatile private var snapArtAttemptedUrl: String? = null
     private var snapArtJob: Job? = null
+    private val snapArtwork by lazy { SnapcastArtwork(applicationContext) }
 
     // Push the current metadata to web players / snapclients. Replaces the old
     // snapcontrolPlugin?.notifyPropertiesChanged() call sites (no-op until a session connects).
@@ -1973,7 +2096,7 @@ class PlaybackService : Service() {
             artist = st.shazamArtistName,
             album = st.stationName,
             streamUrl = st.stationUrl.ifEmpty { null },
-            artworkBase64 = snapArtBase64,
+            artworkBase64 = snapArt?.thumbnailBase64,
             isPlaying = st.isPlaying,
             canGoNext = canSkip,
             canGoPrevious = canSkip,
@@ -1987,8 +2110,7 @@ class PlaybackService : Service() {
                 if (st.shazamAppleMusicUrl.isNotEmpty()) put("appleMusicUrl", st.shazamAppleMusicUrl)
                 if (st.stationTags.isNotEmpty()) put("tags", st.stationTags)
                 if (st.stationUuid.isNotEmpty()) put("uuid", st.stationUuid)
-                snapArtUrl?.takeIf { it.isNotEmpty() }?.let { put("artUrl", it) }
-                snapArtExtension?.let { put("artExtension", it) }
+                (snapArt?.urlPath ?: snapArtSourceUrl?.takeIf { it.isNotEmpty() })?.let { put("artUrl", it) }
                 calBoostLease?.let { put("calBoost", it) }
             },
         )
@@ -2000,9 +2122,9 @@ class PlaybackService : Service() {
      * connection; the addressed client self-filters and applies it, and the lease expiry means a
      * crash here cannot leave that phone loud.
      *
-     * Deliberately NOT renewed on a short ticker: every extras change invalidates the metadata
-     * serialization cache, which re-escapes the (~300 KB) embedded art blob and can starve the
-     * real-time FIFO writer. So the lease is issued generously once per round instead. If a round
+     * Deliberately NOT renewed on a short ticker: every extras change is a full metadata push that
+     * snapserver parses on the thread reading the audio pipe and rebroadcasts to every control
+     * connection. So the lease is issued generously once per round instead. If a round
      * outlives it the boost simply drops and that target reads as unmeasurable, which is a safe fail.
      */
     private fun publishCalBoost(targets: Map<String, Int>, leaseMs: Long) {
@@ -2014,27 +2136,26 @@ class PlaybackService : Service() {
         publishNowPlaying()
     }
 
-    // Download the effective art URL to base64 for the artData embed; re-publish when it lands.
+    // Download the effective art URL and publish it; re-publish the now-playing when it lands.
     private fun refreshSnapArt() {
         val url = _state.value.artworkUrl.ifEmpty { _state.value.stationFavicon }
-        if (url == snapArtUrl && (url.isEmpty() || snapArtBase64 != null)) return
-        if (url.isEmpty()) {
-            snapArtUrl = null
-            snapArtBase64 = null
-            snapArtExtension = null
-            snapArtJob?.cancel()
+        // Same art: published, in flight, or downloaded but unusable. Only a failed download retries.
+        if (url == snapArtSourceUrl &&
+            (url.isEmpty() || snapArt != null || url == snapArtAttemptedUrl || snapArtJob?.isActive == true)
+        ) {
             return
         }
-        snapArtUrl = url
-        snapArtBase64 = null
         snapArtJob?.cancel()
+        snapArtSourceUrl = url
+        snapArt = null
+        if (url.isEmpty()) return
         snapArtJob = scope.launch {
-            val bytes = runCatching {
-                withContext(Dispatchers.IO) { java.net.URL(url).openStream().use { it.readBytes() } }
-            }.getOrNull() ?: return@launch
-            if (snapArtUrl != url) return@launch // art changed while downloading
-            snapArtBase64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            snapArtExtension = url.substringAfterLast('.').substringBefore('?').lowercase().ifEmpty { "jpg" }
+            val bytes = SnapcastRemoteArt.download(url) ?: return@launch
+            // Named and labelled from the bytes, never from the URL's extension.
+            val art = snapArtwork.publish(bytes)
+            if (snapArtSourceUrl != url) return@launch // art changed while downloading
+            snapArtAttemptedUrl = url
+            snapArt = art ?: return@launch
             snapNowPlaying.value = buildSnapNowPlaying()
             snapcontrolPlugin?.notifyPropertiesChanged()
         }
@@ -2070,7 +2191,15 @@ class PlaybackService : Service() {
         audioFocus.request()
     }
 
+    // The snapserver the control client talks to (our own while broadcasting, the remote one while
+    // listening in): stream art paths (`artUrl`) resolve against it.
+    @Volatile private var snapControlHost = ""
+
+    @Volatile private var snapControlHttpPort = 0
+
     private fun startSnapcastControl(host: String, httpPort: Int) {
+        snapControlHost = host
+        snapControlHttpPort = httpPort
         snapcastControlJob?.cancel()
         val client = tech.capullo.audio.snapcast.SnapcastControlClient(host, httpPort)
             .also { snapcastControl = it }
@@ -2440,6 +2569,9 @@ class PlaybackService : Service() {
                 override fun onSkipToPrevious() {
                     onSkipPrevRequested?.invoke()
                 }
+                override fun onSeekTo(pos: Long) {
+                    if (_state.value.mediaMode) seekTo(pos)
+                }
             })
             isActive = true
         }
@@ -2497,16 +2629,18 @@ class PlaybackService : Service() {
     private fun updateMediaSession() {
         val st = _state.value
         refreshSessionArt(st)
+        val media = st.mediaMode
         mediaSession?.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setActions(
                     PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
-                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS,
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        (if (media) PlaybackStateCompat.ACTION_SEEK_TO else 0L),
                 )
                 .setState(
                     if (st.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
-                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                    1f,
+                    if (media) _mediaProgress.value.positionMs else PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    if (media) mediaParams.speed else 1f,
                 )
                 .build(),
         )
@@ -2514,6 +2648,7 @@ class PlaybackService : Service() {
             MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, st.icyTitle.ifEmpty { st.stationName })
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, st.stationCountry)
+                .apply { if (media) putLong(MediaMetadataCompat.METADATA_KEY_DURATION, _mediaProgress.value.durationMs) }
                 .apply {
                     sessionArtUrl?.takeIf { it.isNotBlank() }?.let {
                         putString(MediaMetadataCompat.METADATA_KEY_ART_URI, it)

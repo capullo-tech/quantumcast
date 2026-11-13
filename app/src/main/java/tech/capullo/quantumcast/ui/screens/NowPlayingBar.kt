@@ -53,6 +53,11 @@ fun NowPlayingBar(
     onSkipPrev: () -> Unit = {},
     onSkip: () -> Unit = {},
     onOpenDetail: () -> Unit = {},
+    isRecording: Boolean = false,
+    onToggleRecord: () -> Unit = {},
+    /** Non-null while a recording (not a station) plays. */
+    recording: RecordingPlaybackUi? = null,
+    onToggleSpeed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -93,102 +98,149 @@ fun NowPlayingBar(
             tonalElevation = 8.dp,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenDetail)
-                    // Pad the CONTENT above the system nav bar (the Surface bg still fills
-                    // edge-to-edge behind it) so the transport controls don't collide with
-                    // the 3-button nav bar under enableEdgeToEdge().
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AsyncImage(
-                    model = barArt,
-                    contentDescription = null,
+            Column {
+                if (recording != null) MiniProgressLine(recording.progress)
+                Row(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surface),
-                )
-
-                Spacer(Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    val flag = countryCodeToFlag(station.countryCode)
-                    val nameWithFlag = if (flag.isNotEmpty()) "$flag ${station.name}" else station.name
-                    Text(
-                        text = nameWithFlag,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenDetail)
+                        // Pad the CONTENT above the system nav bar (the Surface bg still fills
+                        // edge-to-edge behind it) so the transport controls don't collide with
+                        // the 3-button nav bar under enableEdgeToEdge().
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AsyncImage(
+                        model = barArt,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surface),
                     )
-                    val shazamLine = latestTrack
-                        ?.takeIf { !it.notFound && it.trackName.isNotBlank() }
-                        ?.let { t ->
-                            if (t.artistName.isNotBlank()) {
-                                "${t.artistName} - ${t.trackName}"
-                            } else {
-                                t.trackName
-                            }
-                        }
-                    val subtitle = shazamLine ?: state.icyTitle.ifEmpty { station.country }
-                    if (subtitle.isNotEmpty()) {
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        val flag = countryCodeToFlag(station.countryCode)
+                        val nameWithFlag = if (flag.isNotEmpty()) "$flag ${station.name}" else station.name
                         Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
+                            text = nameWithFlag,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
-                            color = MaterialTheme.colorScheme.secondary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                         )
+                        val shazamLine = latestTrack
+                            ?.takeIf { !it.notFound && it.trackName.isNotBlank() }
+                            ?.let { t ->
+                                if (t.artistName.isNotBlank()) {
+                                    "${t.artistName} - ${t.trackName}"
+                                } else {
+                                    t.trackName
+                                }
+                            }
+                        // A recording's subtitle is when it was recorded (its synthetic station's country).
+                        val subtitle = if (recording != null) station.country else shazamLine ?: state.icyTitle.ifEmpty { station.country }
+                        if (subtitle.isNotEmpty()) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                            )
+                        }
+                        if (state.isBuffering) {
+                            Text(
+                                text = "Connecting...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                    if (state.isBuffering) {
-                        Text(
-                            text = "Connecting...",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
 
-                val lockedInClient = isSnapclientMode && isStreamLocked
-                if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
-                    IconButton(onClick = onSkipPrev, enabled = !lockedInClient) {
-                        Icon(
-                            Icons.Default.SkipPrevious,
-                            "Previous",
+                    val lockedInClient = isSnapclientMode && isStreamLocked
+                    if (recording != null) {
+                        SkipIntervalButton(
+                            forward = false,
+                            seconds = recording.skipSeconds,
+                            onTap = recording.onSkipBack,
+                            onLongPress = recording.onPrevious,
+                            size = 44.dp,
+                            iconSize = 30.dp,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
                         )
+                    } else if (rotationState.isActive || (isSnapclientMode && streamCanGoPrevious) || lockedInClient) {
+                        IconButton(onClick = onSkipPrev, enabled = !lockedInClient) {
+                            Icon(
+                                Icons.Default.SkipPrevious,
+                                "Previous",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
+                            )
+                        }
                     }
-                }
-                IconButton(onClick = onTogglePlayPause, enabled = !lockedInClient) {
-                    if (lockedInClient) {
-                        Icon(
-                            Icons.Default.Lock,
-                            "Locked",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(0.38f),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (state.isPlaying || state.isBuffering) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (state.isPlaying || state.isBuffering) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                    // Tap = play/pause. Long-press = record this station (live) or 1× ⇄ last speed
+                    // (recording). Never in client mode: there is no stream on this device.
+                    PlayPauseButton(
+                        size = 48.dp,
+                        enabled = !lockedInClient,
+                        recordingThis = isRecording,
+                        glyph = when {
+                            lockedInClient -> null
+                            state.isPlaying || state.isBuffering -> PlayGlyph.PAUSE
+                            else -> PlayGlyph.PLAY
+                        },
+                        glyphColor = MaterialTheme.colorScheme.primary,
+                        onClick = onTogglePlayPause,
+                        onLongClick = when {
+                            isSnapclientMode -> null
+                            recording != null -> onToggleSpeed
+                            else -> onToggleRecord
+                        },
+                        longClickLabel = when {
+                            recording != null -> "Switch speed"
+                            isRecording -> "Stop recording"
+                            else -> "Record"
+                        },
+                    ) {
+                        if (lockedInClient) {
+                            Icon(
+                                Icons.Default.Lock,
+                                "Locked",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.alpha(0.38f),
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (state.isPlaying || state.isBuffering) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (state.isPlaying || state.isBuffering) "Pause" else "Play",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
-                }
-                if (rotationState.isActive || (isSnapclientMode && streamCanGoNext) || lockedInClient) {
-                    IconButton(onClick = onSkip, enabled = !lockedInClient) {
-                        Icon(
-                            Icons.Default.SkipNext,
-                            "Next",
+                    if (recording != null) {
+                        SkipIntervalButton(
+                            forward = true,
+                            seconds = recording.skipSeconds,
+                            onTap = recording.onSkipForward,
+                            onLongPress = recording.onNext,
+                            size = 44.dp,
+                            iconSize = 30.dp,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
                         )
+                    } else if (rotationState.isActive || (isSnapclientMode && streamCanGoNext) || lockedInClient) {
+                        IconButton(onClick = onSkip, enabled = !lockedInClient) {
+                            Icon(
+                                Icons.Default.SkipNext,
+                                "Next",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.alpha(if (lockedInClient) 0.38f else 1f),
+                            )
+                        }
                     }
                 }
             }

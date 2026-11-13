@@ -82,6 +82,7 @@ class RadioViewModel @Inject constructor(
     val settingsRepo: SettingsRepository,
     tunnelManager: TunnelManager,
     @ApplicationContext private val context: Context,
+    private val recordings: tech.capullo.quantumcast.recording.RecordingRepository,
 ) : ViewModel() {
 
     // The tunnel's own state, straight from the manager - it is not part of PlaybackState, because
@@ -219,6 +220,7 @@ class RadioViewModel @Inject constructor(
     @Volatile private var focusPaused = false
 
     private var serviceStateJob: Job? = null
+    private var mediaProgressJob: Job? = null
     private var rotationSkipJob: Job? = null
     private var customNameJob: Job? = null
     private var webCfgJob: Job? = null
@@ -283,6 +285,7 @@ class RadioViewModel @Inject constructor(
             svc.onPlayPauseRequested = { viewModelScope.launch { togglePlayPause() } }
             svc.onFocusPausedChanged = { focusPaused = it }
             svc.onStationError = { viewModelScope.launch { handleStationError() } }
+            svc.onMediaEnded = { viewModelScope.launch { onRecordingEnded() } }
             svc.onStationPlaying = {
                 consecutiveErrors = 0
                 retryJob?.cancel()
@@ -309,6 +312,19 @@ class RadioViewModel @Inject constructor(
                 // Skipping only makes sense while rotation is active; tells Snapcast
                 // clients to hide prev/next for a single station via canGoNext/Previous.
                 _rotationState.collect { svc.updateBroadcastCanSkip(it.isActive) }
+            }
+            mediaProgressJob?.cancel()
+            mediaProgressJob = viewModelScope.launch {
+                svc.mediaProgress.collect { mp ->
+                    val rec = _playingRecording.value ?: return@collect
+                    _mediaProgress.value = mp
+                    // Resume point every 5 s while playing (pause/stop/switch save immediately).
+                    val now = System.currentTimeMillis()
+                    if (_playerState.value.isPlaying && now - lastResumeSaveMs > 5_000) {
+                        lastResumeSaveMs = now
+                        recordings.setResume(rec.name, mp.positionMs)
+                    }
+                }
             }
             serviceStateJob = viewModelScope.launch {
                 svc.state.collect { svcState ->
@@ -387,6 +403,7 @@ class RadioViewModel @Inject constructor(
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
+            playbackService?.onMediaEnded = null
             playbackService?.onSkipNextRequested = null
             playbackService?.onSkipPrevRequested = null
             playbackService?.onPlayPauseRequested = null
@@ -422,6 +439,7 @@ class RadioViewModel @Inject constructor(
 
     private fun playInternal(station: Station, openDetail: Boolean, resetErrors: Boolean = true) {
         Log.d(TAG, "play: ${station.name}")
+        leaveRecording()
         // Error-retries of the SAME station pass resetErrors=false: otherwise the
         // counter zeroed here every retry, so the "skip after 2 failures" gate was
         // never reached and a dead station (e.g. empty body → instant EOS) retried
@@ -479,7 +497,20 @@ class RadioViewModel @Inject constructor(
             shazamJob = null
             _isShazamRunning.value = false
             if (_rotationState.value.isActive) _rotationState.update { it.copy(timerPaused = true) }
+            _playingRecording.value?.let { rec ->
+                pausedAtMs = System.currentTimeMillis()
+                val pos = _mediaProgress.value.positionMs
+                viewModelScope.launch { recordings.setResume(rec.name, pos) }
+            }
         } else {
+            if (_playingRecording.value != null) {
+                // Smart rewind on resume, sized by how long this pause lasted.
+                val back = if (pausedAtMs > 0) smartRewindMs(System.currentTimeMillis() - pausedAtMs, recordingPrefs.value) else 0
+                pausedAtMs = 0
+                if (back > 0) seekRecording((_mediaProgress.value.positionMs - back).coerceAtLeast(0))
+                svc.play()
+                return
+            }
             svc.play()
             _playerState.value.station?.streamUrl?.let { startShazamLoop(it) }
             if (_rotationState.value.isActive) _rotationState.update { it.copy(timerPaused = false) }
@@ -506,8 +537,140 @@ class RadioViewModel @Inject constructor(
         shazamJob?.cancel()
         shazamJob = null
         _isShazamRunning.value = false
+        leaveRecording()
         playbackService?.stop()
         _playerState.update { it.copy(station = null, isPlaying = false) }
+    }
+
+    // --- Recording playback ---
+    // A recording plays through the same service/engine as a station (so Snapcast hears it), as a
+    // synthetic Station for the existing UI. The playlist is the Recordings list as shown.
+
+    private val _playingRecording = MutableStateFlow<tech.capullo.quantumcast.recording.RecordingFile?>(null)
+    val playingRecording: StateFlow<tech.capullo.quantumcast.recording.RecordingFile?> = _playingRecording
+    private var recordingQueue: List<tech.capullo.quantumcast.recording.RecordingFile> = emptyList()
+
+    private val _mediaProgress = MutableStateFlow(PlaybackService.MediaProgress())
+    val mediaProgress: StateFlow<PlaybackService.MediaProgress> = _mediaProgress
+
+    val recordingPrefs: StateFlow<tech.capullo.quantumcast.recording.RecordingPrefs> = recordings.prefs
+        .stateIn(viewModelScope, SharingStarted.Eagerly, tech.capullo.quantumcast.recording.RecordingPrefs())
+
+    /** When the current recording was paused (in this session), for smart rewind. 0 = not paused. */
+    private var pausedAtMs = 0L
+    private var lastResumeSaveMs = 0L
+
+    fun playRecording(file: tech.capullo.quantumcast.recording.RecordingFile, queue: List<tech.capullo.quantumcast.recording.RecordingFile>) {
+        val svc = playbackService ?: return
+        leaveRecording()
+        cancelRotation()
+        retryJob?.cancel()
+        shazamJob?.cancel()
+        shazamJob = null
+        _isShazamRunning.value = false
+        recordingQueue = queue.filterNot { it.inProgress }
+        val p = recordingPrefs.value
+        val now = System.currentTimeMillis()
+        val start = p.resume[file.name]?.let { rp ->
+            val est = (file.durationSeconds ?: 0) * 1000
+            // Finished, or so close to the end that resuming would just end it: start over.
+            if (est > 0 && rp.posMs > est - 30_000) 0L else (rp.posMs - smartRewindMs(now - rp.savedAt, p)).coerceAtLeast(0)
+        } ?: 0L
+        pausedAtMs = 0
+        _playingRecording.value = file
+        _mediaProgress.value = PlaybackService.MediaProgress(start, (file.durationSeconds ?: 0) * 1000)
+        val subtitle = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+            .format(java.util.Date(file.startedAt))
+        val station = Station(uuid = "rec:${file.name}", name = file.stationName, favicon = file.meta.favicon, country = subtitle)
+        _showDetailScreen.value = true
+        _playerState.update { it.copy(station = station, icyTitle = "", currentTrack = null) }
+        _trackHistory.value = emptyList()
+        _streamStats.value = null
+        svc.playMedia(file.uri.toString(), file.stationName, subtitle, file.meta.favicon, start, p.speed, pitchFor(p.speed, p))
+    }
+
+    private fun pitchFor(speed: Float, p: tech.capullo.quantumcast.recording.RecordingPrefs) = if (p.pitchCorrection) 1f else speed
+
+    /**
+     * Smart rewind: back 1/10 of the pause, nothing for pauses under 3 s (accidental taps), at
+     * least 2 s otherwise, never more than the user's limit.
+     */
+    private fun smartRewindMs(pausedMs: Long, p: tech.capullo.quantumcast.recording.RecordingPrefs): Long {
+        if (!p.smartRewind || pausedMs < 3_000) return 0
+        return (pausedMs / 10).coerceIn(2_000, p.smartRewindLimitSeconds * 1000L)
+    }
+
+    /** Saves where the current recording is and forgets it as "playing" (switching to a station or stopping). */
+    private fun leaveRecording() {
+        val rec = _playingRecording.value ?: return
+        val pos = _mediaProgress.value.positionMs
+        viewModelScope.launch { recordings.setResume(rec.name, pos) }
+        _playingRecording.value = null
+        recordingQueue = emptyList()
+    }
+
+    fun seekRecording(posMs: Long) {
+        playbackService?.seekTo(posMs)
+        _mediaProgress.update { it.copy(positionMs = posMs) }
+    }
+
+    fun skipForward() = seekRecording(_mediaProgress.value.positionMs + recordingPrefs.value.skipSeconds * 1000L)
+    fun skipBackward() = seekRecording((_mediaProgress.value.positionMs - recordingPrefs.value.skipSeconds * 1000L).coerceAtLeast(0))
+
+    /** Next row in the Recordings list (older); stops after the last. */
+    fun nextRecording() {
+        val cur = _playingRecording.value ?: return
+        val i = recordingQueue.indexOfFirst { it.name == cur.name }
+        recordingQueue.getOrNull(i + 1)?.let { playRecording(it, recordingQueue) }
+    }
+
+    fun previousRecording() {
+        val cur = _playingRecording.value ?: return
+        val i = recordingQueue.indexOfFirst { it.name == cur.name }
+        recordingQueue.getOrNull(i - 1)?.let { playRecording(it, recordingQueue) }
+    }
+
+    private fun onRecordingEnded(failed: Boolean = false) {
+        val cur = _playingRecording.value ?: return
+        // Finished: next time it starts from the top.
+        if (!failed) viewModelScope.launch { recordings.clearResume(cur.name) }
+        val i = recordingQueue.indexOfFirst { it.name == cur.name }
+        val next = recordingQueue.getOrNull(i + 1)
+        val queue = recordingQueue
+        _playingRecording.value = null // finished; don't save its end as a resume point
+        if (next != null) {
+            playRecording(next, queue)
+        } else {
+            recordingQueue = emptyList()
+            playbackService?.stop()
+            _playerState.update { it.copy(station = null, isPlaying = false) }
+            _showDetailScreen.value = false
+        }
+    }
+
+    fun setRecordingSpeed(speed: Float) {
+        val s = (Math.round(speed * 100) / 100f).coerceIn(
+            tech.capullo.quantumcast.recording.RecordingRepository.MIN_SPEED,
+            tech.capullo.quantumcast.recording.RecordingRepository.MAX_SPEED,
+        )
+        viewModelScope.launch { recordings.setSpeed(s) }
+        playbackService?.setMediaSpeed(s, pitchFor(s, recordingPrefs.value))
+    }
+
+    /** Long-press play while a recording plays: 1× ⇄ the last custom speed. */
+    fun toggleRecordingSpeed() {
+        val p = recordingPrefs.value
+        setRecordingSpeed(if (p.speed != 1f) 1f else p.customSpeed)
+    }
+
+    fun setPitchCorrection(on: Boolean) {
+        viewModelScope.launch { recordings.setPitchCorrection(on) }
+        val s = recordingPrefs.value.speed
+        playbackService?.setMediaSpeed(s, if (on) 1f else s)
+    }
+
+    fun updateRecordingPrefs(block: suspend tech.capullo.quantumcast.recording.RecordingRepository.() -> Unit) {
+        viewModelScope.launch { recordings.block() }
     }
 
     // --- Rotation ---
@@ -704,6 +867,15 @@ class RadioViewModel @Inject constructor(
         Log.w(TAG, "Station error - rotation=${_rotationState.value.isActive} consecutive=$consecutiveErrors")
         retryJob?.cancel()
 
+        // A recording that can't be read (deleted, folder permission gone) is not a flaky stream:
+        // no retries, move on to the next one.
+        _playingRecording.value?.let { rec ->
+            Log.w(TAG, "Recording failed to play: ${rec.name}")
+            android.widget.Toast.makeText(context, "Can't play ${rec.name}", android.widget.Toast.LENGTH_SHORT).show()
+            onRecordingEnded(failed = true)
+            return
+        }
+
         if (_rotationState.value.isActive) {
             consecutiveErrors++
             if (consecutiveErrors >= 2) {
@@ -742,6 +914,11 @@ class RadioViewModel @Inject constructor(
     }
 
     fun skipStation() {
+        // Lock screen / headset / web "next" while a recording plays = skip forward.
+        if (_playingRecording.value != null) {
+            skipForward()
+            return
+        }
         if (_snapclientHost.value.isNotEmpty()) {
             Log.d(TAG, "skipStation [SNAPCLIENT] canGoNext=${_streamCanGoNext.value}")
             if (_streamCanGoNext.value) {
@@ -757,6 +934,11 @@ class RadioViewModel @Inject constructor(
         skipChannel.trySend(CountdownResult.Next)
     }
     fun skipPrevStation() {
+        // Lock screen / headset / web "previous" while a recording plays = skip back.
+        if (_playingRecording.value != null) {
+            skipBackward()
+            return
+        }
         if (_snapclientHost.value.isNotEmpty()) {
             Log.d(TAG, "skipPrevStation [SNAPCLIENT] canGoPrevious=${_streamCanGoPrevious.value}")
             if (_streamCanGoPrevious.value) {
@@ -932,29 +1114,99 @@ class RadioViewModel @Inject constructor(
     fun reorderGroup(id: String, newSortOrder: Int) {
         viewModelScope.launch { repo.updateGroupSortOrder(id, newSortOrder) }
     }
-    fun exportFavorites(outputStream: OutputStream) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.exportFavorites(outputStream) } }
+    // --- Favorites backup (JSON, restorable) and playlist (M3U, for other players) ---
+
+    private fun toast(msg: String) = viewModelScope.launch(Dispatchers.Main) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
     }
-    fun importFavorites(inputStream: InputStream) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.importFavorites(inputStream) } }
+
+    /** Writes the backup or playlist; the stream is opened and closed inside (the old export closed it early → empty files). */
+    private suspend fun writeFavorites(m3u: Boolean, open: () -> OutputStream?): Int {
+        val out = open() ?: error("Can't open the file")
+        return if (m3u) {
+            // Straight from the DB: the UI-facing flows may have no subscriber here.
+            val favs = repo.getFavorites().first()
+            out.use { it.write(FavoritesPlaylist.m3u(favs, repo.getGroups().first()).toByteArray()) }
+            favs.size
+        } else {
+            repo.exportFavorites(out) // closes the stream itself
+        }
+    }
+
+    /** Save to a user-picked document. */
+    fun exportFavorites(uri: android.net.Uri, m3u: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { writeFavorites(m3u) { context.contentResolver.openOutputStream(uri, "wt") } }
+            .onSuccess { toast("Exported $it favorites") }
+            .onFailure { toast("Export failed: ${it.message}") }
+    }
+
+    /** Share via the Android share menu (WhatsApp, Telegram, email…). */
+    fun shareFavorites(m3u: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+            val file = java.io.File(dir, FavoritesPlaylist.fileName(m3u))
+            writeFavorites(m3u) { file.outputStream() }
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
+            val send = Intent(Intent.ACTION_SEND)
+                .setType(if (m3u) "audio/x-mpegurl" else "application/json")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.startActivity(
+                Intent.createChooser(send, "Share favorites").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { toast("Share failed: ${it.message}") }
+    }
+
+    /** A parsed backup waiting for the user's merge/replace choice (from Settings or an opened file). */
+    private val _pendingImport = MutableStateFlow<tech.capullo.source.radiobrowser.data.repository.FavoritesBackup?>(null)
+    val pendingImport: StateFlow<tech.capullo.source.radiobrowser.data.repository.FavoritesBackup?> = _pendingImport
+
+    fun readFavoritesFile(uri: android.net.Uri) = viewModelScope.launch(Dispatchers.IO) {
+        val backup = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { repo.readFavoritesBackup(it) }
+        }.getOrNull()
+        if (backup == null) toast("This isn't a QuantumCast favorites file") else _pendingImport.value = backup
+    }
+
+    fun importPending(replace: Boolean) {
+        val backup = _pendingImport.value ?: return
+        _pendingImport.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.importFavorites(backup, replace) }
+                .onSuccess { r ->
+                    toast(
+                        if (replace) {
+                            "Replaced favorites with ${r.added} from the file"
+                        } else {
+                            "Imported ${r.added} new favorites" + if (r.alreadyThere > 0) " (${r.alreadyThere} already there)" else ""
+                        },
+                    )
+                }
+                .onFailure { toast("Import failed: ${it.message}") }
+        }
+    }
+
+    fun cancelImport() {
+        _pendingImport.value = null
     }
 
     // --- Snapclient (QuantumCast tab) ---
 
-    // Manual listen-in: the user types the port they KNOW - the HTTP port from the web-player URL, not
-    // the hidden random stream port. Resolve the real stream port from it via the broadcaster's
-    // listen.json; if that fails (stock/legacy server, or the typed port really was a stream port),
-    // fall back to treating the typed port as a direct stream port with the default control port.
-    // Navigate / show the "connecting" UI IMMEDIATELY - the listen.json fetch is a network round-trip
-    // (up to a few seconds on an unreachable host); making the user stare at an unchanged Home until it
-    // returns reads as a frozen tap. So show the connecting screen synchronously, then dial once resolved.
+    // Manual listen-in: the user types whichever port they KNOW, usually the HTTP port from the
+    // web-player URL. A broadcaster's ports are one consecutive stream/tcp/http block, so resolve()
+    // probes the typed port and the two above it for its listen.json and learns all three. If nothing
+    // resolves (stock/legacy server, or the typed port really was a stream port), fall back to
+    // treating the typed port as a direct stream port with the default control port.
+    // Navigate / show the "connecting" UI IMMEDIATELY - the listen.json probes are network round-trips
+    // (up to a few seconds each on an unreachable host); making the user stare at an unchanged Home
+    // until they return reads as a frozen tap. So show the connecting screen synchronously, then dial
+    // once resolved.
     fun connectManually(host: String, typedPort: Int?) {
         showConnectingTo(host)
         viewModelScope.launch {
-            val httpGuess = typedPort ?: 1680
-            val ports = tech.capullo.audio.snapcast.SnapserverListenInfo.fetch(host, httpGuess)
+            val ports = tech.capullo.audio.snapcast.SnapserverListenInfo.resolve(host, typedPort, defaultHttpPort = 1680)
             if (ports != null) {
-                playbackService?.connectAsSnapclient(host, ports.streamPort, httpGuess)
+                playbackService?.connectAsSnapclient(host, ports.streamPort, ports.httpPort)
             } else {
                 playbackService?.connectAsSnapclient(host, typedPort ?: 1604, 1680)
             }
@@ -1067,6 +1319,12 @@ class RadioViewModel @Inject constructor(
             delay(4_000)
             while (isActive) {
                 val result = runCatching { ShazamRecognizer.recognize(streamUrl, context) }.getOrNull()
+                // recognize() isn't cancellable mid-capture: a result for the previous live station
+                // can land after a recording started playing. It describes the wrong audio.
+                if (_playingRecording.value != null) {
+                    _isShazamRunning.value = false
+                    return@launch
+                }
                 _isShazamRunning.value = false
                 if (AudioCapturer.lastOutRate > 0) {
                     _streamStats.value = StreamStats(codec = AudioCapturer.lastCodec, bitrate = AudioCapturer.lastBitrate / 1000, sampleRate = AudioCapturer.lastOutRate, channels = AudioCapturer.lastOutCh)

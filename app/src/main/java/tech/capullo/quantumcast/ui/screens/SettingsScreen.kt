@@ -52,42 +52,66 @@ fun SettingsScreen(
     onSetWebAutoplay: (Boolean) -> Unit = {},
     onSetTunnelEnabled: (Boolean) -> Unit = {},
     onSetMaxHistorySongs: (Int) -> Unit = {},
-    onExportFavorites: (java.io.OutputStream) -> Unit = {},
-    onImportFavorites: (java.io.InputStream) -> Unit = {},
+    onExportFavorites: (Uri, Boolean) -> Unit = { _, _ -> },
+    onShareFavorites: (Boolean) -> Unit = {},
+    onPickImportFile: (Uri) -> Unit = {},
     onBack: () -> Unit = {},
+    onOpenRecordingStorage: () -> Unit = {},
+    recordingPrefs: tech.capullo.quantumcast.recording.RecordingPrefs = tech.capullo.quantumcast.recording.RecordingPrefs(),
+    onSetSkipSeconds: (Int) -> Unit = {},
+    onSetSmartRewind: (Boolean) -> Unit = {},
+    onSetSmartRewindLimit: (Int) -> Unit = {},
+    onSetPitchCorrection: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var showImportConfirm by remember { mutableStateOf<Uri?>(null) }
+    // Export: pick a format, then Save (file picker) or Share (share menu).
+    var showExport by remember { mutableStateOf(false) }
+    var exportM3u by remember { mutableStateOf(false) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        // The VM opens/writes/closes the stream itself (closing it here raced the write → empty files).
+        if (uri != null) onExportFavorites(uri, exportM3u)
+    }
+    // Import: the file is parsed, then the app-level dialog asks merge vs replace.
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onPickImportFile(uri)
+    }
     var swipeDx by remember { mutableFloatStateOf(0f) }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        try {
-            context.contentResolver.openOutputStream(uri)?.use { onExportFavorites(it) }
-        } catch (_: Exception) {}
-    }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        showImportConfirm = uri
-    }
-
-    showImportConfirm?.let { uri ->
+    if (showExport) {
         AlertDialog(
-            onDismissRequest = { showImportConfirm = null },
-            title = { Text("Restore Favorites") },
-            text = { Text("This will replace all current favorites and groups. Continue?") },
+            onDismissRequest = { showExport = false },
+            title = { Text("Export favorites") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        Triple(false, "QuantumCast backup (.json)", "Restore after a reinstall, or give to a friend who uses QuantumCast"),
+                        Triple(true, "Playlist (.m3u)", "Open your stations in VLC, Kodi and other players"),
+                    ).forEach { (m3u, label, desc) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { exportM3u = m3u },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = exportM3u == m3u, onClick = { exportM3u = m3u })
+                            Column {
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
+                                Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    try {
-                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        if (bytes != null) onImportFavorites(java.io.ByteArrayInputStream(bytes))
-                    } catch (_: Exception) {}
-                    showImportConfirm = null
-                }) { Text("Replace") }
+                    showExport = false
+                    exportLauncher.launch(tech.capullo.quantumcast.viewmodel.FavoritesPlaylist.fileName(exportM3u))
+                }) { Text("Save to file") }
             },
             dismissButton = {
-                TextButton(onClick = { showImportConfirm = null }) { Text("Cancel") }
+                TextButton(onClick = {
+                    showExport = false
+                    onShareFavorites(exportM3u)
+                }) { Text("Share") }
             },
         )
     }
@@ -141,7 +165,7 @@ fun SettingsScreen(
                     label = "Fixed server port",
                     description = "Pin the broadcast to a fixed port (base, base+1, base+2) so " +
                         "clients reconnect and the web player keeps its identity across restarts. " +
-                        "Off = OS-assigned (default). Applies on the next broadcast.",
+                        "Off = random port (default). Applies on the next broadcast.",
                     checked = settings.snapserverFixedPort > 0,
                     onToggle = { on -> onSetSnapserverFixedPort(if (on) -1 else 0) },
                 )
@@ -345,22 +369,69 @@ fun SettingsScreen(
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Recordings") }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("Folder, size limit & schedule checklist") },
+                    supportingContent = { Text("Where recordings are saved, how much space they may use, and what scheduled recordings need") },
+                    modifier = Modifier.clickable(onClick = onOpenRecordingStorage),
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Recordings playback") }
+            item {
+                IntervalChoiceRow(
+                    label = "Skip interval",
+                    description = "Tap ⟲ / ⟳ to jump back or forward by this much (long-press: previous / next recording)",
+                    seconds = recordingPrefs.skipSeconds,
+                    onSelect = onSetSkipSeconds,
+                )
+            }
+            item {
+                ToggleRow(
+                    label = "Smart rewind",
+                    description = "When resuming, jump back further the longer playback was paused",
+                    checked = recordingPrefs.smartRewind,
+                    onToggle = onSetSmartRewind,
+                )
+            }
+            if (recordingPrefs.smartRewind) {
+                item {
+                    IntervalChoiceRow(
+                        label = "Smart rewind limit",
+                        description = "Never jump back more than this",
+                        seconds = recordingPrefs.smartRewindLimitSeconds,
+                        onSelect = onSetSmartRewindLimit,
+                    )
+                }
+            }
+            item {
+                ToggleRow(
+                    label = "Pitch correction",
+                    description = "Keep voices natural at other speeds. Off: faster also sounds higher, like tape",
+                    checked = recordingPrefs.pitchCorrection,
+                    onToggle = onSetPitchCorrection,
+                )
+            }
+
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("Favorites Backup") }
 
             item {
-                val timestamp = remember { java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date()) }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { exportLauncher.launch("qc_favorites_$timestamp.json") }
+                        .clickable { showExport = true }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Default.SaveAlt, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Export Favorites", style = MaterialTheme.typography.bodyMedium)
-                        Text("Save favorites and groups to a JSON file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Export or share favorites", style = MaterialTheme.typography.bodyMedium)
+                        Text("Backup for QuantumCast (.json) or playlist for other players (.m3u)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -370,15 +441,15 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { importLauncher.launch(arrayOf("application/json", "*/*")) }
+                        .clickable { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain", "*/*")) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Default.UploadFile, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Import Favorites", style = MaterialTheme.typography.bodyMedium)
-                        Text("Restore favorites from a JSON file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Import favorites", style = MaterialTheme.typography.bodyMedium)
+                        Text("Add a backup to your favorites, or replace them", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -387,6 +458,42 @@ fun SettingsScreen(
             item { Spacer(Modifier.height(16.dp)) }
         }
     } // Column
+}
+
+/** Picks one of the shared interval choices (2 s … 5 min). */
+@Composable
+private fun IntervalChoiceRow(label: String, description: String, seconds: Int, onSelect: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { open = true }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box {
+            Text(
+                tech.capullo.quantumcast.recording.RecordingPrefs.intervalLabel(seconds),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                tech.capullo.quantumcast.recording.RecordingPrefs.INTERVAL_CHOICES.forEach { s ->
+                    DropdownMenuItem(
+                        text = { Text(tech.capullo.quantumcast.recording.RecordingPrefs.intervalLabel(s)) },
+                        onClick = {
+                            open = false
+                            onSelect(s)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

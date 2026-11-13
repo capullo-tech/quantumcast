@@ -17,8 +17,8 @@ android {
         applicationId = "tech.capullo.quantumcast"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.0"
+        versionCode = 19
+        versionName = "1.2"
     }
 
     // Release signing. Keystore + passwords come from env vars (CI secrets wired in Build.yml;
