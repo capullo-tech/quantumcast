@@ -313,9 +313,10 @@ jobs:
             sleep 3
           done
           adb_to 20 shell pm path tech.capullo.quantumcast | grep -q apk
+          # tr -d CR first: old images' adbd emits CRLF, and the OK gate below is line-anchored.
           adb_to 900 shell am instrument -w -e class tech.capullo.quantumcast.MainSmokeTest \
             tech.capullo.quantumcast.test/androidx.test.runner.AndroidJUnitRunner \
-            2>&1 | tee "$RUNNER_TEMP/instrument.log"
+            2>&1 | tr -d '\r' | tee "$RUNNER_TEMP/instrument.log"
           # A missing OK marker means adb died mid-run or the run never finished; failure
           # markers cover the cases where am instrument exits 0 despite failures. Explicit
           # if-blocks, not bare grep lines: under set -e a trailing "! grep" result is masked
