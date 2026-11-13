@@ -20,7 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -178,7 +180,9 @@ fun SettingsScreen(
                         description = "Uses this port and the next two (base+1, base+2). 1024-65531.",
                         value = settings.snapserverFixedPort.toString(),
                         placeholder = "34000",
-                        onValueChange = { s -> onSetSnapserverFixedPort(s.toIntOrNull() ?: 0) },
+                        // Ignore blank/invalid input: turning the pin off is the toggle's job, and an
+                        // implicit save (Back, focus loss) must not switch it off by accident.
+                        onValueChange = { s -> s.trim().toIntOrNull()?.takeIf { it > 0 }?.let(onSetSnapserverFixedPort) },
                         keyboardType = KeyboardType.Number,
                     )
                 }
@@ -757,6 +761,17 @@ private fun TextInputRow(
     keyboardType: KeyboardType = KeyboardType.Uri,
 ) {
     var text by remember(value) { mutableStateOf(value) }
+    // Saved on the check button, the keyboard's Done, losing focus, or leaving the screen (Back):
+    // a typed value used to be dropped silently unless the check button was tapped.
+    val latestText by rememberUpdatedState(text)
+    val latestValue by rememberUpdatedState(value)
+    val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val focusManager = LocalFocusManager.current
+    var hadFocus by remember { mutableStateOf(false) }
+    fun commit() {
+        if (latestText != latestValue) latestOnValueChange(latestText)
+    }
+    DisposableEffect(Unit) { onDispose { commit() } }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -773,8 +788,17 @@ private fun TextInputRow(
                 onValueChange = { text = it },
                 placeholder = { Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    commit()
+                    focusManager.clearFocus()
+                }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { state ->
+                        if (hadFocus && !state.isFocused) commit()
+                        hadFocus = state.isFocused
+                    },
                 trailingIcon = {
                     if (text != value) {
                         IconButton(onClick = { onValueChange(text) }) {
