@@ -19,6 +19,8 @@ android {
         targetSdk = 36
         versionCode = 19
         versionName = "1.2"
+        // Runner for the device-level smoke test (MainSmokeTest / EmulatorSmoke CI).
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Release signing. Keystore + passwords come from env vars (CI secrets wired in Build.yml;
@@ -179,4 +181,11 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    // UiAutomator for the device-level smoke test (MainSmokeTest / EmulatorSmoke CI): polls the
+    // window hierarchy directly, unlike a Compose rule whose idle sync never settles under home's
+    // infinite scanning-radar animation.
+    androidTestImplementation(pins.androidx.test.uiautomator)
 }
