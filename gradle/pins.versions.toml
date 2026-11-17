@@ -7,7 +7,7 @@
 # jitpack caches -SNAPSHOT unreliably). Composite build substitutes the sibling locally.
 capulloSourceRadiobrowser = "0d817e513604aba50f76227befac52b8e76e30e1"
 # capullo-audio - immutable jitpack commit; the engine + capullo-audio-ui share it.
-capulloAudio = "8ad7974d55a4eee08548a960e479beae203e64da"
+capulloAudio = "02cd2a132227f9af4a2aa1b29bef62bd059a185f"
 # QC's own single-app deps (used by no other repo).
 media = "1.7.0"
 coil = "2.6.0"
