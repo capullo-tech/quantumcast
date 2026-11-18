@@ -271,30 +271,6 @@ class StreamRecorder(
         }
     }
 
-    /**
-     * Prefer an audio-only variant (highest bandwidth); else a separate audio rendition
-     * (EXT-X-MEDIA TYPE=AUDIO with a URI - the variants of such streams can be video-only, with
-     * the sound only in the rendition); else the lowest-bandwidth variant.
-     */
-    private fun pickVariant(master: String): String {
-        data class V(val bw: Long, val audioOnly: Boolean, val uri: String)
-        val lines = master.lines().map { it.trim() }
-        val vs = mutableListOf<V>()
-        for ((i, l) in lines.withIndex()) {
-            if (!l.startsWith("#EXT-X-STREAM-INF")) continue
-            val uri = lines.drop(i + 1).firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: continue
-            val bw = Regex("""BANDWIDTH=(\d+)""").find(l)?.groupValues?.get(1)?.toLong() ?: 0
-            val codecs = Regex("""CODECS="([^"]*)"""").find(l)?.groupValues?.get(1).orEmpty()
-            val video = "avc" in codecs || "hvc" in codecs || "hev" in codecs || "RESOLUTION=" in l
-            vs += V(bw, !video, uri)
-        }
-        vs.filter { it.audioOnly }.maxByOrNull { it.bw }?.let { return it.uri }
-        val renditions = lines.filter { it.startsWith("#EXT-X-MEDIA") && "TYPE=AUDIO" in it }
-            .mapNotNull { l -> Regex("""URI="([^"]+)"""").find(l)?.groupValues?.get(1)?.let { (("DEFAULT=YES" in l) to it) } }
-        (renditions.firstOrNull { it.first } ?: renditions.firstOrNull())?.let { return it.second }
-        return vs.minByOrNull { it.bw }?.uri ?: throw IOException("HLS master playlist without variants")
-    }
-
     private fun fetchText(url: String): String {
         val c = open(url, icy = false)
         try {
@@ -366,6 +342,30 @@ class StreamRecorder(
                     kind ?: ("mp3" to "audio/mpeg")
                 }
             }
+        }
+
+        /**
+         * Prefer an audio-only variant (highest bandwidth); else a separate audio rendition
+         * (EXT-X-MEDIA TYPE=AUDIO with a URI - the variants of such streams can be video-only, with
+         * the sound only in the rendition); else the lowest-bandwidth variant.
+         */
+        internal fun pickVariant(master: String): String {
+            data class V(val bw: Long, val audioOnly: Boolean, val uri: String)
+            val lines = master.lines().map { it.trim() }
+            val vs = mutableListOf<V>()
+            for ((i, l) in lines.withIndex()) {
+                if (!l.startsWith("#EXT-X-STREAM-INF")) continue
+                val uri = lines.drop(i + 1).firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: continue
+                val bw = Regex("""BANDWIDTH=(\d+)""").find(l)?.groupValues?.get(1)?.toLong() ?: 0
+                val codecs = Regex("""CODECS="([^"]*)"""").find(l)?.groupValues?.get(1).orEmpty()
+                val video = "avc" in codecs || "hvc" in codecs || "hev" in codecs || "RESOLUTION=" in l
+                vs += V(bw, !video, uri)
+            }
+            vs.filter { it.audioOnly }.maxByOrNull { it.bw }?.let { return it.uri }
+            val renditions = lines.filter { it.startsWith("#EXT-X-MEDIA") && "TYPE=AUDIO" in it }
+                .mapNotNull { l -> Regex("""URI="([^"]+)"""").find(l)?.groupValues?.get(1)?.let { (("DEFAULT=YES" in l) to it) } }
+            (renditions.firstOrNull { it.first } ?: renditions.firstOrNull())?.let { return it.second }
+            return vs.minByOrNull { it.bw }?.uri ?: throw IOException("HLS master playlist without variants")
         }
 
         /** Size of a leading ID3v2 tag (HLS packed audio carries one per segment), else 0. */
