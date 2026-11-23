@@ -27,8 +27,6 @@ import androidx.media3.common.Metadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.audio.ChannelMixingAudioProcessor
-import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -70,9 +68,8 @@ import tech.capullo.audio.contracts.PlaybackController
 import tech.capullo.audio.player.AudioFocusController
 import tech.capullo.audio.player.BalanceAudioProcessor
 import tech.capullo.audio.player.FifoAudioBufferSink
-import tech.capullo.audio.player.FixedRateResampler
+import tech.capullo.audio.player.FifoFormat
 import tech.capullo.audio.player.GainAudioProcessor
-import tech.capullo.audio.player.HiResDecimator
 import tech.capullo.audio.player.LiveLoudnessAgcProcessor
 import tech.capullo.audio.snapcast.SnapcastArt
 import tech.capullo.audio.snapcast.SnapcastArtwork
@@ -1595,9 +1592,9 @@ class PlaybackService : Service() {
             )
             .build()
         // Local renderers factory = the shared FifoRenderersFactory's chain
-        // ([mix → 2ch] → [resample → 44100] → [tee → FIFO]) with the stereo-balance
-        // processor inserted before the tee. Mirrors Telecloud; EXTENSION_RENDERER_MODE_ON
-        // keeps the FFmpeg fallback decoders for exotic codecs.
+        // ([FifoFormat.stage → 48000:16:2] → [tee → FIFO]) with AGC, balance, gain and speed
+        // inserted before the tee. Mirrors Telecloud; EXTENSION_RENDERER_MODE_ON keeps the FFmpeg
+        // fallback decoders for exotic codecs.
         val renderersFactory = object : DefaultRenderersFactory(this) {
             init {
                 setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON)
@@ -1608,16 +1605,8 @@ class PlaybackService : Service() {
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
             ): AudioSink {
-                val mixer = ChannelMixingAudioProcessor().apply {
-                    putChannelMixingMatrix(ChannelMixingMatrix.create(1, 2))
-                    putChannelMixingMatrix(ChannelMixingMatrix.create(2, 2))
-                }
-                // LOCKSTEP with capullo-audio SnapserverProcess.SAMPLE_FORMAT (48000): the FIFO the
-                // tee writes is read by snapserver at that rate, so this resampler must output the
-                // same. Mismatch (this was 44100 vs a 48000 FIFO) made the server read the PCM ~9%
-                // fast and hard-resync constantly - the stutter. FixedRateResampler, not a bare
-                // SonicAudioProcessor: the latter forgets its target on every sink reset.
-                val resampler = FixedRateResampler(48000)
+                // FifoFormat owns the FIFO format (LOCKSTEP with SnapserverProcess): any channel
+                // count and rate in, the 48000:16:2 snapserver reads out.
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false) // keep the chain in 16-bit PCM
                     .setAudioProcessorChain(
@@ -1627,11 +1616,7 @@ class PlaybackService : Service() {
                         // audio while the player clock ran faster.
                         SpeedBeforeTeeChain(
                             arrayOf(
-                                mixer,
-                                // Anti-alias low-pass + decimation for >48k input (Sonic has none:
-                                // a 192k master's ultrasonic content would fold into the audible band).
-                                HiResDecimator(),
-                                resampler,
+                                *FifoFormat.stage(),
                                 // AGC measures the source before the user's balance: balance cuts the
                                 // far channel, which would read as quieter and get boosted back.
                                 agcProcessor,
