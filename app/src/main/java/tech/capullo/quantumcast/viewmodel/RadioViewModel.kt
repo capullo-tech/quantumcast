@@ -1230,9 +1230,24 @@ class RadioViewModel @Inject constructor(
         playbackService?.connectAsSnapclient(host, port, httpPort)
     }
 
+    // A scanned capullo join QR (JoinUrl), handed over by MainActivity: the same listener mode as a
+    // discovered or typed server, with routeJoin deciding where the snapclient dials. A cold start
+    // from the QR gets here before the PlaybackService bind completes, so wait for it (the same
+    // bound auto-entangle uses; the synthetic station set here already keeps that from starting).
+    fun joinStation(target: tech.capullo.audio.snapcast.JoinTarget) {
+        // A tunnel host is no use to Home's manual-connect shortcut, which dials plain tcp.
+        showConnectingTo(target.host, rememberHost = !target.secure)
+        viewModelScope.launch {
+            withTimeoutOrNull(5_000) { while (playbackService == null) delay(50) }
+            val svc = playbackService ?: return@launch
+            val route = routeJoin(target)
+            svc.connectAsSnapclient(route.host, route.port, route.httpPort, route.scheme)
+        }
+    }
+
     // The UI/state transition into listener mode: swap to a synthetic station for [host] and navigate to
     // the now-playing screen. No network work, so it can run synchronously ahead of the actual dial.
-    private fun showConnectingTo(host: String) {
+    private fun showConnectingTo(host: String, rememberHost: Boolean = true) {
         // Stop any active rotation and Shazam - we're switching to listener mode
         cancelRotation()
         shazamJob?.cancel()
@@ -1250,7 +1265,7 @@ class RadioViewModel @Inject constructor(
         _trackHistory.value = emptyList()
         _streamStats.value = null
         _showDetailScreen.value = true
-        viewModelScope.launch { settingsRepo.setLastManualHost(host) }
+        if (rememberHost) viewModelScope.launch { settingsRepo.setLastManualHost(host) }
     }
 
     fun disconnectSnapclient() {

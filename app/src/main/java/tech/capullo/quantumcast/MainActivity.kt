@@ -29,6 +29,7 @@ import androidx.navigation3.ui.NavDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
 import tech.capullo.audio.snapcast.DiscoveredSnapserver
+import tech.capullo.audio.snapcast.JoinUrl
 import tech.capullo.audio.snapcast.SnapserverDiscoveryManager
 import tech.capullo.audio.tunnel.TunnelManager
 import tech.capullo.audio.ui.PublicLinkState
@@ -98,7 +99,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (savedInstanceState == null) handleFavoritesFile(intent)
+        if (savedInstanceState == null) handleIncoming(intent)
+    }
+
+    /**
+     * What the app was opened with: an http(s) VIEW is a capullo join URL from a scanned QR (the only
+     * web links the manifest accepts); anything else may be a favorites backup.
+     */
+    private fun handleIncoming(intent: Intent?) {
+        val data = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data
+        if (data?.scheme == "http" || data?.scheme == "https") {
+            // A /join link that is not ours (e.g. portless http) is ignored rather than read as a file.
+            JoinUrl.parse(data.toString())?.let(vm::joinStation)
+            return
+        }
+        handleFavoritesFile(intent)
     }
 
     /** A favorites backup opened from a chat/file manager (VIEW) or shared to the app (SEND). */
@@ -114,7 +129,7 @@ class MainActivity : ComponentActivity() {
     // ADB test: adb shell am start -n tech.capullo.quantumcast/.MainActivity --es dbg shuffle
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleFavoritesFile(intent)
+        handleIncoming(intent)
         // Debug-only test hooks. MainActivity is the exported launcher, so gate these to
         // debuggable builds - a release build must expose no playback-control surface to other apps.
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return

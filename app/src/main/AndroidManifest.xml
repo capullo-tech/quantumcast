@@ -66,6 +66,30 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/json" />
             </intent-filter>
+            <!-- A capullo join QR (JoinUrl): http://<lan-ip>:<httpPort>/join/ on the LAN, or
+                 https://<tunnel-host>/join/ through the public link. Reached directly from a scan
+                 before Android 12, or via the landing page's "Open in QuantumCast" intent link.
+                 No android:port: broadcasters bind a random HTTP port. Two filters because <data>
+                 elements inside one filter are cross-multiplied. autoVerify="false": LAN IPs and
+                 trycloudflare hosts can't be verified as App Links. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:host="*" />
+                <data android:path="/join/" />
+                <data android:path="/join" />
+            </intent-filter>
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="*.trycloudflare.com" />
+                <data android:path="/join/" />
+                <data android:path="/join" />
+            </intent-filter>
         </activity>
 
         <!-- VLC-based playback + Snapcast lifecycle service -->

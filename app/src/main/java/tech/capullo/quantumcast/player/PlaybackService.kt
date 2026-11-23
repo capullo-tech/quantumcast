@@ -114,6 +114,8 @@ class PlaybackService : Service() {
         val broadcastMode: BroadcastMode = BroadcastMode.QUANTUMCAST,
         val snapclientHost: String = "",
         val snapclientPort: Int = 1604,
+        /** How the listener's snapclient dials: `tcp` on the LAN, `wss` through a public-link join. */
+        val snapclientScheme: String = "tcp",
         /** This broadcaster's resolved HTTP (web player + control) port - for the web/QR URL. */
         val broadcastHttpPort: Int = 1680,
         /**
@@ -1184,7 +1186,11 @@ class PlaybackService : Service() {
         snapcontrolPlugin?.isStreamLocked = locked
     }
 
-    fun connectAsSnapclient(host: String, port: Int = 1604, httpPort: Int = 1680) {
+    // [scheme] `wss` is a join through the broadcaster's public link (JoinUrl): only HTTPS crosses the
+    // tunnel, and SnapcastControlClient dials plain ws://, so that listener gets playback without the
+    // control channel (no groups, metadata or remote volume) and [superviseSnapclient] stands in for
+    // the play state the stream properties would report.
+    fun connectAsSnapclient(host: String, port: Int = 1604, httpPort: Int = 1680, scheme: String = "tcp") {
         stopEngine()
         stopSnapcast()
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
@@ -1193,6 +1199,7 @@ class PlaybackService : Service() {
                 broadcastMode = BroadcastMode.SNAPCLIENT,
                 snapclientHost = host,
                 snapclientPort = port,
+                snapclientScheme = scheme,
                 stationName = "",
                 stationUrl = "",
                 icyTitle = "",
@@ -1204,10 +1211,11 @@ class PlaybackService : Service() {
             host,
             port,
             channel = _state.value.snapclientChannel,
+            scheme = scheme,
         )
-        startSnapcastControl(host, httpPort)
+        if (scheme == "tcp") startSnapcastControl(host, httpPort)
         audioFocus.request()
-        Log.d(TAG, "Snapclient → $host:$port (control :$httpPort)")
+        Log.d(TAG, "Snapclient → $scheme://$host:$port (control :${if (scheme == "tcp") httpPort else "none"})")
     }
 
     private fun applyStreamProperties(props: tech.capullo.audio.snapcast.StreamPlayerProperties) {
@@ -1458,7 +1466,9 @@ class PlaybackService : Service() {
 
     fun disconnectSnapclient() {
         stopSnapcast()
-        _state.update { it.copy(broadcastMode = BroadcastMode.QUANTUMCAST, snapclientHost = "") }
+        _state.update {
+            it.copy(broadcastMode = BroadcastMode.QUANTUMCAST, snapclientHost = "", snapclientScheme = "tcp", isPlaying = false)
+        }
     }
 
     // Written next to the served index.html (snapserver doc_root); the web
@@ -2472,6 +2482,7 @@ class PlaybackService : Service() {
             host,
             port,
             channel = st.snapclientChannel,
+            scheme = if (st.broadcastMode == BroadcastMode.SNAPCLIENT) st.snapclientScheme else "tcp",
         )
     }
 
@@ -2501,8 +2512,20 @@ class PlaybackService : Service() {
         host: String,
         port: Int,
         channel: String? = null,
+        scheme: String = "tcp",
     ): Job = scope.launch {
-        launch { sc.connectionState.collect { s -> _state.update { it.copy(snapclientState = s) } } }
+        launch {
+            sc.connectionState.collect { s ->
+                if (scheme == "tcp") {
+                    _state.update { it.copy(snapclientState = s) }
+                } else {
+                    // No control channel through the tunnel ([connectAsSnapclient]): a connected
+                    // client is the only sign the stream plays.
+                    _state.update { it.copy(snapclientState = s, isPlaying = s == SnapclientProcess.ConnectionState.CONNECTED) }
+                    updateMediaSession()
+                }
+            }
+        }
         var backoffMs = SNAPCLIENT_RETRY_MIN_MS
         // The first launch keeps each caller's channel (the broadcast path passes none and gets the
         // library default). Restarts read state instead: live channel changes only update state +
@@ -2512,9 +2535,9 @@ class PlaybackService : Service() {
         while (isActive) {
             val startedAt = SystemClock.elapsedRealtime()
             if (launchChannel != null) {
-                sc.start(host, port, audioChannel = launchChannel)
+                sc.start(host, port, audioChannel = launchChannel, scheme = scheme)
             } else {
-                sc.start(host, port)
+                sc.start(host, port, scheme = scheme)
             }
             if (!isActive) break
             // A run that outlived the max backoff was healthy: the next fault is a fresh one-off
