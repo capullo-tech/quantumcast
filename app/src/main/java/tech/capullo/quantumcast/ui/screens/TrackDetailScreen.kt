@@ -214,7 +214,17 @@ fun TrackDetailScreen(
         }
 
         TopAppBar(
-            title = {},
+            title = {
+                // Listener mode names the broadcaster it is tuned to; the station it plays sits below.
+                if (isSnapclientMode && snapclientHost.isNotEmpty()) {
+                    Text(
+                        text = "Listening to $snapclientHost",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(
