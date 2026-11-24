@@ -1046,13 +1046,14 @@ class PlaybackService : Service() {
             }
         }
         // Public-link tunnel: runs only while the snapserver (and thus the web player's HTTP port)
-        // is live and the setting is on. distinctUntilChanged because _state churns on every ICY
-        // title and buffering tick, and start() is idempotent but stop() is not free.
+        // is live and the user asked for it (the QR dialog's Cloudflare chip). distinctUntilChanged
+        // because _state churns on every ICY title and buffering tick, and start() is idempotent
+        // but stop() is not free.
         scope.launch {
-            combine(settingsRepository.settings, _state) { settings, s ->
-                Triple(settings.tunnelEnabled, s.isBroadcasting, s.broadcastHttpPort)
-            }.distinctUntilChanged().collect { (enabled, broadcasting, httpPort) ->
-                if (enabled && broadcasting) tunnelManager.start(httpPort) else tunnelManager.stop()
+            combine(tunnelManager.requested, _state) { requested, s ->
+                Triple(requested, s.isBroadcasting, s.broadcastHttpPort)
+            }.distinctUntilChanged().collect { (requested, broadcasting, httpPort) ->
+                if (requested && broadcasting) tunnelManager.start(httpPort) else tunnelManager.stop()
             }
         }
         // Persist own client's volume/latency on ANY change (slider, knob, remote controller).
@@ -1193,6 +1194,9 @@ class PlaybackService : Service() {
     fun connectAsSnapclient(host: String, port: Int = 1604, httpPort: Int = 1680, scheme: String = "tcp") {
         stopEngine()
         stopSnapcast()
+        // Listening to another station ends this device's own public link, request included: back
+        // from it, the next broadcast opens no link until it is asked for again.
+        tunnelManager.setRequested(false)
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
         _state.update {
             it.copy(
@@ -2726,7 +2730,9 @@ class PlaybackService : Service() {
     override fun onDestroy() {
         stop()
         // Explicitly, not via the collector: cancelling `scope` below kills the collector, so
-        // relying on it to observe isBroadcasting=false would leave cloudflared running.
+        // relying on it to observe isBroadcasting=false would leave cloudflared running. The
+        // request goes with it: the next session opens no public link until asked again.
+        tunnelManager.setRequested(false)
         tunnelManager.stop()
         mediaSession?.release()
         mediaSession = null

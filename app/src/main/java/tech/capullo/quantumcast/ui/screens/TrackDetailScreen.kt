@@ -139,6 +139,8 @@ fun TrackDetailScreen(
     snapcastGroups: List<Group> = emptyList(),
     broadcastHttpPort: Int = 1680,
     publicLink: PublicLinkState = PublicLinkState.Off,
+    // Null while this device is not broadcasting: no web player for a public link to reach.
+    onSetPublicLink: ((Boolean) -> Unit)? = null,
     snapclientChannel: String = "stereo",
     onAdjustClientVolume: (clientId: String, muted: Boolean, percent: Int) -> Unit = { _, _, _ -> },
     onAdjustClientLatency: (clientId: String, latencyMs: Int) -> Unit = { _, _ -> },
@@ -475,6 +477,7 @@ fun TrackDetailScreen(
             calibrationStatus = calibrationStatus,
             httpPort = broadcastHttpPort,
             publicLink = publicLink,
+            onSetPublicLink = onSetPublicLink,
             onDismiss = { showSnapcastSheet = false },
         )
     }

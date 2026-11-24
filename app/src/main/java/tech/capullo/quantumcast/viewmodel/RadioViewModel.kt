@@ -80,7 +80,7 @@ data class RotationState(
 class RadioViewModel @Inject constructor(
     private val repo: RadioRepository,
     val settingsRepo: SettingsRepository,
-    tunnelManager: TunnelManager,
+    private val tunnelManager: TunnelManager,
     @ApplicationContext private val context: Context,
     private val recordings: tech.capullo.quantumcast.recording.RecordingRepository,
 ) : ViewModel() {
@@ -88,6 +88,9 @@ class RadioViewModel @Inject constructor(
     // The tunnel's own state, straight from the manager - it is not part of PlaybackState, because
     // the tunnel outlives no broadcast and the manager is the single source of truth for it.
     val tunnelState: StateFlow<TunnelManager.TunnelState> = tunnelManager.state
+
+    /** The QR dialog's Cloudflare chip: ask for the public link, or turn it off. */
+    fun setPublicLink(on: Boolean) = tunnelManager.setRequested(on)
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .onEach { repo.setServerUrl(it.apiServer) }
@@ -177,6 +180,11 @@ class RadioViewModel @Inject constructor(
     // This broadcaster's resolved HTTP (web player) port, for the web/QR URL shown in the snapcast sheet.
     private val _broadcastHttpPort = MutableStateFlow(1680)
     val broadcastHttpPort: StateFlow<Int> = _broadcastHttpPort
+
+    // Whether this device's broadcast stack is live - only then does the QR dialog offer the
+    // public link, since the tunnel has nothing to reach otherwise.
+    private val _isBroadcasting = MutableStateFlow(false)
+    val isBroadcasting: StateFlow<Boolean> = _isBroadcasting
 
     private val _snapclientChannel = MutableStateFlow("stereo")
     val snapclientChannel: StateFlow<String> = _snapclientChannel
@@ -387,6 +395,7 @@ class RadioViewModel @Inject constructor(
                     }
                     _snapclientHost.value = svcState.snapclientHost
                     _broadcastHttpPort.value = svcState.broadcastHttpPort
+                    _isBroadcasting.value = svcState.isBroadcasting
                     _snapclientChannel.value = svcState.snapclientChannel
                     _snapclientState.value = svcState.snapclientState
                     _snapcastGroups.value = svcState.snapcastGroups
@@ -412,6 +421,8 @@ class RadioViewModel @Inject constructor(
             playbackService = null
             focusPaused = false
             serviceStateJob?.cancel()
+            // The mirror gates the QR dialog's Cloudflare chip: no service, no broadcast to link to.
+            _isBroadcasting.value = false
             rotationSkipJob?.cancel()
             customNameJob?.cancel()
             webCfgJob?.cancel()
