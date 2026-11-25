@@ -67,7 +67,12 @@ data class RotationState(
     val totalSeconds: Int = 0,
     val stationIndex: Int = 0,
     val totalStations: Int = 0,
+    // The user's hold on the timer (long-press on Skip), shown on the ring. Only the user sets
+    // and clears it: pausing and resuming the audio leave it as it is.
     val timerPaused: Boolean = false,
+    // The audio is paused, from the app or from outside it: the countdown waits for it too, but
+    // resuming the audio lifts only this, never the user's hold above.
+    val audioPaused: Boolean = false,
     val order: RotationOrder = RotationOrder.SEQUENTIAL,
     // How a finite rotation behaves when it reaches the last station (see RepeatMode).
     // LOOP is the default; RANDOM ignores it (inherently endless).
@@ -290,7 +295,8 @@ class RadioViewModel @Inject constructor(
             playbackService = svc
             svc.onSkipNextRequested = { viewModelScope.launch { skipStation() } }
             svc.onSkipPrevRequested = { viewModelScope.launch { skipPrevStation() } }
-            svc.onPlayPauseRequested = { viewModelScope.launch { togglePlayPause() } }
+            svc.onPlayRequested = { viewModelScope.launch { resume() } }
+            svc.onPauseRequested = { viewModelScope.launch { pause() } }
             svc.onFocusPausedChanged = { focusPaused = it }
             svc.onStationError = { viewModelScope.launch { handleStationError() } }
             svc.onMediaEnded = { viewModelScope.launch { onRecordingEnded() } }
@@ -389,7 +395,8 @@ class RadioViewModel @Inject constructor(
             playbackService?.onMediaEnded = null
             playbackService?.onSkipNextRequested = null
             playbackService?.onSkipPrevRequested = null
-            playbackService?.onPlayPauseRequested = null
+            playbackService?.onPlayRequested = null
+            playbackService?.onPauseRequested = null
             playbackService?.onFocusPausedChanged = null
             playbackService?.onStationError = null
             playbackService = null
@@ -467,39 +474,52 @@ class RadioViewModel @Inject constructor(
         )
     }
 
-    fun togglePlayPause() {
+    fun togglePlayPause() = if (_playerState.value.isPlaying) pause() else resume()
+
+    /**
+     * Pauses what plays, from the app or from outside it (headset, lock screen, a web player): the
+     * rotation timer pauses with it, so a paused rotation does not move to the next station.
+     */
+    fun pause() {
         val svc = playbackService ?: return
         if (_snapclientHost.value.isNotEmpty()) {
-            val cmd = if (_playerState.value.isPlaying) "pause" else "play"
-            Log.d(TAG, "togglePlayPause [SNAPCLIENT] → $cmd")
-            sendPlayerControl(cmd)
-            _playerState.update { it.copy(isPlaying = !it.isPlaying) }
+            Log.d(TAG, "pause [SNAPCLIENT]")
+            sendPlayerControl("pause")
+            _playerState.update { it.copy(isPlaying = false) }
             return
         }
-        if (_playerState.value.isPlaying) {
-            svc.pause()
-            shazamJob?.cancel()
-            shazamJob = null
-            _isShazamRunning.value = false
-            if (_rotationState.value.isActive) _rotationState.update { it.copy(timerPaused = true) }
-            _playingRecording.value?.let { rec ->
-                pausedAtMs = System.currentTimeMillis()
-                val pos = _mediaProgress.value.positionMs
-                viewModelScope.launch { recordings.setResume(rec.name, pos) }
-            }
-        } else {
-            if (_playingRecording.value != null) {
-                // Smart rewind on resume, sized by how long this pause lasted.
-                val back = if (pausedAtMs > 0) smartRewindMs(System.currentTimeMillis() - pausedAtMs, recordingPrefs.value) else 0
-                pausedAtMs = 0
-                if (back > 0) seekRecording((_mediaProgress.value.positionMs - back).coerceAtLeast(0))
-                svc.play()
-                return
-            }
-            svc.play()
-            _playerState.value.station?.streamUrl?.let { startShazamLoop(it) }
-            if (_rotationState.value.isActive) _rotationState.update { it.copy(timerPaused = false) }
+        svc.pause()
+        shazamJob?.cancel()
+        shazamJob = null
+        _isShazamRunning.value = false
+        if (_rotationState.value.isActive) _rotationState.update { it.copy(audioPaused = true) }
+        _playingRecording.value?.let { rec ->
+            pausedAtMs = System.currentTimeMillis()
+            val pos = _mediaProgress.value.positionMs
+            viewModelScope.launch { recordings.setResume(rec.name, pos) }
         }
+    }
+
+    /** Plays again after [pause], from wherever it was asked; the rotation timer runs again too. */
+    fun resume() {
+        val svc = playbackService ?: return
+        if (_snapclientHost.value.isNotEmpty()) {
+            Log.d(TAG, "resume [SNAPCLIENT]")
+            sendPlayerControl("play")
+            _playerState.update { it.copy(isPlaying = true) }
+            return
+        }
+        if (_playingRecording.value != null) {
+            // Smart rewind on resume, sized by how long this pause lasted.
+            val back = if (pausedAtMs > 0) smartRewindMs(System.currentTimeMillis() - pausedAtMs, recordingPrefs.value) else 0
+            pausedAtMs = 0
+            if (back > 0) seekRecording((_mediaProgress.value.positionMs - back).coerceAtLeast(0))
+            svc.play()
+            return
+        }
+        svc.play()
+        _playerState.value.station?.streamUrl?.let { startShazamLoop(it) }
+        if (_rotationState.value.isActive) _rotationState.update { it.copy(audioPaused = false) }
     }
 
     private fun sendPlayerControl(command: String) {
@@ -818,7 +838,7 @@ class RadioViewModel @Inject constructor(
                             look++
                         }
                     }
-                    _rotationState.update { it.copy(isActive = true, mode = mode, secondsRemaining = _liveMinutes.value * 60, totalSeconds = _liveMinutes.value * 60, stationIndex = currentIndex + 1, totalStations = liveStations.size, timerPaused = false) }
+                    _rotationState.update { it.copy(isActive = true, mode = mode, secondsRemaining = _liveMinutes.value * 60, totalSeconds = _liveMinutes.value * 60, stationIndex = currentIndex + 1, totalStations = liveStations.size, timerPaused = false, audioPaused = false) }
                     val direction = runCountdown()
                     prewarmJob.cancel()
                     if (!isActive) return@launch
@@ -850,9 +870,10 @@ class RadioViewModel @Inject constructor(
             if (remainingSec <= 0) return CountdownResult.Next
             val signal = withTimeoutOrNull(tickMs) { skipChannel.receive() }
             if (signal != null) return signal
-            // Advance the countdown only when neither the user (timerPaused) nor an
-            // audio-focus loss (focusPaused) has stopped it.
-            if (!_rotationState.value.timerPaused && !focusPaused) elapsed += tickMs
+            // Advance the countdown only when neither the user's hold (timerPaused), a paused
+            // audio (audioPaused) nor an audio-focus loss (focusPaused) has stopped it.
+            val st = _rotationState.value
+            if (!st.timerPaused && !st.audioPaused && !focusPaused) elapsed += tickMs
         }
         return CountdownResult.Next
     }

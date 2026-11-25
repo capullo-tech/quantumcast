@@ -942,7 +942,17 @@ class PlaybackService : Service() {
         broadcastCanSkip = canSkip
         publishNowPlaying()
     }
-    var onPlayPauseRequested: (() -> Unit)? = null
+    // A play or pause asked from outside the app's UI: headset and Bluetooth buttons, the lock
+    // screen and notification, a web player. Set by RadioViewModel, which also pauses and resumes
+    // the rotation timer with it; without a view model bound the service just plays or pauses.
+    // Before these existed the outside path bypassed the view model, so pausing in the app and
+    // resuming from the earbuds left the timer paused for good and the station never changed.
+    var onPlayRequested: (() -> Unit)? = null
+    var onPauseRequested: (() -> Unit)? = null
+
+    private fun requestPlay() = onPlayRequested?.invoke() ?: play()
+
+    private fun requestPause() = onPauseRequested?.invoke() ?: pause()
     var onStationError: (() -> Unit)? = null
     var onStationPlaying: (() -> Unit)? = null
 
@@ -2077,8 +2087,8 @@ class PlaybackService : Service() {
     private val snapNowPlaying = MutableStateFlow(NowPlaying.EMPTY)
 
     private val snapController = object : PlaybackController {
-        override fun play() = this@PlaybackService.play()
-        override fun pause() = this@PlaybackService.pause()
+        override fun play() = requestPlay()
+        override fun pause() = requestPause()
         override fun next() {
             onSkipNextRequested?.invoke()
         }
@@ -2598,14 +2608,24 @@ class PlaybackService : Service() {
             // even though PlaybackState advertises the actions - route nowhere
             // and do nothing. Wire them to the same play/pause/skip used in-app.
             setCallback(object : MediaSessionCompat.Callback() {
+                // One info line per button, so what a headset really sends (a toggle, a bare
+                // play, a next) can be read from logcat; what it does is decided below as before.
+                override fun onMediaButtonEvent(mediaButtonEvent: Intent): Boolean {
+                    @Suppress("DEPRECATION")
+                    val key = mediaButtonEvent.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (key?.action == android.view.KeyEvent.ACTION_DOWN) {
+                        Log.i(TAG, "media button ${android.view.KeyEvent.keyCodeToString(key.keyCode)} repeat=${key.repeatCount} playing=${_state.value.isPlaying}")
+                    }
+                    return super.onMediaButtonEvent(mediaButtonEvent)
+                }
                 override fun onPlay() {
-                    play()
+                    requestPlay()
                 }
                 override fun onPause() {
-                    pause()
+                    requestPause()
                 }
                 override fun onStop() {
-                    pause()
+                    requestPause()
                 }
                 override fun onSkipToNext() {
                     onSkipNextRequested?.invoke()
