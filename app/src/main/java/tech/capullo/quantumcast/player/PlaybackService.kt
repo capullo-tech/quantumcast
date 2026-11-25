@@ -166,9 +166,9 @@ class PlaybackService : Service() {
         /**
          * This state with nothing left of the stream the control client was reading. Stream
          * properties are merged field by field and a blank field keeps the previous value, so a
-         * station that sends no country, codec or URL (CapulloTube, Telecloud, any tunnel join,
-         * which has no control channel at all) would otherwise show the ones of the stream read
-         * before it: this device's own broadcast, or the last station it listened to.
+         * station that sends no country, codec or URL (CapulloTube, Telecloud) would otherwise
+         * show the ones of the stream read before it: this device's own broadcast, or the last
+         * station it listened to.
          */
         fun withoutRemoteStream(): PlaybackState = copy(
             icyTitle = "",
@@ -450,7 +450,7 @@ class PlaybackService : Service() {
                     .onFailure { Log.w("SyncCalibrator", "tap deregister failed: ${it.message}") }
             }
         }
-        val job = scope.launch { tap.start(st.snapclientHost, st.snapclientPort, ring) }
+        val job = scope.launch { tap.start(st.snapclientHost, st.snapclientPort, ring, st.snapclientScheme) }
         calibrationTap = ring
         return {
             job.cancel()
@@ -942,6 +942,7 @@ class PlaybackService : Service() {
         broadcastCanSkip = canSkip
         publishNowPlaying()
     }
+
     // A play or pause asked from outside the app's UI: headset and Bluetooth buttons, the lock
     // screen and notification, a web player. Set by RadioViewModel, which also pauses and resumes
     // the rotation timer with it; without a view model bound the service just plays or pauses.
@@ -1257,10 +1258,9 @@ class PlaybackService : Service() {
         snapcontrolPlugin?.isStreamLocked = locked
     }
 
-    // [scheme] `wss` is a join through the broadcaster's public link (JoinUrl): only HTTPS crosses the
-    // tunnel, and SnapcastControlClient dials plain ws://, so that listener gets playback without the
-    // control channel (no groups, metadata or remote volume) and [superviseSnapclient] stands in for
-    // the play state the stream properties would report.
+    // [scheme] `wss` is a join through the broadcaster's public link (JoinUrl): only HTTPS on 443
+    // crosses the tunnel, so the control client dials `wss://host/jsonrpc` there, and on the LAN
+    // `ws://host:httpPort/jsonrpc`.
     fun connectAsSnapclient(host: String, port: Int = 1604, httpPort: Int = 1680, scheme: String = "tcp") {
         stopEngine()
         stopSnapcast()
@@ -1285,16 +1285,16 @@ class PlaybackService : Service() {
             channel = _state.value.snapclientChannel,
             scheme = scheme,
         )
-        if (scheme == "tcp") startSnapcastControl(host, httpPort)
+        startSnapcastControl(host, httpPort, secure = scheme == "wss")
         audioFocus.request()
-        Log.d(TAG, "Snapclient → $scheme://$host:$port (control :${if (scheme == "tcp") httpPort else "none"})")
+        Log.d(TAG, "Snapclient → $scheme://$host:$port (control :$httpPort)")
     }
 
     private fun applyStreamProperties(props: tech.capullo.audio.snapcast.StreamPlayerProperties) {
         val meta = props.metadata
         // A capullo broadcaster sends its art as a path on its own snapserver: resolved against the one
         // the control client talks to, Coil fetches it in the background like any other art URL.
-        val art = SnapcastRemoteArt.resolveUrl(meta?.artUrl, snapControlHost, snapControlHttpPort) ?: ""
+        val art = SnapcastRemoteArt.resolveUrl(meta?.artUrl, snapControlHost, snapControlHttpPort, snapControlSecure) ?: ""
         Log.d(TAG, "applyStreamProperties: status=${props.playbackStatus} canNext=${props.canGoNext} title=${meta?.title} artist=${meta?.firstArtist()} station=${meta?.station}")
         _state.update { st ->
             // No metadata is a play/pause event, not a stream that lost its description: keep it.
@@ -2114,7 +2114,7 @@ class PlaybackService : Service() {
     // Source URL already downloaded, publishable or not: never downloaded again (a failed download is retried).
     @Volatile private var snapArtAttemptedUrl: String? = null
     private var snapArtJob: Job? = null
-    private val snapArtwork by lazy { SnapcastArtwork(applicationContext) }
+    private val snapArtwork by lazy { SnapcastArtwork.get(applicationContext) }
 
     // Push the current metadata to web players / snapclients. Replaces the old
     // snapcontrolPlugin?.notifyPropertiesChanged() call sites (no-op until a session connects).
@@ -2238,11 +2238,14 @@ class PlaybackService : Service() {
 
     @Volatile private var snapControlHttpPort = 0
 
-    private fun startSnapcastControl(host: String, httpPort: Int) {
+    @Volatile private var snapControlSecure = false
+
+    private fun startSnapcastControl(host: String, httpPort: Int, secure: Boolean = false) {
         snapControlHost = host
         snapControlHttpPort = httpPort
+        snapControlSecure = secure
         snapcastControlJob?.cancel()
-        val client = tech.capullo.audio.snapcast.SnapcastControlClient(host, httpPort)
+        val client = tech.capullo.audio.snapcast.SnapcastControlClient(host, httpPort, secure)
             .also { snapcastControl = it }
         snapcastControlJob = scope.launch {
             client.initialize()
@@ -2556,16 +2559,7 @@ class PlaybackService : Service() {
         scheme: String = "tcp",
     ): Job = scope.launch {
         launch {
-            sc.connectionState.collect { s ->
-                if (scheme == "tcp") {
-                    _state.update { it.copy(snapclientState = s) }
-                } else {
-                    // No control channel through the tunnel ([connectAsSnapclient]): a connected
-                    // client is the only sign the stream plays.
-                    _state.update { it.copy(snapclientState = s, isPlaying = s == SnapclientProcess.ConnectionState.CONNECTED) }
-                    updateMediaSession()
-                }
-            }
+            sc.connectionState.collect { s -> _state.update { it.copy(snapclientState = s) } }
         }
         var backoffMs = SNAPCLIENT_RETRY_MIN_MS
         // The first launch keeps each caller's channel (the broadcast path passes none and gets the
