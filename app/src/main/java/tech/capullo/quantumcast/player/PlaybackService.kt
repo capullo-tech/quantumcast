@@ -162,7 +162,38 @@ class PlaybackService : Service() {
         val isStreamLocked: Boolean = false,
         /** Playing a recording (seekable file), not a live station. */
         val mediaMode: Boolean = false,
-    )
+    ) {
+        /**
+         * This state with nothing left of the stream the control client was reading. Stream
+         * properties are merged field by field and a blank field keeps the previous value, so a
+         * station that sends no country, codec or URL (CapulloTube, Telecloud, any tunnel join,
+         * which has no control channel at all) would otherwise show the ones of the stream read
+         * before it: this device's own broadcast, or the last station it listened to.
+         */
+        fun withoutRemoteStream(): PlaybackState = copy(
+            icyTitle = "",
+            snapcastGroups = emptyList(),
+            snapcastStreamArtUrl = "",
+            streamCanPlay = false,
+            streamCanPause = false,
+            streamCanGoNext = false,
+            streamCanGoPrevious = false,
+            snapcastStationName = "",
+            snapcastTrackName = "",
+            snapcastArtistName = "",
+            snapcastCountry = "",
+            snapcastCountryCode = "",
+            snapcastCodec = "",
+            snapcastBitrate = 0,
+            snapcastUrl = "",
+            snapcastYoutubeUrl = "",
+            snapcastSpotifyUrl = "",
+            snapcastAppleMusicUrl = "",
+            snapcastTags = "",
+            snapcastUuid = "",
+            snapclientDisplayName = "",
+        )
+    }
 
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -1199,15 +1230,13 @@ class PlaybackService : Service() {
         tunnelManager.setRequested(false)
         val sc = SnapclientProcess(this).also { snapclientProcess = it }
         _state.update {
-            it.copy(
+            it.withoutRemoteStream().copy(
                 broadcastMode = BroadcastMode.SNAPCLIENT,
                 snapclientHost = host,
                 snapclientPort = port,
                 snapclientScheme = scheme,
                 stationName = "",
                 stationUrl = "",
-                icyTitle = "",
-                snapcastStreamArtUrl = "",
             )
         }
         snapclientJob = superviseSnapclient(
