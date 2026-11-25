@@ -55,7 +55,9 @@ object StationZones {
 
     /** The country's time zones (one for most countries, several for US/BR/MX/CA/RU/AU/ID…), west to east. */
     fun zonesFor(countryCode: String): List<String> {
-        val ids = TimeZone.getAvailableIDs(TimeZone.SystemTimeZoneType.CANONICAL_LOCATION, countryCode, null)
+        // The country's IDs keeping only canonical ones: what SystemTimeZoneType.CANONICAL_LOCATION
+        // selects, without that field, which needs API 28 (minSdk is 26).
+        val ids = TimeZone.getAvailableIDs(countryCode).filter { TimeZone.getCanonicalID(it) == it }
         val now = Instant.now()
         return ids.filter { runCatching { ZoneId.of(it) }.isSuccess }
             .sortedWith(compareBy({ ZoneId.of(it).rules.getOffset(now).totalSeconds }, { it }))
