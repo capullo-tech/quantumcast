@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QuantumCast</string>
+    <string name="permission_read_playlists_label">Read QuantumCast playlists</string>
+    <string name="permission_read_playlists_description">Read the songs QuantumCast identified on each radio station.</string>
 </resources>

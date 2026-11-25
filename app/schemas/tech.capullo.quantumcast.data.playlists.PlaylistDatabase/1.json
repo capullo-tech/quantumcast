@@ -1,0 +1,209 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "addef3585596607aea3f64dbb3ecb90c",
+    "entities": [
+      {
+        "tableName": "playlist_station",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `stationKey` TEXT NOT NULL, `name` TEXT NOT NULL, `country` TEXT NOT NULL, `countryCode` TEXT NOT NULL, `favicon` TEXT NOT NULL, `streamUrl` TEXT NOT NULL, `tags` TEXT NOT NULL, `codec` TEXT NOT NULL, `bitrate` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stationKey",
+            "columnName": "stationKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "country",
+            "columnName": "country",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "countryCode",
+            "columnName": "countryCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "favicon",
+            "columnName": "favicon",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streamUrl",
+            "columnName": "streamUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tags",
+            "columnName": "tags",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "codec",
+            "columnName": "codec",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bitrate",
+            "columnName": "bitrate",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlist_station_stationKey",
+            "unique": true,
+            "columnNames": [
+              "stationKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_station_stationKey` ON `${TABLE_NAME}` (`stationKey`)"
+          }
+        ]
+      },
+      {
+        "tableName": "playlist_track",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `stationId` INTEGER NOT NULL, `title` TEXT NOT NULL COLLATE NOCASE, `artist` TEXT NOT NULL COLLATE NOCASE, `artworkUrl` TEXT NOT NULL, `youtubeUrl` TEXT NOT NULL, `spotifyUrl` TEXT NOT NULL, `appleMusicUrl` TEXT NOT NULL, `firstDetectedAt` INTEGER NOT NULL, `lastDetectedAt` INTEGER NOT NULL, `detections` INTEGER NOT NULL, FOREIGN KEY(`stationId`) REFERENCES `playlist_station`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stationId",
+            "columnName": "stationId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artist",
+            "columnName": "artist",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artworkUrl",
+            "columnName": "artworkUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "youtubeUrl",
+            "columnName": "youtubeUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spotifyUrl",
+            "columnName": "spotifyUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appleMusicUrl",
+            "columnName": "appleMusicUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstDetectedAt",
+            "columnName": "firstDetectedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastDetectedAt",
+            "columnName": "lastDetectedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detections",
+            "columnName": "detections",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlist_track_stationId_title_artist",
+            "unique": true,
+            "columnNames": [
+              "stationId",
+              "title",
+              "artist"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_track_stationId_title_artist` ON `${TABLE_NAME}` (`stationId`, `title`, `artist`)"
+          },
+          {
+            "name": "index_playlist_track_lastDetectedAt",
+            "unique": false,
+            "columnNames": [
+              "lastDetectedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playlist_track_lastDetectedAt` ON `${TABLE_NAME}` (`lastDetectedAt`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playlist_station",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "stationId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'addef3585596607aea3f64dbb3ecb90c')"
+    ]
+  }
+}
