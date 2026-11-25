@@ -338,33 +338,7 @@ class RadioViewModel @Inject constructor(
                 svc.state.collect { svcState ->
                     _playerState.update { ps ->
                         val isSnapclient = svcState.broadcastMode == tech.capullo.quantumcast.data.settings.BroadcastMode.SNAPCLIENT
-                        val updatedStation = if (isSnapclient) {
-                            val clientName = svcState.snapclientDisplayName
-                            val stationName = svcState.snapcastStationName
-                            val displayName = when {
-                                clientName.isNotBlank() && stationName.isNotBlank() -> "$clientName - $stationName"
-                                clientName.isNotBlank() -> clientName
-                                else -> stationName
-                            }
-                            if (displayName.isNotBlank() || svcState.snapcastCountry.isNotBlank()) {
-                                val base = ps.station ?: tech.capullo.source.radiobrowser.data.model.Station()
-                                base.copy(
-                                    name = displayName.ifBlank { base.name },
-                                    country = svcState.snapcastCountry.ifBlank { base.country },
-                                    countryCode = svcState.snapcastCountryCode.ifBlank { base.countryCode },
-                                    codec = svcState.snapcastCodec.ifBlank { base.codec },
-                                    bitrate = if (svcState.snapcastBitrate > 0) svcState.snapcastBitrate else base.bitrate,
-                                    url = svcState.snapcastUrl.ifBlank { base.url },
-                                    favicon = svcState.snapcastStreamArtUrl,
-                                    tags = svcState.snapcastTags.ifBlank { base.tags },
-                                    uuid = svcState.snapcastUuid.ifBlank { base.uuid },
-                                )
-                            } else {
-                                ps.station
-                            }
-                        } else {
-                            ps.station
-                        }
+                        val updatedStation = if (isSnapclient) listeningStation(ps.station, svcState) else ps.station
 
                         // Mirror local Shazam: when broadcaster has identified the track, build a
                         // synthetic TrackLookup so NowPlayingHero takes the same identified-track

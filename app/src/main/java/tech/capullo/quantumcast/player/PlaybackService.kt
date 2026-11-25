@@ -193,6 +193,35 @@ class PlaybackService : Service() {
             snapcastUuid = "",
             snapclientDisplayName = "",
         )
+
+        /**
+         * This state describing the stream as [meta] does, with [artUrl] its art resolved against
+         * the server. A broadcaster publishes its whole metadata on every change
+         * (`SnapcontrolMetadataMapper`), so a field missing from [meta] is one the stream no
+         * longer has and is cleared: keeping it showed the previous station's country, codec and
+         * tags, or the previous song's links, under the new one. [icyTitle] alone keeps its value
+         * through a blank title, since this device's own broadcast reads it back too.
+         */
+        fun describedBy(meta: tech.capullo.audio.snapcast.StreamMetadata, artUrl: String): PlaybackState {
+            val title = meta.title.orEmpty()
+            return copy(
+                icyTitle = title.ifBlank { icyTitle },
+                snapcastTrackName = title,
+                snapcastArtistName = meta.firstArtist(),
+                snapcastStationName = meta.station.orEmpty(),
+                snapcastStreamArtUrl = artUrl,
+                snapcastCountry = meta.country.orEmpty(),
+                snapcastCountryCode = meta.countryCode.orEmpty(),
+                snapcastCodec = meta.codec.orEmpty(),
+                snapcastBitrate = meta.bitrate ?: 0,
+                snapcastUrl = meta.url.orEmpty(),
+                snapcastYoutubeUrl = meta.youtubeUrl.orEmpty(),
+                snapcastSpotifyUrl = meta.spotifyUrl.orEmpty(),
+                snapcastAppleMusicUrl = meta.appleMusicUrl.orEmpty(),
+                snapcastTags = meta.tags.orEmpty(),
+                snapcastUuid = meta.uuid.orEmpty(),
+            )
+        }
     }
 
     private val _state = MutableStateFlow(PlaybackState())
@@ -1253,44 +1282,13 @@ class PlaybackService : Service() {
 
     private fun applyStreamProperties(props: tech.capullo.audio.snapcast.StreamPlayerProperties) {
         val meta = props.metadata
-        val title = meta?.title ?: ""
-        val artist = meta?.firstArtist() ?: ""
-        val stationName = meta?.station ?: ""
         // A capullo broadcaster sends its art as a path on its own snapserver: resolved against the one
         // the control client talks to, Coil fetches it in the background like any other art URL.
         val art = SnapcastRemoteArt.resolveUrl(meta?.artUrl, snapControlHost, snapControlHttpPort) ?: ""
-        val country = meta?.country ?: ""
-        val countryCode = meta?.countryCode ?: ""
-        val codec = meta?.codec ?: ""
-        val bitrate = meta?.bitrate ?: 0
-        val url = meta?.url ?: ""
-        val youtubeUrl = meta?.youtubeUrl ?: ""
-        val spotifyUrl = meta?.spotifyUrl ?: ""
-        val appleMusicUrl = meta?.appleMusicUrl ?: ""
-        val tags = meta?.tags ?: ""
-        val uuid = meta?.uuid ?: ""
-        Log.d(TAG, "applyStreamProperties: status=${props.playbackStatus} canNext=${props.canGoNext} title=$title artist=$artist station=$stationName")
+        Log.d(TAG, "applyStreamProperties: status=${props.playbackStatus} canNext=${props.canGoNext} title=${meta?.title} artist=${meta?.firstArtist()} station=${meta?.station}")
         _state.update { st ->
-            st.copy(
-                icyTitle = if (title.isNotBlank()) title else st.icyTitle,
-                snapcastTrackName = if (title.isNotBlank()) title else st.snapcastTrackName,
-                snapcastArtistName = artist,
-                snapcastStationName = if (stationName.isNotBlank()) stationName else st.snapcastStationName,
-                snapcastStreamArtUrl = when {
-                    art.isNotBlank() -> art // new art arrived
-                    meta != null -> "" // metadata present but art cleared
-                    else -> st.snapcastStreamArtUrl // no metadata (play/pause event)
-                },
-                snapcastCountry = if (country.isNotBlank()) country else st.snapcastCountry,
-                snapcastCountryCode = if (countryCode.isNotBlank()) countryCode else st.snapcastCountryCode,
-                snapcastCodec = if (codec.isNotBlank()) codec else st.snapcastCodec,
-                snapcastBitrate = if (bitrate > 0) bitrate else st.snapcastBitrate,
-                snapcastUrl = if (url.isNotBlank()) url else st.snapcastUrl,
-                snapcastYoutubeUrl = if (youtubeUrl.isNotBlank()) youtubeUrl else st.snapcastYoutubeUrl,
-                snapcastSpotifyUrl = if (spotifyUrl.isNotBlank()) spotifyUrl else st.snapcastSpotifyUrl,
-                snapcastAppleMusicUrl = if (appleMusicUrl.isNotBlank()) appleMusicUrl else st.snapcastAppleMusicUrl,
-                snapcastTags = if (tags.isNotBlank()) tags else st.snapcastTags,
-                snapcastUuid = if (uuid.isNotBlank()) uuid else st.snapcastUuid,
+            // No metadata is a play/pause event, not a stream that lost its description: keep it.
+            (meta?.let { st.describedBy(it, art) } ?: st).copy(
                 streamCanPlay = props.canPlay,
                 streamCanPause = props.canPause,
                 streamCanGoNext = props.canGoNext,
