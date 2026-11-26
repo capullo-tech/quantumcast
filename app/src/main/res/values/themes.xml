@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.RadioApp" parent="Theme.Material3.DayNight.NoActionBar">
+    <!-- The UI is all Compose Material3, so the window theme only paints the launch window
+         before the first Compose frame. values-night swaps this parent for the dark platform
+         theme so that window is not white in dark mode. -->
+    <style name="Base.Theme.RadioApp" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.RadioApp" parent="Base.Theme.RadioApp">
         <!-- Android 12+ system splash: paint the launch window the launcher-icon
              background colour (ic_launcher_background = #300234) so the cold-start
              screen matches the icon instead of showing a bare default square. -->
