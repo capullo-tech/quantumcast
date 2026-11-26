@@ -15,7 +15,10 @@ android {
 
     defaultConfig {
         applicationId = "tech.capullo.quantumcast"
-        minSdk = 26
+        // minSdk 23 (Android 6), the floor CapulloTube and Telecloud already ship. java.time
+        // (recording schedules, station zones, favorites export) is native only from API 26,
+        // so it relies on the core-library desugaring enabled in compileOptions.
+        minSdk = 23
         targetSdk = 36
         versionCode = 19
         versionName = "1.2"
@@ -55,6 +58,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Backports java.time below API 26 for the app (recording schedules, station zones,
+        // favorites export) and for NewPipeExtractor v0.24.2 inside capullo-source-radiobrowser.
+        // The extractor also calls URLEncoder/URLDecoder with a Charset (API 33, read from its
+        // jar with javap). CapulloTube enabled desugaring when its smoke matrix showed the
+        // extractor failing on API 28 to 32 with NoSuchMethodError for another JDK call
+        // (Collectors.toUnmodifiableList), and uses the same _nio flavour.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     // New DSL for Kotlin 2.3 / AGP 9.x (mirrors RadioCapullo). compilerOptions, NOT jvmToolchain(17):
@@ -107,6 +117,9 @@ ksp {
 }
 
 dependencies {
+    // The _nio flavour, as in CapulloTube: see compileOptions.isCoreLibraryDesugaringEnabled.
+    coreLibraryDesugaring(pins.desugar.jdk.libs.nio)
+
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
 

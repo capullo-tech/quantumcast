@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 23-25 launcher icon: adaptive-icon (mipmap-anydpi-v26) does not exist there, so the same
+     two layers are stacked as a full-bleed square, as CapulloTube does. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/ic_launcher_background" />
+    <item android:drawable="@mipmap/ic_launcher_fg" />
+</layer-list>

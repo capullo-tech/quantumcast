@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 /**
  * Device-level smoke test - the payload of the CI emulator matrix
- * (.github/workflows/EmulatorSmoke.yml, one leg per API level 26-37).
+ * (.github/workflows/EmulatorSmoke.yml, one leg per API level 23-37).
  *
  * The landing page is HomeScreen ("Select a station"), and everything it composes on a fresh
  * install is local: the search field, the Discovery button and the Favorites / Countries /

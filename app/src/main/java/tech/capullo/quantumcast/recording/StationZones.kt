@@ -1,6 +1,8 @@
 package tech.capullo.quantumcast.recording
 
 import android.icu.util.TimeZone
+import android.os.Build
+import androidx.annotation.ChecksSdkIntAtLeast
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -53,10 +55,19 @@ object StationZones {
         return ALIASES[n] ?: byName[n] ?: byName[n.removePrefix("the ")]
     }
 
+    /**
+     * Whether [zonesFor] can map a country to its zones. ICU's country/zone table is the only
+     * platform source of that mapping and reaches apps in API 24; below that every country counts
+     * as unresolved and the schedule editor offers every zone instead.
+     */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.N)
+    val canListCountryZones: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+
     /** The country's time zones (one for most countries, several for US/BR/MX/CA/RU/AU/ID…), west to east. */
     fun zonesFor(countryCode: String): List<String> {
+        if (!canListCountryZones) return emptyList()
         // The country's IDs keeping only canonical ones: what SystemTimeZoneType.CANONICAL_LOCATION
-        // selects, without that field, which needs API 28 (minSdk is 26).
+        // selects, without that field, which needs API 28.
         val ids = TimeZone.getAvailableIDs(countryCode).filter { TimeZone.getCanonicalID(it) == it }
         val now = Instant.now()
         return ids.filter { runCatching { ZoneId.of(it) }.isSuccess }

@@ -505,7 +505,12 @@ private fun ScheduleDialog(
                     }
                     if (stationZones.isEmpty()) {
                         Text(
-                            "Couldn't tell this station's country, so pick its time zone.",
+                            if (StationZones.canListCountryZones) {
+                                "Couldn't tell this station's country, so pick its time zone."
+                            } else {
+                                "This Android version can't list a country's time zones, " +
+                                    "so pick the station's."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -663,10 +668,21 @@ private fun ReliabilityChecklist(context: Context, testStation: RecStation?, onT
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     CheckRow("Notifications allowed", notificationsOk) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+        when {
+            Build.VERSION.SDK_INT >= 33 ->
+                notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O -> context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            )
+            // The per-app notification screen has no public action before API 26; App info
+            // links to it there.
+            else -> context.startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
         }
     }
     CheckRow("Battery optimization off", batteryOk) {
