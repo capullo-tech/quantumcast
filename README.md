@@ -65,11 +65,13 @@ Other apps can read the playlists through a read-only content provider:
   `vnd.android.cursor.item/vnd.tech.capullo.quantumcast.playlist`,
   `vnd.android.cursor.dir/vnd.tech.capullo.quantumcast.track`.
 
-Play on a playlist hands it to CapulloTube with `ACTION_VIEW`, data
-`content://tech.capullo.quantumcast.playlists/playlists/{id}/tracks`, type
-`vnd.android.cursor.dir/vnd.tech.capullo.quantumcast.track`, package `tech.capullo.tubecapullo`
-and `FLAG_GRANT_READ_URI_PERMISSION`, so the receiver can read that playlist without holding the
-permission.
+Play on a playlist hands it to CapulloTube with `ACTION_VIEW`. The data is
+`content://tech.capullo.quantumcast.playlists/playlists/{id}/tracks`, the type is
+`vnd.android.cursor.dir/vnd.tech.capullo.quantumcast.track` and the package is
+`tech.capullo.tubecapullo`. The intent has `FLAG_GRANT_READ_URI_PERMISSION` and
+`FLAG_GRANT_PREFIX_URI_PERMISSION`. The receiver can then read that playlist without the
+permission, also with a query such as `?link=youtube`. The intent also has
+`FLAG_ACTIVITY_NEW_TASK`, thus CapulloTube opens in its own task.
 
 ## Building
 

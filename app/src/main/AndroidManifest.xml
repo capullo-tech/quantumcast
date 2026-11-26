@@ -55,10 +55,17 @@
         android:theme="@style/Theme.RadioApp"
         android:usesCleartextTraffic="true">
 
+        <!-- singleTask: exactly one MainActivity. RadioViewModel is scoped to it and owns the
+             PlaybackService callbacks (headset and lock-screen play/pause, skip). With singleTop,
+             the notification's intent stacked a second MainActivity when another activity sat on
+             top of this task (seen with CapulloTube's player after a hand-off; any activity
+             started from here does it). Its view model took the callbacks over, and after Back
+             they pointed at a cleared view model: the buttons reached the service and did
+             nothing (razr, 2026-11-26). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:screenOrientation="portrait"
             android:enableOnBackInvokedCallback="true">
             <intent-filter>
