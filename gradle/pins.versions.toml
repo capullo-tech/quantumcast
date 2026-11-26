@@ -14,6 +14,10 @@ coil = "2.6.0"
 datastore = "1.1.1"
 reorderable = "2.4.3"
 uiautomator = "2.3.0"
+# Core-library desugaring (java.time below API 26, NewPipeExtractor's Charset URLDecoder below 33;
+# see app/build.gradle.kts compileOptions). Mirrors capullo-tube's gradle/pins.versions.toml pin,
+# which the shared catalog does not carry yet: bump both together.
+desugarJdkLibs = "2.1.5"
 
 [libraries]
 # capullo-tech first-party libraries (composite build locally, jitpack coordinate on CI).
@@ -31,3 +35,4 @@ coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
+desugar-jdk-libs-nio = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }

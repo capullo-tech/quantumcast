@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 
-# Twelve emulator legs per push is expensive; a newer run on the same ref supersedes it (same
+# Fifteen emulator legs per push is expensive; a newer run on the same ref supersedes it (same
 # pattern Release.yml carries, for the same one-artifact-invariant reason).
 concurrency:
   group: emulator-smoke-${{ github.ref }}
@@ -88,12 +88,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
-      # One leg's emulator crashing says nothing about the other eleven API levels.
+      # One leg's emulator crashing says nothing about the other fourteen API levels.
       fail-fast: false
       matrix:
-        # minSdk (26) through 37, one leg each. Quoted: the 37 leg's resolved string
+        # minSdk (23) through 37, one leg each. Quoted: the 37 leg's resolved string
         # substitutes through the same env.
-        api-level: ['26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36', '37']
+        api-level: ['23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36', '37']
         include:
           # The catalog has NO android-27 google_apis x86_64 image (only 32-bit x86 and
           # arm64-v8a remain for 8.1). The 32-bit x86 image runs natively on the x86_64 host
