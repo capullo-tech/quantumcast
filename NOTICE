@@ -59,6 +59,6 @@ radio-browser.info (https://www.radio-browser.info)
 
 This product also uses the following libraries, each licensed under the
 Apache License 2.0: AndroidX/Jetpack (Compose, Core, Lifecycle, Activity,
-Navigation, Room, DataStore, Media, AppCompat), Google Material
-Components, Kotlin and kotlinx libraries (coroutines, serialization),
-Ktor, OkHttp, Retrofit, Gson, Coil, and Reorderable (sh.calvin).
+Navigation, Room, DataStore, Media, AppCompat), Kotlin and kotlinx
+libraries (coroutines, serialization), Ktor, OkHttp, Retrofit, Gson,
+Coil, and Reorderable (sh.calvin).

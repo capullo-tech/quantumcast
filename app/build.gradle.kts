@@ -177,9 +177,6 @@ dependencies {
     // Images
     implementation(pins.coil.compose)
 
-    implementation(pins.androidx.appcompat)
-    implementation(pins.android.material)
-
     // Settings persistence
     implementation(pins.androidx.datastore.preferences)
 
