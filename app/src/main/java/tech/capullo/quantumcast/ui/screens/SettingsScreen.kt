@@ -326,7 +326,7 @@ fun SettingsScreen(
             item {
                 StepperRow(
                     label = "Max history songs",
-                    description = if (settings.maxHistorySongs == 0) "Unlimited" else "${settings.maxHistorySongs} songs remembered",
+                    description = if (settings.maxHistorySongs == 0) "Unlimited" else "Keeps the ${settings.maxHistorySongs} most recent songs across all playlists",
                     value = settings.maxHistorySongs,
                     range = 0..500,
                     step = 10,

@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -21,6 +20,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,7 +38,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
@@ -78,11 +77,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import tech.capullo.audio.snapcast.Group
 import tech.capullo.audio.ui.PublicLinkState
 import tech.capullo.audio.ui.SnapcastControlSheet
 import tech.capullo.quantumcast.R
+import tech.capullo.quantumcast.data.playlists.DetectedTrack
 import tech.capullo.quantumcast.viewmodel.PlayerState
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.quantumcast.viewmodel.RepeatMode
@@ -92,18 +93,11 @@ import tech.capullo.quantumcast.viewmodel.RotationState
 import tech.capullo.source.radiobrowser.data.model.Station
 import tech.capullo.source.radiobrowser.data.model.TrackLookup
 
-private fun countryCodeToFlagTD(code: String): String {
-    if (code.length != 2) return ""
-    val base = 0x1F1E6 - 0x41
-    return String(Character.toChars(code[0].uppercaseChar().code + base)) +
-        String(Character.toChars(code[1].uppercaseChar().code + base))
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TrackDetailScreen(
     playerState: PlayerState,
-    trackHistory: List<TrackLookup>,
+    trackHistory: Flow<List<DetectedTrack>>,
     isShazamRunning: Boolean = false,
     rotationState: RotationState = RotationState(),
     rotationQueue: List<Station> = emptyList(),
@@ -131,7 +125,7 @@ fun TrackDetailScreen(
     onRemoveFromQueue: (Int) -> Unit = {},
     onJumpToQueueStation: (Int) -> Unit = {},
     onClearHistory: () -> Unit = {},
-    onDeleteHistoryAt: (Int) -> Unit = {},
+    onDeleteHistory: (Long) -> Unit = {},
     sleepTimerActive: Boolean = false,
     sleepTimerSecondsRemaining: Int = 0,
     onToggleSleepTimer: () -> Unit = {},
@@ -431,12 +425,16 @@ fun TrackDetailScreen(
     }
 
     if (showHistorySheet) {
+        // Unlimited history is queried only while visible, not on every detection in the background.
+        val history by trackHistory.collectAsState(initial = emptyList())
         TrackHistorySheet(
-            trackHistory = trackHistory,
+            trackHistory = history,
+            // A row for the identification in progress, while nothing is identified: it is gone
+            // as soon as a poll names the song, and stays away while that song is recognised.
+            identifying = isShazamRunning && playerState.currentTrack == null,
             onDismiss = { showHistorySheet = false },
             onClearAll = onClearHistory,
-            onDeleteAt = onDeleteHistoryAt,
-            context = context,
+            onDelete = onDeleteHistory,
         )
     }
 
@@ -710,15 +708,19 @@ private fun RotationQueueSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TrackHistorySheet(
-    trackHistory: List<TrackLookup>,
+    trackHistory: List<DetectedTrack>,
+    identifying: Boolean,
     onDismiss: () -> Unit,
     onClearAll: () -> Unit,
-    onDeleteAt: (Int) -> Unit,
-    context: Context,
+    onDelete: (Long) -> Unit,
 ) {
+    var confirmClear by remember { mutableStateOf(false) }
+    // History spans days: rows from before today show a date instead of a clock time. Re-read
+    // when a new detection arrives, so a sheet left open past midnight catches up.
+    val todayStart = remember(trackHistory.firstOrNull()?.track?.lastDetectedAt) { startOfToday() }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
@@ -743,182 +745,44 @@ private fun TrackHistorySheet(
                     modifier = Modifier.weight(1f),
                 )
                 if (trackHistory.isNotEmpty()) {
-                    TextButton(onClick = onClearAll) { Text("Clear All") }
+                    TextButton(onClick = { confirmClear = true }) { Text("Clear All") }
                 }
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(trackHistory, key = { _, t -> t.timestamp }) { index, track ->
-                    val currentIndex by rememberUpdatedState(index)
-                    val dismissState = rememberSwipeToDismissBoxState(
-                        positionalThreshold = { it * 0.72f },
+                if (identifying) {
+                    item(key = "identifying") { IdentifyingTrackRow() }
+                }
+                items(trackHistory, key = { it.track.id }) { track ->
+                    val label = remember(track.track.lastDetectedAt, todayStart) {
+                        detectionTimeLabel(track.track.lastDetectedAt, todayStart)
+                    }
+                    DetectedTrackRow(
+                        track = track,
+                        leadingText = label,
+                        showStation = true,
+                        onDelete = { onDelete(track.track.id) },
                     )
-                    LaunchedEffect(dismissState.currentValue) {
-                        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) onDeleteAt(currentIndex)
-                    }
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        enableDismissFromStartToEnd = false,
-                        backgroundContent = {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.errorContainer),
-                                contentAlignment = Alignment.CenterEnd,
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 16.dp),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                            }
-                        },
-                    ) {
-                        val timeStr = remember(track.timestamp) {
-                            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-                                .format(java.util.Date(track.timestamp))
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = timeStr,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(36.dp),
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (track.artworkUrl.isNotBlank()) {
-                                    AsyncImage(
-                                        model = track.artworkUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                } else if (track.isLoading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.secondary,
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Default.MusicNote,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = track.trackName.ifBlank { track.icyTitle },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-                                )
-                                if (track.artistName.isNotBlank()) {
-                                    Text(
-                                        text = track.artistName,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.secondary,
-                                        maxLines = 1,
-                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-                                    )
-                                }
-                                if (track.stationName.isNotBlank()) {
-                                    val flag = countryCodeToFlagTD(track.stationCountryCode)
-                                    Text(
-                                        text = if (flag.isNotEmpty()) "$flag ${track.stationName}" else track.stationName,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        maxLines = 1,
-                                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-                                    )
-                                }
-                            }
-                            if (!track.isLoading) {
-                                val availableServices = remember(track.youtubeUrl, track.spotifyUrl, track.appleMusicUrl) {
-                                    buildList {
-                                        if (track.youtubeUrl.isNotBlank()) add(tech.capullo.quantumcast.data.settings.ShareService.YOUTUBE)
-                                        if (track.spotifyUrl.isNotBlank()) add(tech.capullo.quantumcast.data.settings.ShareService.SPOTIFY)
-                                        if (track.appleMusicUrl.isNotBlank()) add(tech.capullo.quantumcast.data.settings.ShareService.APPLE_MUSIC)
-                                    }
-                                }
-                                if (availableServices.isNotEmpty()) {
-                                    var selectedService by remember(track.youtubeUrl, track.spotifyUrl, track.appleMusicUrl) {
-                                        mutableStateOf(availableServices.first())
-                                    }
-                                    val selectedUrl = when (selectedService) {
-                                        tech.capullo.quantumcast.data.settings.ShareService.YOUTUBE -> track.youtubeUrl
-                                        tech.capullo.quantumcast.data.settings.ShareService.SPOTIFY -> track.spotifyUrl
-                                        tech.capullo.quantumcast.data.settings.ShareService.APPLE_MUSIC -> track.appleMusicUrl
-                                    }
-                                    val serviceIconRes = when (selectedService) {
-                                        tech.capullo.quantumcast.data.settings.ShareService.YOUTUBE -> R.drawable.ic_youtube
-                                        tech.capullo.quantumcast.data.settings.ShareService.SPOTIFY -> R.drawable.ic_spotify
-                                        tech.capullo.quantumcast.data.settings.ShareService.APPLE_MUSIC -> R.drawable.ic_apple_music
-                                    }
-                                    IconButton(
-                                        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedUrl))) },
-                                        modifier = Modifier.size(36.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Default.PlayCircle,
-                                            contentDescription = "Open",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp),
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .combinedClickable(
-                                                onClick = {
-                                                    context.startActivity(
-                                                        Intent.createChooser(
-                                                            Intent(Intent.ACTION_SEND).apply {
-                                                                type = "text/plain"
-                                                                putExtra(Intent.EXTRA_TEXT, selectedUrl)
-                                                            },
-                                                            null,
-                                                        ),
-                                                    )
-                                                },
-                                                onLongClick = {
-                                                    selectedService = availableServices[(availableServices.indexOf(selectedService) + 1) % availableServices.size]
-                                                },
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(serviceIconRes),
-                                            contentDescription = "Share (hold to cycle)",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear detection history?") },
+            text = { Text("This removes every song from every station's playlist.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClear = false
+                        onClearAll()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -1088,7 +952,7 @@ private fun NowPlayingInfo(
     isSnapclientMode: Boolean = false,
     onToggleFavorite: () -> Unit = {},
 ) {
-    val flag = countryCodeToFlagTD(station.countryCode)
+    val flag = countryFlag(station.countryCode)
     val quality = buildString {
         if (station.codec.isNotEmpty()) append(station.codec)
         if (station.bitrate > 0) {

@@ -36,6 +36,41 @@ neither depends on the other; this app is what wires them together. See
 [Platform shape](https://github.com/capullo-tech/capullo-audio-contracts#platform-shape)
 for the full dependency graph.
 
+## Playlists
+
+Every song the track identification recognises is kept, per station, until you remove it: a
+station's playlist is the songs identified on it, with their YouTube, Spotify and Apple Music links.
+A song heard again on the same station updates its row (a later play counts as another detection)
+instead of adding a duplicate. Delete a whole playlist, or open one and remove songs to curate it.
+
+Other apps can read the playlists through a read-only content provider:
+
+- Authority `tech.capullo.quantumcast.playlists`, read permission
+  `tech.capullo.quantumcast.permission.READ_PLAYLISTS` (protection level `normal`). There is no
+  write path.
+- `content://tech.capullo.quantumcast.playlists/playlists`: one row per station that has songs,
+  most recent activity first. Columns: `_id`, `station_key`, `name`, `country`, `country_code`,
+  `favicon`, `stream_url`, `tags`, `codec`, `bitrate`, `track_count`, `youtube_count` (songs with a
+  YouTube video link), `updated_at`.
+- `.../playlists/{id}`: that one row.
+- `.../playlists/{id}/tracks` and `.../tracks` (every station): last detected first. Columns:
+  `_id`, `playlist_id`, `station_name`, `title`, `artist`, `artwork_url`, `youtube_url`,
+  `spotify_url`, `apple_music_url`, `first_detected_at`, `last_detected_at`, `detections`.
+  Times are epoch milliseconds.
+- Track URIs take `?link=youtube|spotify|apple_music` to keep only rows with that link; `youtube`
+  means a video link (`/watch?v=`, `youtu.be/`), not a search link.
+- The projection is honoured (an unknown column throws); selection, selection arguments and sort
+  order are ignored. Cursors are notified when the playlists change.
+- MIME types: `vnd.android.cursor.dir/vnd.tech.capullo.quantumcast.playlist`,
+  `vnd.android.cursor.item/vnd.tech.capullo.quantumcast.playlist`,
+  `vnd.android.cursor.dir/vnd.tech.capullo.quantumcast.track`.
+
+Play on a playlist hands it to CapulloTube with `ACTION_VIEW`, data
+`content://tech.capullo.quantumcast.playlists/playlists/{id}/tracks`, type
+`vnd.android.cursor.dir/vnd.tech.capullo.quantumcast.track`, package `tech.capullo.tubecapullo`
+and `FLAG_GRANT_READ_URI_PERMISSION`, so the receiver can read that playlist without holding the
+permission.
+
 ## Building
 
 ```sh

@@ -101,6 +101,11 @@ androidComponents {
     }
 }
 
+// Room schema history for the playlists database, checked in so a later version gets a tested migration.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
@@ -163,6 +168,11 @@ dependencies {
     // Hilt (DI) - @HiltAndroidApp / @HiltViewModel; drives KSP.
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
+
+    // Room - the playlists database: every song identified per station, kept until the user removes it.
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 
     // Images
     implementation(pins.coil.compose)

@@ -32,6 +32,20 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Lets another app (CapulloTube) read the playlists through PlaylistProvider. normal: granted
+         at install, the songs identified on public radio stations are nothing sensitive. -->
+    <permission
+        android:name="tech.capullo.quantumcast.permission.READ_PLAYLISTS"
+        android:protectionLevel="normal"
+        android:label="@string/permission_read_playlists_label"
+        android:description="@string/permission_read_playlists_description" />
+
+    <!-- Android 11+ hides other packages: needed to see whether CapulloTube is installed and to
+         hand it a playlist or a YouTube link. -->
+    <queries>
+        <package android:name="tech.capullo.tubecapullo" />
+    </queries>
+
     <application
         android:name=".RadioApplication"
         android:allowBackup="false"
@@ -131,6 +145,16 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/recording_paths" />
         </provider>
+
+        <!-- The playlists (songs identified per station) for other apps, CapulloTube first. Read-only:
+             there is no write path, insert/update/delete throw. grantUriPermissions lets a hand-off
+             intent open one playlist to an app without the read permission. -->
+        <provider
+            android:name=".data.playlists.PlaylistProvider"
+            android:authorities="tech.capullo.quantumcast.playlists"
+            android:exported="true"
+            android:readPermission="tech.capullo.quantumcast.permission.READ_PLAYLISTS"
+            android:grantUriPermissions="true" />
 
     </application>
 

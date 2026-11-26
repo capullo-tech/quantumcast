@@ -16,6 +16,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import tech.capullo.audio.tunnel.TunnelManager
+import tech.capullo.quantumcast.data.playlists.DetectedTrack
+import tech.capullo.quantumcast.data.playlists.PlaylistRepository
 import tech.capullo.quantumcast.data.settings.AppSettings
 import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.quantumcast.player.PlaybackService
@@ -23,7 +25,6 @@ import tech.capullo.source.radiobrowser.data.db.FavoriteEntity
 import tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity
 import tech.capullo.source.radiobrowser.data.model.Country
 import tech.capullo.source.radiobrowser.data.model.Station
-import tech.capullo.source.radiobrowser.data.model.TrackLookup
 import tech.capullo.source.radiobrowser.data.repository.RadioRepository
 import tech.capullo.source.radiobrowser.shazam.AudioCapturer
 import tech.capullo.source.radiobrowser.shazam.ShazamRecognizer
@@ -88,6 +89,7 @@ class RadioViewModel @Inject constructor(
     private val tunnelManager: TunnelManager,
     @ApplicationContext private val context: Context,
     private val recordings: tech.capullo.quantumcast.recording.RecordingRepository,
+    private val playlists: PlaylistRepository,
 ) : ViewModel() {
 
     // The tunnel's own state, straight from the manager - it is not part of PlaybackState, because
@@ -113,8 +115,8 @@ class RadioViewModel @Inject constructor(
     private val _selectedCountry = MutableStateFlow<Country?>(null)
     val selectedCountry: StateFlow<Country?> = _selectedCountry
 
-    private val _trackHistory = MutableStateFlow<List<TrackLookup>>(emptyList())
-    val trackHistory: StateFlow<List<TrackLookup>> = _trackHistory
+    /** Every song identified on any station, newest first; it outlives station changes and restarts. */
+    val trackHistory: Flow<List<DetectedTrack>> = playlists.history
 
     private val _isShazamRunning = MutableStateFlow(false)
     val isShazamRunning: StateFlow<Boolean> = _isShazamRunning
@@ -441,7 +443,6 @@ class RadioViewModel @Inject constructor(
         playbackService?.stopErrorAudio()
         if (openDetail) _showDetailScreen.value = true
         _playerState.update { it.copy(station = station, icyTitle = "", currentTrack = null) }
-        _trackHistory.value = listOf(TrackLookup(icyTitle = "", isLoading = true))
         _streamStats.value = null
         startShazamLoop(station.streamUrl)
 
@@ -590,7 +591,6 @@ class RadioViewModel @Inject constructor(
         val station = Station(uuid = "rec:${file.name}", name = file.stationName, favicon = file.meta.favicon, country = subtitle)
         _showDetailScreen.value = true
         _playerState.update { it.copy(station = station, icyTitle = "", currentTrack = null) }
-        _trackHistory.value = emptyList()
         _streamStats.value = null
         val play = { svc.playMedia(file.uri.toString(), file.stationName, subtitle, file.meta.favicon, start, p.speed, pitchFor(p.speed, p)) }
         flacFixJob?.cancel()
@@ -980,10 +980,10 @@ class RadioViewModel @Inject constructor(
         if (newQueue.isEmpty()) stopRotation()
     }
     fun clearTrackHistory() {
-        _trackHistory.value = emptyList()
+        viewModelScope.launch { playlists.clear() }
     }
-    fun deleteTrackHistoryAt(index: Int) {
-        _trackHistory.update { list -> list.toMutableList().also { if (index in it.indices) it.removeAt(index) } }
+    fun deleteTrackHistory(trackId: Long) {
+        viewModelScope.launch { playlists.deleteTrack(trackId) }
     }
     fun toggleTimerPause() {
         _rotationState.update { it.copy(timerPaused = !it.timerPaused) }
@@ -1268,7 +1268,6 @@ class RadioViewModel @Inject constructor(
                 currentTrack = null,
             )
         }
-        _trackHistory.value = emptyList()
         _streamStats.value = null
         _showDetailScreen.value = true
         if (rememberHost) viewModelScope.launch { settingsRepo.setLastManualHost(host) }
@@ -1348,12 +1347,18 @@ class RadioViewModel @Inject constructor(
     private fun startShazamLoop(streamUrl: String) {
         shazamJob?.cancel()
         _isShazamRunning.value = true
+        // The station this loop identifies, fixed here: playerState already names the next station
+        // while a previous loop's last capture is still finishing.
+        val station = _playerState.value.station
         shazamJob = viewModelScope.launch(Dispatchers.IO) {
             delay(4_000)
             while (isActive) {
                 val result = runCatching { ShazamRecognizer.recognize(streamUrl, context) }.getOrNull()
-                // recognize() isn't cancellable mid-capture: a result for the previous live station
-                // can land after a recording started playing. It describes the wrong audio.
+                // recognize() isn't cancellable mid-capture: its result can land after this loop
+                // was cancelled for another station. It describes that station's audio, so it
+                // must not become this one's track or go into this one's playlist.
+                ensureActive()
+                // Same for a recording that started playing meanwhile.
                 if (_playingRecording.value != null) {
                     _isShazamRunning.value = false
                     return@launch
@@ -1362,21 +1367,17 @@ class RadioViewModel @Inject constructor(
                 if (AudioCapturer.lastOutRate > 0) {
                     _streamStats.value = StreamStats(codec = AudioCapturer.lastCodec, bitrate = AudioCapturer.lastBitrate / 1000, sampleRate = AudioCapturer.lastOutRate, channels = AudioCapturer.lastOutCh)
                 }
-                val station = _playerState.value.station
-                val stationName = station?.name ?: ""
-                val stationCountryCode = station?.countryCode ?: ""
-                val max = settings.value.maxHistorySongs
-                val keep = if (max <= 0) 500 else max
                 if (result != null) {
-                    val entry = result.copy(stationName = stationName, stationCountryCode = stationCountryCode)
+                    val entry = result.copy(stationName = station?.name ?: "", stationCountryCode = station?.countryCode ?: "")
                     _playerState.update { it.copy(currentTrack = entry) }
-                    _trackHistory.update { list ->
-                        val base = if (list.firstOrNull()?.isLoading == true) list.drop(1) else list
-                        val top = base.firstOrNull()
-                        if (top != null && !top.isLoading && !top.notFound && top.trackName == entry.trackName && top.artistName == entry.artistName) {
-                            base
-                        } else {
-                            listOf(entry) + base.take(keep - 1)
+                    if (station != null) {
+                        // A failed write costs this one song, not the identification loop.
+                        try {
+                            playlists.record(station, entry, settings.value.maxHistorySongs)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "playlist write failed", e)
                         }
                     }
                     if (result.trackName.isNotBlank()) {
@@ -1398,7 +1399,6 @@ class RadioViewModel @Inject constructor(
                     _playerState.update { it.copy(currentTrack = null) }
                     playbackService?.updateIdentifiedTrack("", "")
                     playbackService?.updateArtwork("")
-                    _trackHistory.update { list -> if (list.firstOrNull()?.isLoading == true) list.drop(1) else list }
                 }
                 val intervalMs = (settings.value.shazamIntervalSeconds - 4).coerceAtLeast(10) * 1000L
                 delay(intervalMs)

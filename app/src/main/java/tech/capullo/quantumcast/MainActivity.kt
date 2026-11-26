@@ -7,6 +7,8 @@ import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -21,21 +23,28 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import tech.capullo.audio.snapcast.DiscoveredSnapserver
 import tech.capullo.audio.snapcast.JoinUrl
 import tech.capullo.audio.snapcast.SnapserverDiscoveryManager
 import tech.capullo.audio.tunnel.TunnelManager
 import tech.capullo.audio.ui.PublicLinkState
+import tech.capullo.quantumcast.data.playlists.CapulloTube
+import tech.capullo.quantumcast.data.playlists.PlaylistStationEntity
 import tech.capullo.quantumcast.player.PlaybackService
 import tech.capullo.quantumcast.ui.screens.*
 import tech.capullo.quantumcast.ui.theme.RadioTheme
+import tech.capullo.quantumcast.viewmodel.PlaylistsViewModel
 import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.source.radiobrowser.data.model.Station
 
@@ -54,11 +63,16 @@ import tech.capullo.source.radiobrowser.data.model.Station
 
 @Serializable private data class RecordingsRoute(val tab: Int = 0) : NavKey
 
+@Serializable private data object PlaylistsRoute : NavKey
+
+@Serializable private data class PlaylistRoute(val stationId: Long) : NavKey
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val vm: RadioViewModel by viewModels()
     private val recVm: tech.capullo.quantumcast.viewmodel.RecordingViewModel by viewModels()
+    private val plVm: PlaylistsViewModel by viewModels()
     private lateinit var discoveryManager: SnapserverDiscoveryManager
 
     private val skipReceiver = object : BroadcastReceiver() {
@@ -94,7 +108,7 @@ class MainActivity : ComponentActivity() {
                 val recordingsActive by recVm.active.collectAsState()
                 // One blink clock for every "recording" indicator, running only while something records.
                 tech.capullo.quantumcast.ui.screens.ProvideRecBlink(active = recordingsActive.isNotEmpty()) {
-                    RadioApp(vm, recVm, discoveredServers, discoveryManager)
+                    RadioApp(vm, recVm, plVm, discoveredServers, discoveryManager)
                     FavoritesImportDialog(vm)
                 }
             }
@@ -179,6 +193,13 @@ class MainActivity : ComponentActivity() {
                 if (host != null && base > 0) vm.connectToSnapserver(host, base, base + 2)
             }
             "disconnect" -> vm.disconnectSnapclient()
+            // Dump the playlists the detection history built, without the UI:
+            // am start ... --es dbg playlists ; adb logcat -s QcPlaylists
+            "playlists" -> lifecycleScope.launch {
+                plVm.currentPlaylists().forEach { p ->
+                    Log.i("QcPlaylists", "${p.station.id} ${p.station.name} ${p.trackCount}/${p.youtubeCount}")
+                }
+            }
         }
     }
 
@@ -194,6 +215,7 @@ class MainActivity : ComponentActivity() {
 private fun RadioApp(
     vm: RadioViewModel,
     recVm: tech.capullo.quantumcast.viewmodel.RecordingViewModel,
+    plVm: PlaylistsViewModel,
     discoveredServers: List<DiscoveredSnapserver>,
     discoveryManager: SnapserverDiscoveryManager,
 ) {
@@ -215,7 +237,6 @@ private fun RadioApp(
     val selectedCountry by vm.selectedCountry.collectAsState()
     val groups by vm.groups.collectAsState()
     val expandedGroupIds by vm.expandedGroupIds.collectAsState()
-    val trackHistory by vm.trackHistory.collectAsState()
     val rotationQueue by vm.rotationQueue.collectAsState()
     val isShazamRunning by vm.isShazamRunning.collectAsState()
     val isShuffleLoading by vm.isShuffleLoading.collectAsState()
@@ -289,7 +310,7 @@ private fun RadioApp(
         LaunchedEffect(Unit) { detailAlpha.animateTo(1f, tween(450)) }
         TrackDetailScreen(
             playerState = playerState,
-            trackHistory = trackHistory,
+            trackHistory = vm.trackHistory,
             isShazamRunning = isShazamRunning,
             rotationState = rotationState,
             rotationQueue = rotationQueue,
@@ -321,7 +342,7 @@ private fun RadioApp(
             onRemoveFromQueue = vm::removeFromRotationQueue,
             onJumpToQueueStation = vm::jumpToQueueStation,
             onClearHistory = vm::clearTrackHistory,
-            onDeleteHistoryAt = vm::deleteTrackHistoryAt,
+            onDeleteHistory = vm::deleteTrackHistory,
             sleepTimerActive = sleepTimerActive,
             sleepTimerSecondsRemaining = sleepTimerSecondsRemaining,
             onToggleSleepTimer = vm::toggleSleepTimer,
@@ -424,6 +445,9 @@ private fun RadioApp(
                         },
                         onOpenFavorites = {
                             if (backStack.lastOrNull() != FavoritesRoute) backStack.add(FavoritesRoute)
+                        },
+                        onOpenPlaylists = {
+                            if (backStack.lastOrNull() != PlaylistsRoute) backStack.add(PlaylistsRoute)
                         },
                         onOpenCountries = {
                             if (backStack.lastOrNull() != CountriesRoute) backStack.add(CountriesRoute)
@@ -564,10 +588,79 @@ private fun RadioApp(
                         )
                     }
                 }
+                entry<PlaylistsRoute> {
+                    BackHandler { backStack.removeLastOrNull() }
+                    val playlists by plVm.playlists.collectAsState()
+                    Column(modifier = Modifier.padding(padding)) {
+                        ChildTopBar("Playlists") { backStack.removeLastOrNull() }
+                        PlaylistsScreen(
+                            playlists = playlists,
+                            onOpen = { id -> backStack.add(PlaylistRoute(id)) },
+                            onDelete = plVm::deletePlaylist,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                entry<PlaylistRoute> { route ->
+                    BackHandler { backStack.removeLastOrNull() }
+                    var station by remember(route.stationId) { mutableStateOf<PlaylistStationEntity?>(null) }
+                    // The station row goes away with the playlist, and with its last song: nothing
+                    // is left to show then, so go back to the list.
+                    LaunchedEffect(route.stationId) {
+                        plVm.station(route.stationId).collect { s ->
+                            if (s != null) {
+                                station = s
+                            } else if (backStack.lastOrNull() == route) {
+                                backStack.removeLastOrNull()
+                            }
+                        }
+                    }
+                    val tracks by remember(route.stationId) { plVm.tracks(route.stationId) }.collectAsState(initial = emptyList())
+                    // CapulloTube can be installed or removed while QuantumCast sits in the background.
+                    var capulloTubeInstalled by remember { mutableStateOf(CapulloTube.isInstalled(activityContext)) }
+                    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                        capulloTubeInstalled = CapulloTube.isInstalled(activityContext)
+                    }
+                    Column(modifier = Modifier.padding(padding)) {
+                        ChildTopBar(station?.name.orEmpty()) { backStack.removeLastOrNull() }
+                        PlaylistScreen(
+                            station = station,
+                            tracks = tracks,
+                            capulloTubeInstalled = capulloTubeInstalled,
+                            onPlayInCapulloTube = {
+                                if (!CapulloTube.playPlaylist(activityContext, route.stationId)) {
+                                    Toast.makeText(activityContext, "CapulloTube could not open the playlist", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onPlayStation = {
+                                station?.let { s ->
+                                    vm.cancelRotation()
+                                    vm.play(s.toStation())
+                                }
+                            },
+                            onDeleteTrack = plVm::deleteTrack,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             },
         )
     }
 }
+
+// The playable station a playlist came from. Its key is the Radio Browser uuid, or the stream URL
+// when the station had none: that one gets no uuid, as when it first played.
+private fun PlaylistStationEntity.toStation() = Station(
+    uuid = stationKey.takeIf { it != streamUrl }.orEmpty(),
+    name = name,
+    url = streamUrl,
+    favicon = favicon,
+    country = country,
+    countryCode = countryCode,
+    tags = tags,
+    codec = codec,
+    bitrate = bitrate,
+)
 
 // Slim top bar for pushed child screens (Favorites/Countries) that lack their own - just a
 // title and a back arrow that pops the backstack. Settings brings its own bar, so it's not wrapped.

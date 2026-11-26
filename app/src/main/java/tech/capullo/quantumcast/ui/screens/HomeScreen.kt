@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -32,8 +33,9 @@ import tech.capullo.audio.ui.LocalRadiosSection
 
 // The home / "Select a station" screen (mirrors Telecloud's GroupSelectorScreen): a TopAppBar with
 // a Settings gear, then a scanning "local radios" radar section, a search field, a Discovery
-// (quantum-shuffle) button, and Favorites / Countries rows. Typing a query and submitting runs the
-// search and opens the results screen; Search results, Favorites and Countries are pushed screens.
+// (quantum-shuffle) button, and Favorites / Playlists / Countries / Recordings rows. Typing a query
+// and submitting runs the search and opens the results screen; Search results and every row are
+// pushed screens.
 //
 // No inner Scaffold on purpose: this screen lives inside MainActivity's outer Scaffold (which owns
 // the persistent NowPlayingBar). That outer Scaffold zeroes its top window inset, so this TopAppBar
@@ -58,6 +60,7 @@ fun HomeScreen(
     // Navigation to pushed child screens
     onOpenSettings: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
+    onOpenPlaylists: () -> Unit = {},
     onOpenCountries: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
     /** Any recording running: the Recordings row's dot blinks red. */
@@ -165,9 +168,10 @@ fun HomeScreen(
                 }
             }
 
-            // 4 + 5 + 6. Favorites / Countries / Recordings → push their own screens
+            // 4 to 7. Favorites / Playlists / Countries / Recordings → push their own screens
             item {
                 NavRow("Favorites", Icons.Default.Favorite, onOpenFavorites)
+                NavRow("Playlists", Icons.AutoMirrored.Filled.QueueMusic, onOpenPlaylists)
                 NavRow("Countries", Icons.Default.Public, onOpenCountries)
                 NavRow("Recordings", Icons.Default.FiberManualRecord, onOpenRecordings, blinkRed = recordingActive)
             }
