@@ -1,6 +1,5 @@
 package tech.capullo.quantumcast.data.playlists
 
-import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -36,8 +35,11 @@ object CapulloTube {
         start(context, Intent(Intent.ACTION_VIEW, uri))
     }
 
+    // Always in the target's own task. Started from the activity without NEW_TASK, CapulloTube
+    // opened inside QuantumCast's task, and QuantumCast's launcher icon then reopened
+    // CapulloTube's player instead of QuantumCast (razr, 2026-11-26).
     private fun start(context: Context, intent: Intent): Boolean {
-        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
             context.startActivity(intent)
             true
