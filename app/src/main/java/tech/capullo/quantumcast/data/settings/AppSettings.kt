@@ -10,13 +10,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+private const val SETTINGS_STORE = "settings"
+
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = SETTINGS_STORE,
+    corruptionHandler = replaceCorruptStore(SETTINGS_STORE),
+)
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -58,6 +62,9 @@ data class AppSettings(
     // Snapserver base port: 0 = random base (default). >0 pins the trio to
     // base/base+1/base+2 so the server address survives broadcast restarts.
     val snapserverFixedPort: Int = 0,
+    // The settings file was corrupt and has been replaced by the defaults; true until the user
+    // has been told (see replaceCorruptStore).
+    val resetNotice: Boolean = false,
 )
 
 enum class RadioServer(val label: String, val url: String) {
@@ -113,7 +120,7 @@ class SettingsRepository(
     }
 
     private val stored: Flow<AppSettings> = store.data
-        .catch { emit(emptyPreferences()) }
+        .defaultsOnReadError(SETTINGS_STORE)
         .map { prefs ->
             AppSettings(
                 apiServer = prefs[Keys.API_SERVER] ?: AppSettings().apiServer,
@@ -141,6 +148,7 @@ class SettingsRepository(
                 snapclientVolume = prefs[Keys.SNAPCLIENT_VOLUME] ?: 100,
                 snapclientLatency = prefs[Keys.SNAPCLIENT_LATENCY] ?: 0,
                 snapserverFixedPort = prefs[Keys.SNAPSERVER_FIXED_PORT] ?: 0,
+                resetNotice = prefs[RESET_NOTICE] ?: false,
             )
         }
 
@@ -150,6 +158,9 @@ class SettingsRepository(
     suspend fun update(block: suspend (MutablePreferences) -> Unit) {
         store.edit { block(it) }
     }
+
+    /** The user has been told that the settings were reset. */
+    suspend fun acknowledgeReset() = update { it.remove(RESET_NOTICE) }
 
     suspend fun setApiServer(url: String) = update { it[Keys.API_SERVER] = url }
     suspend fun setSearchLimit(v: Int) = update { it[Keys.SEARCH_LIMIT] = v }

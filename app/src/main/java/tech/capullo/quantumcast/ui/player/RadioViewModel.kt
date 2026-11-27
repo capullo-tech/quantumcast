@@ -1314,6 +1314,14 @@ class RadioViewModel @Inject constructor(
         viewModelScope.launch { settingsRepo.setShareService(v) }
     }
 
+    /** The user has read that a store was replaced by its defaults (StoreResetDialog). */
+    fun acknowledgeStoreReset() {
+        viewModelScope.launch {
+            if (settings.value.resetNotice) settingsRepo.acknowledgeReset()
+            if (recordingPrefs.value.resetNotice) recordings.acknowledgeReset()
+        }
+    }
+
     /** Set the snapserver base port (0 = random). Applied on the next broadcast start. A
      *  negative value auto-picks a random base so "fixed" can be enabled without typing one. */
     fun setSnapserverFixedPort(base: Int) {
