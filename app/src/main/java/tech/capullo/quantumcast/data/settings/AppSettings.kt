@@ -4,9 +4,17 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.runBlocking
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -59,7 +67,26 @@ enum class RadioServer(val label: String, val url: String) {
     CUSTOM("Custom", ""),
 }
 
-class SettingsRepository(private val context: Context) {
+/**
+ * The app's settings, kept in a Preferences DataStore.
+ *
+ * [settings] never holds the defaults of [AppSettings] in place of what the user saved: the
+ * constructor blocks until the file is read. Before this, each consumer started from the defaults
+ * and learned the saved values some milliseconds later, and three of them needed their own
+ * workaround: launch-time auto-entangle read `false`, the service advertised the device model
+ * until the saved server name arrived, and the saved spatial role had to win a race against the
+ * first client connection. The theme was the visible case: with a forced theme that differs
+ * from the system's, a OnePlus 3 drew the whole first screen in the wrong theme for about 0.5 s.
+ *
+ * The cost is one small file read on the thread that creates the repository, once per process:
+ * 3 ms on a razr 40 Ultra and 18 to 27 ms on a OnePlus 3 (2026-11-27, logged by AppModule). Cold
+ * start time on the OnePlus 3 did not change: 1304 to 1325 ms before, 1300 to 1349 ms after,
+ * five starts each. If the settings file ever holds large values, measure again.
+ */
+class SettingsRepository(
+    private val store: DataStore<Preferences>,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
 
     private object Keys {
         val API_SERVER = stringPreferencesKey("api_server")
@@ -85,7 +112,7 @@ class SettingsRepository(private val context: Context) {
         val SNAPSERVER_FIXED_PORT = intPreferencesKey("snapserver_fixed_port")
     }
 
-    val settings: Flow<AppSettings> = context.dataStore.data
+    private val stored: Flow<AppSettings> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs ->
             AppSettings(
@@ -117,8 +144,11 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    val settings: StateFlow<AppSettings> =
+        stored.stateIn(scope, SharingStarted.Eagerly, runBlocking { stored.first() })
+
     suspend fun update(block: suspend (MutablePreferences) -> Unit) {
-        context.dataStore.edit { block(it) }
+        store.edit { block(it) }
     }
 
     suspend fun setApiServer(url: String) = update { it[Keys.API_SERVER] = url }

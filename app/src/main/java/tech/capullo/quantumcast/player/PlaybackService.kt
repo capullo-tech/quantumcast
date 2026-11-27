@@ -53,7 +53,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -856,8 +855,7 @@ class PlaybackService : Service() {
         if (name.trim() == customServerName) return
         customServerName = name.trim()
         // Allow the local snapclient's channel tag (which embeds the name) to be
-        // re-applied with the new name on the next GetStatus - covers the case
-        // where the name resolves from DataStore after the client already connected.
+        // re-applied with the new name on the next GetStatus.
         localChannelTagSet = false
         // Restart NSD advertisement with the new name if the server is already running
         snapserverNsd?.let {
@@ -1096,18 +1094,17 @@ class PlaybackService : Service() {
         // touches the volume. The server's calibration journal cannot cover this one: OS volume is
         // not server state, so the boosted device owns its own recovery. No-op when clean.
         if (osVolumeBoost.recover()) Log.w(TAG, "restored OS media volume from an interrupted boost")
-        // Restore this device's persisted spatial role so it applies on the next broadcast/connect
-        // (maybeSetInitialChannelTag reads _state.snapclientChannel). Seeded before the client
-        // connects, so no observe race - the initial tag is the saved value, not the default.
-        scope.launch {
-            val saved = settingsRepository.settings.first()
-            savedVol = saved.snapclientVolume
-            savedLat = saved.snapclientLatency
-            balanceProcessor.balance = saved.balance
-            agcProcessor.enabled = saved.normalizationEnabled
-            snapserverFixedPort = saved.snapserverFixedPort
-            _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
-        }
+        // This device's saved name, spatial role, balance, normalization and port. The repository
+        // has read the settings file before it hands out a value, so these are the saved values and
+        // they are in place before a client can connect or a broadcast can start.
+        val saved = settingsRepository.settings.value
+        customServerName = saved.customServerName.trim()
+        savedVol = saved.snapclientVolume
+        savedLat = saved.snapclientLatency
+        balanceProcessor.balance = saved.balance
+        agcProcessor.enabled = saved.normalizationEnabled
+        snapserverFixedPort = saved.snapserverFixedPort
+        _state.update { it.copy(snapclientChannel = saved.snapclientChannel) }
         // Keep the broadcast balance + fixed-port + normalization choice in sync with Settings live.
         scope.launch {
             settingsRepository.settings.collect {
