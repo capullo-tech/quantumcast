@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
                 ProvideRecBlink(active = recordingsActive.isNotEmpty()) {
                     RadioApp(vm, recVm, plVm, discoveredServers, discoveryManager)
                     FavoritesImportDialog(vm)
+                    StoreResetDialog(vm)
                 }
             }
         }
@@ -733,4 +734,37 @@ private fun FavoritesImportDialog(vm: RadioViewModel) {
             dismissButton = { TextButton(onClick = vm::cancelImport) { Text("Cancel") } },
         )
     }
+}
+
+/**
+ * Says once that a settings file was corrupt and has been replaced by the defaults (see
+ * replaceCorruptStore). Without it a reset looks like the app forgetting what the user set. The
+ * notice stays in the store until the user closes this dialog, so it also covers a reset that
+ * happened with no screen open.
+ */
+@Composable
+private fun StoreResetDialog(vm: RadioViewModel) {
+    val settings by vm.settings.collectAsState()
+    val recordingPrefs by vm.recordingPrefs.collectAsState()
+    val lost = listOfNotNull(
+        (
+            "QuantumCast could not read its settings file, because the file was damaged. " +
+                "All settings are at their defaults again. " +
+                "Favorites and playlists are not affected."
+            ).takeIf { settings.resetNotice },
+        (
+            "QuantumCast could not read its recording data, because the file was damaged. " +
+                "The schedules, the recording folder, the size limit and the playback " +
+                "positions are at their defaults again. The recorded files are still in " +
+                "their folder, but the Recordings list does not show them. " +
+                "Use a file manager to open them."
+            ).takeIf { recordingPrefs.resetNotice },
+    )
+    if (lost.isEmpty()) return
+    AlertDialog(
+        onDismissRequest = vm::acknowledgeStoreReset,
+        title = { Text(if (settings.resetNotice) "Settings were reset" else "Recording data was reset") },
+        text = { Text(lost.joinToString("\n\n")) },
+        confirmButton = { TextButton(onClick = vm::acknowledgeStoreReset) { Text("OK") } },
+    )
 }

@@ -1,14 +1,20 @@
 package tech.capullo.quantumcast.data.settings
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -21,12 +27,19 @@ class SettingsRepositoryTest {
 
     private val file: File get() = File(folder.root, "settings.preferences_pb")
 
-    /** One process lifetime: a repository over [file], released when [block] returns. */
+    /**
+     * One process lifetime: a repository over [file], with the corruption handler of the app's
+     * own store, released when [block] returns.
+     */
     private fun <T> process(block: suspend (SettingsRepository) -> T): T = runBlocking {
         val job = Job()
         val scope = CoroutineScope(Dispatchers.IO + job)
+        val store = PreferenceDataStoreFactory.create(
+            corruptionHandler = replaceCorruptStore("settings"),
+            scope = scope,
+        ) { file }
         try {
-            block(SettingsRepository(PreferenceDataStoreFactory.create(scope = scope) { file }, scope))
+            block(SettingsRepository(store, scope))
         } finally {
             // DataStore allows one instance per file; the file is free once its scope has ended.
             job.cancelAndJoin()
@@ -72,5 +85,44 @@ class SettingsRepositoryTest {
             withTimeout(5_000) { repository.settings.first { it.customServerName.isNotEmpty() } }.customServerName
         }
         assertEquals("Den", name)
+    }
+
+    @Test
+    fun `a corrupt file is replaced and the notice stays until it is acknowledged`() {
+        file.writeBytes(ByteArray(32) { 0xFF.toByte() })
+
+        assertEquals(AppSettings(resetNotice = true), process { it.settings.value })
+
+        // Without the replacement this write throws the CorruptionException of the read.
+        process { it.setCustomServerName("Den") }
+        // Not acknowledged: a process that ended before a screen showed the notice still owes it.
+        assertEquals(
+            AppSettings(customServerName = "Den", resetNotice = true),
+            process { it.settings.value },
+        )
+
+        process { it.acknowledgeReset() }
+        assertEquals(AppSettings(customServerName = "Den"), process { it.settings.value })
+    }
+
+    @Test
+    fun `a file that cannot be read gives the defaults and is left as it is`() {
+        // A directory in the file's place fails to open with an IOException that is not corruption.
+        file.mkdir()
+
+        assertEquals(AppSettings(), process { it.settings.value })
+        assertTrue(file.isDirectory)
+    }
+
+    @Test
+    fun `a failure that is not an IOException is not turned into the defaults`() {
+        val defect = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IllegalStateException("defect") }
+            override suspend fun updateData(
+                transform: suspend (t: Preferences) -> Preferences,
+            ): Preferences = error("not used")
+        }
+
+        assertThrows(IllegalStateException::class.java) { SettingsRepository(defect) }
     }
 }

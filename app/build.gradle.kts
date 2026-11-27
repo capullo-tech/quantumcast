@@ -81,6 +81,12 @@ android {
         compose = true
     }
 
+    testOptions {
+        // The store failure paths log through android.util.Log, which the unit-test android.jar
+        // only stubs: without this a test that reaches such a path fails on the log call.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

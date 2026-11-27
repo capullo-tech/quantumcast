@@ -23,10 +23,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import tech.capullo.quantumcast.data.settings.RESET_NOTICE
+import tech.capullo.quantumcast.data.settings.defaultsOnReadError
+import tech.capullo.quantumcast.data.settings.replaceCorruptStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.recordingStore: DataStore<Preferences> by preferencesDataStore(name = "recording")
+private const val RECORDING_STORE = "recording"
+
+private val Context.recordingStore: DataStore<Preferences> by preferencesDataStore(
+    name = RECORDING_STORE,
+    corruptionHandler = replaceCorruptStore(RECORDING_STORE),
+)
 
 /** What we know about a recording file. Its presence in the index is also the ownership mark rotation obeys. */
 @Serializable
@@ -70,6 +78,11 @@ data class RecordingPrefs(
     val speed: Float = 1f,
     /** Last non-1× speed; long-press play toggles 1× ⇄ this. */
     val customSpeed: Float = 1.5f,
+    /**
+     * The recording file was corrupt and has been replaced by the defaults; true until the user
+     * has been told (see [replaceCorruptStore]).
+     */
+    val resetNotice: Boolean = false,
 ) {
     val treeUri: Uri? get() = folderUri.takeIf { it.isNotEmpty() }?.let(Uri::parse)
 
@@ -119,7 +132,7 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
 
     private inline fun <reified T> Preferences.decode(key: Preferences.Key<String>, default: T): T = this[key]?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() } ?: default
 
-    val prefs: Flow<RecordingPrefs> = context.recordingStore.data.map { p ->
+    val prefs: Flow<RecordingPrefs> = context.recordingStore.data.defaultsOnReadError(RECORDING_STORE).map { p ->
         RecordingPrefs(
             capMb = p[Keys.CAP_MB] ?: RecordingPrefs.DEFAULT_CAP_MB,
             folderUri = p[Keys.FOLDER] ?: "",
@@ -138,10 +151,14 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
             pitchCorrection = p[Keys.PITCH_CORRECTION] ?: true,
             speed = p[Keys.SPEED] ?: 1f,
             customSpeed = p[Keys.CUSTOM_SPEED] ?: 1.5f,
+            resetNotice = p[RESET_NOTICE] ?: false,
         )
     }
 
     suspend fun current(): RecordingPrefs = prefs.first()
+
+    /** The user has been told that the recording data was reset. */
+    suspend fun acknowledgeReset() = context.recordingStore.edit { it.remove(RESET_NOTICE) }
 
     private val _active = MutableStateFlow<Map<String, ActiveRecording>>(emptyMap())
     val active: StateFlow<Map<String, ActiveRecording>> = _active
