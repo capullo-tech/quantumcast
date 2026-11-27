@@ -1,9 +1,12 @@
 package tech.capullo.quantumcast.data.settings
 
 import android.util.Log
+import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.preferencesOf
 import kotlinx.coroutines.flow.Flow
@@ -42,10 +45,31 @@ internal fun replaceCorruptStore(name: String) = ReplaceFileCorruptionHandler { 
  *
  * Nothing is lost by this: the file is left alone, and a write reads it again before it changes
  * it. The flow ends at the failure, so its consumer keeps the defaults until the next start, and
- * a write still throws while the file cannot be read (seen with a file of mode 000).
+ * every write fails too while the file cannot be read (see [editOrLog]).
  */
 internal fun Flow<Preferences>.defaultsOnReadError(name: String): Flow<Preferences> = catch { e ->
     if (e !is IOException) throw e
     Log.e(TAG, "$name: read failed, using the defaults", e)
     emit(emptyPreferences())
+}
+
+/**
+ * [edit] that logs an I/O failure and returns false in place of throwing it. Every write of the
+ * app goes through here.
+ *
+ * A write reads the file before it changes it, so while the file cannot be opened every write
+ * fails. Thrown, that ended the process at the first changed setting (seen on a OnePlus 3 with
+ * a file of mode 000: `FileNotFoundException ... EACCES`), and the recorder and the scheduler
+ * write from coroutines with no handler either. The change is lost and the file is left as it
+ * is. Corruption does not arrive here: [replaceCorruptStore] has replaced the file by then.
+ */
+internal suspend fun DataStore<Preferences>.editOrLog(
+    name: String,
+    transform: suspend (MutablePreferences) -> Unit,
+): Boolean = try {
+    edit(transform)
+    true
+} catch (e: IOException) {
+    Log.e(TAG, "$name: write failed, the change is lost", e)
+    false
 }
