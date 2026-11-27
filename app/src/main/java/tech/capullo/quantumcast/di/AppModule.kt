@@ -1,6 +1,8 @@
 package tech.capullo.quantumcast.di
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -8,6 +10,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import tech.capullo.audio.tunnel.TunnelManager
 import tech.capullo.quantumcast.data.settings.SettingsRepository
+import tech.capullo.quantumcast.data.settings.dataStore
 import tech.capullo.source.radiobrowser.data.repository.RadioRepository
 import javax.inject.Singleton
 
@@ -29,7 +32,13 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository = SettingsRepository(context)
+    fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository {
+        // The constructor blocks on the first read of the settings file. Keep the cost visible.
+        val start = SystemClock.elapsedRealtime()
+        return SettingsRepository(context.dataStore).also {
+            Log.d("Settings", "settings read in ${SystemClock.elapsedRealtime() - start} ms")
+        }
+    }
 
     // The library ships TunnelManager without DI annotations so it forces no framework on a
     // consumer; @Singleton here is what keeps it to one instance - and so to one cloudflared

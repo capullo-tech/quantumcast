@@ -101,8 +101,6 @@ class RadioViewModel @Inject constructor(
     fun setPublicLink(on: Boolean) = tunnelManager.setRequested(on)
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings
-        .onEach { repo.setServerUrl(it.apiServer) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
 
     private val _searchResults = MutableStateFlow<UiState<List<Station>>>(UiState.Idle)
     val searchResults: StateFlow<UiState<List<Station>>> = _searchResults
@@ -163,11 +161,11 @@ class RadioViewModel @Inject constructor(
     }
 
     init {
+        // The directory server follows the setting for as long as this ViewModel lives.
+        viewModelScope.launch { settings.collect { repo.setServerUrl(it.apiServer) } }
         // Entangle on launch: runs once per VM lifetime (= app open, not config change).
-        // settingsRepo.settings.first() waits for the real DataStore emission - the
-        // stateIn default would read autoEntangleOnLaunch=false before persistence loads.
         viewModelScope.launch {
-            val s = settingsRepo.settings.first()
+            val s = settings.value
             if (!s.autoEntangleOnLaunch) return@launch
             // Wait for the PlaybackService bind (connectPlayer runs in Activity.onCreate)
             withTimeoutOrNull(5_000) { while (playbackService == null) delay(50) }
@@ -307,9 +305,6 @@ class RadioViewModel @Inject constructor(
                 consecutiveErrors = 0
                 retryJob?.cancel()
             }
-            // Collect (not one-shot): at bind time DataStore may not have emitted the
-            // persisted settings yet, so a single read sees the "" default and the
-            // server falls back to Build.MODEL until the user re-applies the name.
             calibrationJob?.cancel()
             calibrationJob = viewModelScope.launch {
                 svc.calibrationState.collect { calibrationState = it }
