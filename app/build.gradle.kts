@@ -197,7 +197,7 @@ dependencies {
     implementation(pins.coil.compose)
 
     // Settings persistence
-    implementation(pins.androidx.datastore.preferences)
+    implementation(libs.androidx.datastore.preferences)
 
     // Drag-to-reorder for LazyColumn
     implementation(pins.reorderable)

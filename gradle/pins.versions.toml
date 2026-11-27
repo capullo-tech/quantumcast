@@ -11,7 +11,6 @@ capulloAudio = "95c2ee539c8243d78e4bd5533dd31eec67b83322"
 # QC's own single-app deps (used by no other repo).
 media = "1.7.0"
 coil = "2.6.0"
-datastore = "1.1.1"
 reorderable = "2.4.3"
 uiautomator = "2.3.0"
 # Core-library desugaring (java.time below API 26, NewPipeExtractor's Charset URLDecoder below 33;
@@ -32,7 +31,6 @@ capullo-tunnel = { module = "com.github.capullo-tech.capullo-audio:capullo-tunne
 # QC single-app deps.
 androidx-media = { module = "androidx.media:media", version.ref = "media" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
-androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 desugar-jdk-libs-nio = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }
