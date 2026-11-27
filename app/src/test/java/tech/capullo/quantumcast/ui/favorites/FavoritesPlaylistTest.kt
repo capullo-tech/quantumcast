@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.viewmodel
+package tech.capullo.quantumcast.ui.favorites
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

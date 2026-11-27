@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.viewmodel
+package tech.capullo.quantumcast.ui.recordings
 
 import android.content.Context
 import android.net.Uri

@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.settings
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,6 +31,7 @@ import tech.capullo.audio.ui.WebPlayerToggles
 import tech.capullo.quantumcast.data.settings.AppSettings
 import tech.capullo.quantumcast.data.settings.RadioServer
 import tech.capullo.quantumcast.data.settings.ThemeMode
+import tech.capullo.quantumcast.ui.favorites.FavoritesPlaylist
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,7 +106,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showExport = false
-                    exportLauncher.launch(tech.capullo.quantumcast.viewmodel.FavoritesPlaylist.fileName(exportM3u))
+                    exportLauncher.launch(FavoritesPlaylist.fileName(exportM3u))
                 }) { Text("Save to file") }
             },
             dismissButton = {

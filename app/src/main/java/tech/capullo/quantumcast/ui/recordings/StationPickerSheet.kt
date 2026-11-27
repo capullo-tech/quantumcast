@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.recordings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

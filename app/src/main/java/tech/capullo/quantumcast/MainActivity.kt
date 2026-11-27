@@ -42,10 +42,22 @@ import tech.capullo.audio.ui.PublicLinkState
 import tech.capullo.quantumcast.data.playlists.CapulloTube
 import tech.capullo.quantumcast.data.playlists.PlaylistStationEntity
 import tech.capullo.quantumcast.player.PlaybackService
-import tech.capullo.quantumcast.ui.screens.*
+import tech.capullo.quantumcast.ui.browse.CountryScreen
+import tech.capullo.quantumcast.ui.browse.SearchScreen
+import tech.capullo.quantumcast.ui.favorites.FavoritesScreen
+import tech.capullo.quantumcast.ui.home.HomeScreen
+import tech.capullo.quantumcast.ui.player.NowPlayingBar
+import tech.capullo.quantumcast.ui.player.ProvideRecBlink
+import tech.capullo.quantumcast.ui.player.RadioViewModel
+import tech.capullo.quantumcast.ui.player.RecordingPlaybackUi
+import tech.capullo.quantumcast.ui.player.TrackDetailScreen
+import tech.capullo.quantumcast.ui.playlists.PlaylistScreen
+import tech.capullo.quantumcast.ui.playlists.PlaylistsScreen
+import tech.capullo.quantumcast.ui.playlists.PlaylistsViewModel
+import tech.capullo.quantumcast.ui.recordings.RecordingViewModel
+import tech.capullo.quantumcast.ui.recordings.RecordingsScreen
+import tech.capullo.quantumcast.ui.settings.SettingsScreen
 import tech.capullo.quantumcast.ui.theme.RadioTheme
-import tech.capullo.quantumcast.viewmodel.PlaylistsViewModel
-import tech.capullo.quantumcast.viewmodel.RadioViewModel
 import tech.capullo.source.radiobrowser.data.model.Station
 
 // Navigation3 destinations. @Serializable NavKeys (kotlinx-serialization is already applied)
@@ -71,7 +83,7 @@ import tech.capullo.source.radiobrowser.data.model.Station
 class MainActivity : ComponentActivity() {
 
     private val vm: RadioViewModel by viewModels()
-    private val recVm: tech.capullo.quantumcast.viewmodel.RecordingViewModel by viewModels()
+    private val recVm: RecordingViewModel by viewModels()
     private val plVm: PlaylistsViewModel by viewModels()
     private lateinit var discoveryManager: SnapserverDiscoveryManager
 
@@ -107,7 +119,7 @@ class MainActivity : ComponentActivity() {
                 val discoveredServers by discoveryManager.discoveredServers.collectAsState()
                 val recordingsActive by recVm.active.collectAsState()
                 // One blink clock for every "recording" indicator, running only while something records.
-                tech.capullo.quantumcast.ui.screens.ProvideRecBlink(active = recordingsActive.isNotEmpty()) {
+                ProvideRecBlink(active = recordingsActive.isNotEmpty()) {
                     RadioApp(vm, recVm, plVm, discoveredServers, discoveryManager)
                     FavoritesImportDialog(vm)
                 }
@@ -214,7 +226,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RadioApp(
     vm: RadioViewModel,
-    recVm: tech.capullo.quantumcast.viewmodel.RecordingViewModel,
+    recVm: RecordingViewModel,
     plVm: PlaylistsViewModel,
     discoveredServers: List<DiscoveredSnapserver>,
     discoveryManager: SnapserverDiscoveryManager,
@@ -289,7 +301,7 @@ private fun RadioApp(
     val recordingUi = if (playingRecording == null) {
         null
     } else {
-        tech.capullo.quantumcast.ui.screens.RecordingPlaybackUi(
+        RecordingPlaybackUi(
             progress = vm.mediaProgress,
             skipSeconds = recordingPrefs.skipSeconds,
             speed = recordingPrefs.speed,

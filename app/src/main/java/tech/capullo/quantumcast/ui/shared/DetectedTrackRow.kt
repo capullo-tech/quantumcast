@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.shared
 
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi

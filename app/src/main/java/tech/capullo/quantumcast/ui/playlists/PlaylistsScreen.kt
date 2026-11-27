@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.playlists
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +24,9 @@ import tech.capullo.quantumcast.data.playlists.DetectedTrack
 import tech.capullo.quantumcast.data.playlists.PlaylistStationEntity
 import tech.capullo.quantumcast.data.playlists.StationPlaylist
 import tech.capullo.quantumcast.data.playlists.YoutubeLinks
+import tech.capullo.quantumcast.ui.shared.DetectedTrackRow
+import tech.capullo.quantumcast.ui.shared.countryFlag
+import tech.capullo.quantumcast.ui.shared.detectionDateLabel
 
 private fun songCount(n: Int) = if (n == 1) "1 song" else "$n songs"
 

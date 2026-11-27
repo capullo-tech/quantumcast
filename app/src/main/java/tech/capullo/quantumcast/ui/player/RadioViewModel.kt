@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.viewmodel
+package tech.capullo.quantumcast.ui.player
 
 import android.content.ComponentName
 import android.content.Context
@@ -21,6 +21,7 @@ import tech.capullo.quantumcast.data.playlists.PlaylistRepository
 import tech.capullo.quantumcast.data.settings.AppSettings
 import tech.capullo.quantumcast.data.settings.SettingsRepository
 import tech.capullo.quantumcast.player.PlaybackService
+import tech.capullo.quantumcast.ui.favorites.FavoritesPlaylist
 import tech.capullo.source.radiobrowser.data.db.FavoriteEntity
 import tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity
 import tech.capullo.source.radiobrowser.data.model.Country

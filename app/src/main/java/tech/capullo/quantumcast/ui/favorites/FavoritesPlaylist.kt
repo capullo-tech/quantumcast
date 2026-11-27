@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.viewmodel
+package tech.capullo.quantumcast.ui.favorites
 
 import tech.capullo.source.radiobrowser.data.db.FavoriteEntity
 import tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity

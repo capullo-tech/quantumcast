@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.recordings
 
 import android.Manifest
 import android.content.Context
@@ -50,7 +50,9 @@ import tech.capullo.quantumcast.recording.RecordingService
 import tech.capullo.quantumcast.recording.ResumePoint
 import tech.capullo.quantumcast.recording.Schedule
 import tech.capullo.quantumcast.recording.StationZones
-import tech.capullo.quantumcast.viewmodel.RecordingViewModel
+import tech.capullo.quantumcast.ui.player.BlinkingRecDot
+import tech.capullo.quantumcast.ui.player.RecRed
+import tech.capullo.quantumcast.ui.player.formatClock
 import java.text.DateFormat
 import java.time.DayOfWeek
 import java.time.format.TextStyle

@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.home
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import tech.capullo.audio.snapcast.DiscoveredSnapserver
 import tech.capullo.audio.ui.LocalRadiosSection
+import tech.capullo.quantumcast.ui.player.LocalRecBlink
+import tech.capullo.quantumcast.ui.player.RecRed
 
 // The home / "Select a station" screen (mirrors Telecloud's GroupSelectorScreen): a TopAppBar with
 // a Settings gear, then a scanning "local radios" radar section, a search field, a Discovery

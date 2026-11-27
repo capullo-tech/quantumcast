@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.viewmodel
+package tech.capullo.quantumcast.ui.player
 
 import tech.capullo.audio.snapcast.JoinTarget
 import tech.capullo.audio.snapcast.SnapserverListenInfo
