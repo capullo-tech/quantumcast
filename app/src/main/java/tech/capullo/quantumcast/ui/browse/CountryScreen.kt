@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.browse
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -22,9 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import tech.capullo.quantumcast.viewmodel.PlayerState
-import tech.capullo.quantumcast.viewmodel.RadioViewModel
-import tech.capullo.quantumcast.viewmodel.UiState
+import tech.capullo.quantumcast.ui.player.PlayerState
+import tech.capullo.quantumcast.ui.player.RadioViewModel
+import tech.capullo.quantumcast.ui.player.UiState
+import tech.capullo.quantumcast.ui.shared.StationCard
 import tech.capullo.source.radiobrowser.data.model.Country
 import tech.capullo.source.radiobrowser.data.model.Station
 

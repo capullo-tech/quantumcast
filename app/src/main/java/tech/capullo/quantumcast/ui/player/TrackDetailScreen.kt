@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.player
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -84,12 +84,12 @@ import tech.capullo.audio.ui.PublicLinkState
 import tech.capullo.audio.ui.SnapcastControlSheet
 import tech.capullo.quantumcast.R
 import tech.capullo.quantumcast.data.playlists.DetectedTrack
-import tech.capullo.quantumcast.viewmodel.PlayerState
-import tech.capullo.quantumcast.viewmodel.RadioViewModel
-import tech.capullo.quantumcast.viewmodel.RepeatMode
-import tech.capullo.quantumcast.viewmodel.RotationMode
-import tech.capullo.quantumcast.viewmodel.RotationOrder
-import tech.capullo.quantumcast.viewmodel.RotationState
+import tech.capullo.quantumcast.ui.shared.DetectedTrackRow
+import tech.capullo.quantumcast.ui.shared.IdentifyingTrackRow
+import tech.capullo.quantumcast.ui.shared.StationInfoSheet
+import tech.capullo.quantumcast.ui.shared.countryFlag
+import tech.capullo.quantumcast.ui.shared.detectionTimeLabel
+import tech.capullo.quantumcast.ui.shared.startOfToday
 import tech.capullo.source.radiobrowser.data.model.Station
 import tech.capullo.source.radiobrowser.data.model.TrackLookup
 

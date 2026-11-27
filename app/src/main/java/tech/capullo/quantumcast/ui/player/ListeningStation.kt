@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.viewmodel
+package tech.capullo.quantumcast.ui.player
 
 import tech.capullo.quantumcast.player.PlaybackService
 import tech.capullo.source.radiobrowser.data.model.Station

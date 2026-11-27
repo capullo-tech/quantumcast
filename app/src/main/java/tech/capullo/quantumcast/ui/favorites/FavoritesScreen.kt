@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.favorites
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -25,8 +25,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import tech.capullo.quantumcast.viewmodel.PlayerState
-import tech.capullo.quantumcast.viewmodel.RadioViewModel
+import tech.capullo.quantumcast.ui.player.PlayerState
+import tech.capullo.quantumcast.ui.player.RadioViewModel
+import tech.capullo.quantumcast.ui.shared.StationInfoSheet
 import tech.capullo.source.radiobrowser.data.db.FavoriteEntity
 import tech.capullo.source.radiobrowser.data.db.FavoriteGroupEntity
 import tech.capullo.source.radiobrowser.data.model.Station

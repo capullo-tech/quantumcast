@@ -1,4 +1,4 @@
-package tech.capullo.quantumcast.ui.screens
+package tech.capullo.quantumcast.ui.player
 
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
@@ -29,8 +29,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import tech.capullo.quantumcast.viewmodel.PlayerState
-import tech.capullo.quantumcast.viewmodel.RotationState
 import tech.capullo.source.radiobrowser.data.model.TrackLookup
 
 private fun countryCodeToFlag(code: String): String {
