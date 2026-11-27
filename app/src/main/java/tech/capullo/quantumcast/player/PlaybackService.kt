@@ -1507,6 +1507,10 @@ class PlaybackService : Service() {
         _state.update {
             it.copy(broadcastMode = BroadcastMode.QUANTUMCAST, snapclientHost = "", snapclientScheme = "tcp", isPlaying = false)
         }
+        // As in stop(): without these the media session and the notification kept saying
+        // PLAYING after the user left the station.
+        updateNotification()
+        updateMediaSession()
     }
 
     // Written next to the served index.html (snapserver doc_root); the web
