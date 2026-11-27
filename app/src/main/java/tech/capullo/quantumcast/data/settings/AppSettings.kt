@@ -156,7 +156,7 @@ class SettingsRepository(
         stored.stateIn(scope, SharingStarted.Eagerly, runBlocking { stored.first() })
 
     suspend fun update(block: suspend (MutablePreferences) -> Unit) {
-        store.edit { block(it) }
+        store.editOrLog(SETTINGS_STORE, block)
     }
 
     /** The user has been told that the settings were reset. */

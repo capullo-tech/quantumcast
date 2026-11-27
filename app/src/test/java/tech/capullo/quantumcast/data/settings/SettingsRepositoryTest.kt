@@ -115,6 +115,19 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `a write to a file that cannot be read is lost, not thrown`() {
+        file.mkdir()
+
+        val after = process { repository ->
+            // Before, this threw the IOException of the read and ended the process.
+            repository.setCustomServerName("Den")
+            repository.settings.value
+        }
+        assertEquals(AppSettings(), after)
+        assertTrue(file.isDirectory)
+    }
+
+    @Test
     fun `a failure that is not an IOException is not turned into the defaults`() {
         val defect = object : DataStore<Preferences> {
             override val data: Flow<Preferences> = flow { throw IllegalStateException("defect") }

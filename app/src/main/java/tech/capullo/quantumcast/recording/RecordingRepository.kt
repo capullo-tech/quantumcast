@@ -4,9 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -25,6 +25,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import tech.capullo.quantumcast.data.settings.RESET_NOTICE
 import tech.capullo.quantumcast.data.settings.defaultsOnReadError
+import tech.capullo.quantumcast.data.settings.editOrLog
 import tech.capullo.quantumcast.data.settings.replaceCorruptStore
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -158,7 +159,7 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
     suspend fun current(): RecordingPrefs = prefs.first()
 
     /** The user has been told that the recording data was reset. */
-    suspend fun acknowledgeReset() = context.recordingStore.edit { it.remove(RESET_NOTICE) }
+    suspend fun acknowledgeReset() = write { it.remove(RESET_NOTICE) }
 
     private val _active = MutableStateFlow<Map<String, ActiveRecording>>(emptyMap())
     val active: StateFlow<Map<String, ActiveRecording>> = _active
@@ -178,15 +179,22 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
 
     // --- edits ---
 
-    suspend fun setCapMb(mb: Int) = context.recordingStore.edit { it[Keys.CAP_MB] = mb.coerceAtLeast(0) }
+    /** Every write goes through here; false when it failed (logged, see [editOrLog]). */
+    private suspend fun write(transform: suspend (MutablePreferences) -> Unit): Boolean = context.recordingStore.editOrLog(RECORDING_STORE, transform)
+
+    suspend fun setCapMb(mb: Int) = write { it[Keys.CAP_MB] = mb.coerceAtLeast(0) }
 
     /** null = back to the app's own folder. Takes/releases the persistable SAF grant. */
     suspend fun setFolder(uri: Uri?) {
         val old = current().treeUri
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         if (uri != null) context.contentResolver.takePersistableUriPermission(uri, flags)
+        if (!write { it[Keys.FOLDER] = uri?.toString() ?: "" }) {
+            // Not saved: recordings still go to the old folder, so it keeps its grant.
+            if (uri != null && uri != old) runCatching { context.contentResolver.releasePersistableUriPermission(uri, flags) }
+            return
+        }
         if (old != null && old != uri) runCatching { context.contentResolver.releasePersistableUriPermission(old, flags) }
-        context.recordingStore.edit { it[Keys.FOLDER] = uri?.toString() ?: "" }
         filesChanged()
     }
 
@@ -204,7 +212,7 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
 
     suspend fun clearResume(name: String) = editMap<ResumePoint>(Keys.RESUME) { it - name }
 
-    private suspend inline fun <reified V> editMap(key: Preferences.Key<String>, crossinline f: (Map<String, V>) -> Map<String, V>) = context.recordingStore.edit { p ->
+    private suspend inline fun <reified V> editMap(key: Preferences.Key<String>, crossinline f: (Map<String, V>) -> Map<String, V>) = write { p ->
         val m: Map<String, V> = p[key]?.let { runCatching { json.decodeFromString<Map<String, V>>(it) }.getOrNull() } ?: emptyMap()
         p[key] = json.encodeToString(f(m))
     }
@@ -215,30 +223,30 @@ class RecordingRepository @Inject constructor(@ApplicationContext private val co
 
     suspend fun deleteSchedule(id: String) = editSchedules { list -> list.filterNot { it.id == id } }
 
-    private suspend fun editSchedules(f: (List<Schedule>) -> List<Schedule>) = context.recordingStore.edit { p ->
+    private suspend fun editSchedules(f: (List<Schedule>) -> List<Schedule>) = write { p ->
         p[Keys.SCHEDULES] = json.encodeToString(f(p.decode(Keys.SCHEDULES, emptyList<Schedule>())))
     }
 
     suspend fun markStarted(scheduleId: String, occurrence: Long) = editMap<Long>(Keys.LAST_STARTED) { it + (scheduleId to occurrence) }
     suspend fun markMissed(scheduleId: String, occurrence: Long) = editMap<Long>(Keys.LAST_MISSED) { it + (scheduleId to occurrence) }
 
-    suspend fun setTest(station: RecStation?, at: Long = 0, pid: Int = 0) = context.recordingStore.edit {
+    suspend fun setTest(station: RecStation?, at: Long = 0, pid: Int = 0) = write {
         it[Keys.TEST] = station?.let { s -> json.encodeToString(s) } ?: ""
         it[Keys.TEST_AT] = if (station == null) 0L else at
         it[Keys.TEST_PID] = pid
     }
 
-    suspend fun setOemWarned() = context.recordingStore.edit { it[Keys.OEM_WARNED] = true }
+    suspend fun setOemWarned() = write { it[Keys.OEM_WARNED] = true }
 
     // --- playback options ---
 
-    suspend fun setSkipSeconds(s: Int) = context.recordingStore.edit { it[Keys.SKIP_SECONDS] = s }
-    suspend fun setSmartRewind(on: Boolean) = context.recordingStore.edit { it[Keys.SMART_REWIND] = on }
-    suspend fun setSmartRewindLimit(s: Int) = context.recordingStore.edit { it[Keys.SMART_REWIND_LIMIT] = s }
-    suspend fun setPitchCorrection(on: Boolean) = context.recordingStore.edit { it[Keys.PITCH_CORRECTION] = on }
+    suspend fun setSkipSeconds(s: Int) = write { it[Keys.SKIP_SECONDS] = s }
+    suspend fun setSmartRewind(on: Boolean) = write { it[Keys.SMART_REWIND] = on }
+    suspend fun setSmartRewindLimit(s: Int) = write { it[Keys.SMART_REWIND_LIMIT] = s }
+    suspend fun setPitchCorrection(on: Boolean) = write { it[Keys.PITCH_CORRECTION] = on }
 
     /** Sets the speed; a non-1× value also becomes the long-press toggle target. */
-    suspend fun setSpeed(speed: Float) = context.recordingStore.edit {
+    suspend fun setSpeed(speed: Float) = write {
         val s = (Math.round(speed * 100) / 100f).coerceIn(MIN_SPEED, MAX_SPEED)
         it[Keys.SPEED] = s
         if (s != 1f) it[Keys.CUSTOM_SPEED] = s
