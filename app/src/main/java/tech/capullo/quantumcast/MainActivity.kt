@@ -299,13 +299,14 @@ private fun RadioApp(
     // Non-null while a recording (not a station) plays: switches both players to recording controls.
     val playingRecording by vm.playingRecording.collectAsState()
     val recordingPrefs by vm.recordingPrefs.collectAsState()
-    val recordingUi = if (playingRecording == null) {
+    val rp = recordingPrefs
+    val recordingUi = if (playingRecording == null || rp == null) {
         null
     } else {
         RecordingPlaybackUi(
             progress = vm.mediaProgress,
-            skipSeconds = recordingPrefs.skipSeconds,
-            speed = recordingPrefs.speed,
+            skipSeconds = rp.skipSeconds,
+            speed = rp.speed,
             onSeek = vm::seekRecording,
             onSkipBack = vm::skipBackward,
             onSkipForward = vm::skipForward,
@@ -758,7 +759,7 @@ private fun StoreResetDialog(vm: RadioViewModel) {
                 "positions are at their defaults again. The recorded files are still in " +
                 "their folder, but the Recordings list does not show them. " +
                 "Use a file manager to open them."
-            ).takeIf { recordingPrefs.resetNotice },
+            ).takeIf { recordingPrefs?.resetNotice == true },
     )
     if (lost.isEmpty()) return
     AlertDialog(

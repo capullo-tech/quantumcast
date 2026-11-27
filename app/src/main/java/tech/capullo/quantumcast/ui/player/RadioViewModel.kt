@@ -508,7 +508,7 @@ class RadioViewModel @Inject constructor(
         }
         if (_playingRecording.value != null) {
             // Smart rewind on resume, sized by how long this pause lasted.
-            val back = if (pausedAtMs > 0) smartRewindMs(System.currentTimeMillis() - pausedAtMs, recordingPrefs.value) else 0
+            val back = if (pausedAtMs > 0) recordingPrefs.value?.let { smartRewindMs(System.currentTimeMillis() - pausedAtMs, it) } ?: 0 else 0
             pausedAtMs = 0
             if (back > 0) seekRecording((_mediaProgress.value.positionMs - back).coerceAtLeast(0))
             svc.play()
@@ -555,8 +555,13 @@ class RadioViewModel @Inject constructor(
     private val _mediaProgress = MutableStateFlow(PlaybackService.MediaProgress())
     val mediaProgress: StateFlow<PlaybackService.MediaProgress> = _mediaProgress
 
-    val recordingPrefs: StateFlow<tech.capullo.quantumcast.recording.RecordingPrefs> = recordings.prefs
-        .stateIn(viewModelScope, SharingStarted.Eagerly, tech.capullo.quantumcast.recording.RecordingPrefs())
+    /**
+     * Null until the recording data has been read, so no screen shows the defaults in place of
+     * what was saved. A recording can only be picked from a list built from the same data, so
+     * the actions below that need it return early only in that first moment.
+     */
+    val recordingPrefs: StateFlow<tech.capullo.quantumcast.recording.RecordingPrefs?> = recordings.prefs
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** When the current recording was paused (in this session), for smart rewind. 0 = not paused. */
     private var pausedAtMs = 0L
@@ -565,6 +570,7 @@ class RadioViewModel @Inject constructor(
 
     fun playRecording(file: tech.capullo.quantumcast.recording.RecordingFile, queue: List<tech.capullo.quantumcast.recording.RecordingFile>) {
         val svc = playbackService ?: return
+        val p = recordingPrefs.value ?: return
         leaveRecording()
         cancelRotation()
         retryJob?.cancel()
@@ -572,7 +578,6 @@ class RadioViewModel @Inject constructor(
         shazamJob = null
         _isShazamRunning.value = false
         recordingQueue = queue.filterNot { it.inProgress }
-        val p = recordingPrefs.value
         val now = System.currentTimeMillis()
         val start = p.resume[file.name]?.let { rp ->
             val est = (file.durationSeconds ?: 0) * 1000
@@ -627,8 +632,14 @@ class RadioViewModel @Inject constructor(
         _mediaProgress.update { it.copy(positionMs = posMs) }
     }
 
-    fun skipForward() = seekRecording(_mediaProgress.value.positionMs + recordingPrefs.value.skipSeconds * 1000L)
-    fun skipBackward() = seekRecording((_mediaProgress.value.positionMs - recordingPrefs.value.skipSeconds * 1000L).coerceAtLeast(0))
+    fun skipForward() {
+        val s = recordingPrefs.value?.skipSeconds ?: return
+        seekRecording(_mediaProgress.value.positionMs + s * 1000L)
+    }
+    fun skipBackward() {
+        val s = recordingPrefs.value?.skipSeconds ?: return
+        seekRecording((_mediaProgress.value.positionMs - s * 1000L).coerceAtLeast(0))
+    }
 
     /** Next row in the Recordings list (older); stops after the last. */
     fun nextRecording() {
@@ -662,23 +673,24 @@ class RadioViewModel @Inject constructor(
     }
 
     fun setRecordingSpeed(speed: Float) {
+        val p = recordingPrefs.value ?: return
         val s = (Math.round(speed * 100) / 100f).coerceIn(
             tech.capullo.quantumcast.recording.RecordingRepository.MIN_SPEED,
             tech.capullo.quantumcast.recording.RecordingRepository.MAX_SPEED,
         )
         viewModelScope.launch { recordings.setSpeed(s) }
-        playbackService?.setMediaSpeed(s, pitchFor(s, recordingPrefs.value))
+        playbackService?.setMediaSpeed(s, pitchFor(s, p))
     }
 
     /** Long-press play while a recording plays: 1× ⇄ the last custom speed. */
     fun toggleRecordingSpeed() {
-        val p = recordingPrefs.value
+        val p = recordingPrefs.value ?: return
         setRecordingSpeed(if (p.speed != 1f) 1f else p.customSpeed)
     }
 
     fun setPitchCorrection(on: Boolean) {
         viewModelScope.launch { recordings.setPitchCorrection(on) }
-        val s = recordingPrefs.value.speed
+        val s = recordingPrefs.value?.speed ?: return
         playbackService?.setMediaSpeed(s, if (on) 1f else s)
     }
 
@@ -1318,7 +1330,7 @@ class RadioViewModel @Inject constructor(
     fun acknowledgeStoreReset() {
         viewModelScope.launch {
             if (settings.value.resetNotice) settingsRepo.acknowledgeReset()
-            if (recordingPrefs.value.resetNotice) recordings.acknowledgeReset()
+            if (recordingPrefs.value?.resetNotice == true) recordings.acknowledgeReset()
         }
     }
 

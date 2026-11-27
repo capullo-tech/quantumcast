@@ -40,8 +40,9 @@ class RecordingViewModel @Inject constructor(
         .map { m -> m.values.sortedBy { it.startedAt } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val prefs: StateFlow<RecordingPrefs> = recordings.prefs
-        .stateIn(viewModelScope, SharingStarted.Eagerly, RecordingPrefs())
+    /** Null until the recording data has been read: the defaults are not what the user saved. */
+    val prefs: StateFlow<RecordingPrefs?> = recordings.prefs
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val favorites: StateFlow<List<FavoriteEntity>> = radioRepo.getFavorites()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

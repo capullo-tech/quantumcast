@@ -59,7 +59,8 @@ fun SettingsScreen(
     onPickImportFile: (Uri) -> Unit = {},
     onBack: () -> Unit = {},
     onOpenRecordingStorage: () -> Unit = {},
-    recordingPrefs: tech.capullo.quantumcast.recording.RecordingPrefs = tech.capullo.quantumcast.recording.RecordingPrefs(),
+    /** Null until read; the "Recordings playback" section waits for it. */
+    recordingPrefs: tech.capullo.quantumcast.recording.RecordingPrefs? = null,
     onSetSkipSeconds: (Int) -> Unit = {},
     onSetSmartRewind: (Boolean) -> Unit = {},
     onSetSmartRewindLimit: (Int) -> Unit = {},
@@ -364,41 +365,43 @@ fun SettingsScreen(
                 )
             }
 
-            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-            item { SectionHeader("Recordings playback") }
-            item {
-                IntervalChoiceRow(
-                    label = "Skip interval",
-                    description = "Tap ⟲ / ⟳ to jump back or forward by this much (long-press: previous / next recording)",
-                    seconds = recordingPrefs.skipSeconds,
-                    onSelect = onSetSkipSeconds,
-                )
-            }
-            item {
-                ToggleRow(
-                    label = "Smart rewind",
-                    description = "When resuming, jump back further the longer playback was paused",
-                    checked = recordingPrefs.smartRewind,
-                    onToggle = onSetSmartRewind,
-                )
-            }
-            if (recordingPrefs.smartRewind) {
+            if (recordingPrefs != null) {
+                item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+                item { SectionHeader("Recordings playback") }
                 item {
                     IntervalChoiceRow(
-                        label = "Smart rewind limit",
-                        description = "Never jump back more than this",
-                        seconds = recordingPrefs.smartRewindLimitSeconds,
-                        onSelect = onSetSmartRewindLimit,
+                        label = "Skip interval",
+                        description = "Tap ⟲ / ⟳ to jump back or forward by this much (long-press: previous / next recording)",
+                        seconds = recordingPrefs.skipSeconds,
+                        onSelect = onSetSkipSeconds,
                     )
                 }
-            }
-            item {
-                ToggleRow(
-                    label = "Pitch correction",
-                    description = "Keep voices natural at other speeds. Off: faster also sounds higher, like tape",
-                    checked = recordingPrefs.pitchCorrection,
-                    onToggle = onSetPitchCorrection,
-                )
+                item {
+                    ToggleRow(
+                        label = "Smart rewind",
+                        description = "When resuming, jump back further the longer playback was paused",
+                        checked = recordingPrefs.smartRewind,
+                        onToggle = onSetSmartRewind,
+                    )
+                }
+                if (recordingPrefs.smartRewind) {
+                    item {
+                        IntervalChoiceRow(
+                            label = "Smart rewind limit",
+                            description = "Never jump back more than this",
+                            seconds = recordingPrefs.smartRewindLimitSeconds,
+                            onSelect = onSetSmartRewindLimit,
+                        )
+                    }
+                }
+                item {
+                    ToggleRow(
+                        label = "Pitch correction",
+                        description = "Keep voices natural at other speeds. Off: faster also sounds higher, like tape",
+                        checked = recordingPrefs.pitchCorrection,
+                        onToggle = onSetPitchCorrection,
+                    )
+                }
             }
 
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }

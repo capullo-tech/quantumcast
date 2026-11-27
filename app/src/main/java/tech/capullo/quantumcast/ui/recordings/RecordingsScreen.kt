@@ -77,7 +77,7 @@ fun RecordingsScreen(
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     val active by vm.active.collectAsState()
     val files by vm.files.collectAsState()
-    val prefs by vm.prefs.collectAsState()
+    val prefs = vm.prefs.collectAsState().value
     // Scheduled recordings run unattended; their notification is the only Stop button and the
     // only place a failure shows, so ask for the permission when schedules are opened.
     val context = LocalContext.current
@@ -104,20 +104,25 @@ fun RecordingsScreen(
             vm.runScheduleTest(st) { (context as? android.app.Activity)?.finishAndRemoveTask() }
         }
         var oemWarning by remember { mutableStateOf(false) }
-        when (tab) {
-            0 -> FilesTab(vm, active, files, prefs.resume, playingName, onPlayRecording)
-            1 -> SchedulesTab(
-                schedules = prefs.schedules,
-                picker = PickerSource(currentStation, favorites, groups, vm::searchDirectory),
-                onSave = { s ->
-                    val isNew = prefs.schedules.none { it.id == s.id }
-                    vm.saveSchedule(s)
-                    // Once per install, at the moment it matters: before the first schedule is missed.
-                    if (isNew && !prefs.oemWarned && oemAutoStartHint() != null) oemWarning = true
-                },
-                onDelete = vm::deleteSchedule,
-            )
-            else -> StorageTab(vm, prefs, files, stations, runTest)
+        // Nothing below the tabs until the recording data has been read (a few ms). The defaults
+        // would show no schedules and the default size limit, and a schedule saved in that time
+        // would count as the first one and bring up the auto-start warning again.
+        if (prefs != null) {
+            when (tab) {
+                0 -> FilesTab(vm, active, files, prefs.resume, playingName, onPlayRecording)
+                1 -> SchedulesTab(
+                    schedules = prefs.schedules,
+                    picker = PickerSource(currentStation, favorites, groups, vm::searchDirectory),
+                    onSave = { s ->
+                        val isNew = prefs.schedules.none { it.id == s.id }
+                        vm.saveSchedule(s)
+                        // Once per install, at the moment it matters: before the first schedule is missed.
+                        if (isNew && !prefs.oemWarned && oemAutoStartHint() != null) oemWarning = true
+                    },
+                    onDelete = vm::deleteSchedule,
+                )
+                else -> StorageTab(vm, prefs, files, stations, runTest)
+            }
         }
         val hint = oemAutoStartHint()
         if (oemWarning && hint != null) {
