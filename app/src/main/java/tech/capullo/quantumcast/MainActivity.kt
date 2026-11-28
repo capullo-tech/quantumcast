@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -23,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.lifecycleScope
@@ -116,6 +118,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings by vm.settings.collectAsState()
             RadioTheme(themeMode = settings.themeMode) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) WindowBackground()
                 val discoveredServers by discoveryManager.discoveredServers.collectAsState()
                 val recordingsActive by recVm.active.collectAsState()
                 // One blink clock for every "recording" indicator, running only while something records.
@@ -127,6 +130,17 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (savedInstanceState == null) handleIncoming(intent)
+    }
+
+    /**
+     * Below Android 12 the window background is the launch purple (themes.xml). Once the UI
+     * composes it takes the app theme's background, so the purple never shows where the UI does
+     * not paint, such as behind the keyboard while it opens.
+     */
+    @Composable
+    private fun WindowBackground() {
+        val background = MaterialTheme.colorScheme.background.toArgb()
+        SideEffect { window.setBackgroundDrawable(ColorDrawable(background)) }
     }
 
     /**

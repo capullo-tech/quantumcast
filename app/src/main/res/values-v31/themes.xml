@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash: paint the launch window the launcher-icon background colour
+         so the cold-start screen matches the icon instead of showing a bare default square. The
+         splash fades into the first frame, so the window background stays the platform's. -->
+    <style name="Theme.RadioApp" parent="Base.Theme.RadioApp">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+    </style>
+</resources>

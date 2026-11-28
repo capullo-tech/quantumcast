@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <!-- The UI is all Compose Material3, so the window theme only paints the launch window
          before the first Compose frame. values-night swaps this parent for the dark platform
          theme so that window is not white in dark mode. -->
     <style name="Base.Theme.RadioApp" parent="android:Theme.Material.Light.NoActionBar" />
 
+    <!-- Before Android 12 the launch window is drawn from this theme, which follows the system
+         theme, not the app's own theme setting. A user who forces the other theme saw the wrong
+         colour before the first frame. The brand purple (ic_launcher_background) is right for
+         every setting. MainActivity replaces the window background with the app theme's colour
+         once it composes, and enableEdgeToEdge() replaces the bar colours. -->
     <style name="Theme.RadioApp" parent="Base.Theme.RadioApp">
-        <!-- Android 12+ system splash: paint the launch window the launcher-icon
-             background colour (ic_launcher_background = #300234) so the cold-start
-             screen matches the icon instead of showing a bare default square. -->
-        <item name="android:windowSplashScreenBackground" tools:targetApi="31">#300234</item>
+        <item name="android:windowBackground">@color/launch_background</item>
+        <item name="android:statusBarColor">@color/launch_background</item>
+        <item name="android:navigationBarColor">@color/launch_background</item>
     </style>
+
+    <color name="launch_background">#300234</color>
 </resources>
